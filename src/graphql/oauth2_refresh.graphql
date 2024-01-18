@@ -1,0 +1,11 @@
+mutation Oauth2RefreshMutation($client_id: String!, $refresh_token: String!) {
+  oauth2Refresh(input: { refreshToken: $refresh_token, clientId: $client_id }) {
+    clientError
+    unauthorized
+    issued {
+      expiresIn
+      accessToken
+      refreshToken
+    }
+  }
+}

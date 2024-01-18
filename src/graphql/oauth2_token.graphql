@@ -1,0 +1,13 @@
+mutation Oauth2TokenMutation($code: String!, $client_id: String!, $redirect_uri: Url!) {
+  oauth2Token(
+    input: { code: $code, clientId: $client_id, redirectUri: $redirect_uri }
+  ) {
+    clientError
+    unauthorized
+    issued {
+      expiresIn
+      accessToken
+      refreshToken
+    }
+  }
+}

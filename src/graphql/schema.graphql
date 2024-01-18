@@ -1,0 +1,529 @@
+enum Action {
+	READ_USER_EMAIL
+	READ_USER_PERMISSIONS
+	UPDATE_USER
+	DELETE_USER
+	CREATE_COMPETITION
+	UPDATE_COMPETITION
+	DELETE_COMPETITION
+	UPDATE_DATA_SET
+	CREATE_SUBMISSION
+	CREATE_TOPIC
+	UPDATE_TOPIC
+	DELETE_TOPIC
+	CREATE_COMMENT
+	DELETE_COMMENT
+	CREATE_ORGANIZATION
+	DELETE_ORGANIZATION
+	UPDATE_ORGANIZATION
+	UPDATE_ORGANIZATION_MEMBERSHIP
+	DELETE_ORGANIZATION_MEMBERSHIP
+	TRANSFER_ORGANIZATION_OWNERSHIP
+}
+
+
+type Comment implements Node {
+	content: String!
+	createdAt: DateTime!
+	id: ID!
+	author: User!
+	topic: Topic!
+	parent: Comment
+	numChildren: Int!
+	children(after: String, before: String, first: Int, last: Int): CommentConnection!
+}
+
+type CommentConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [CommentEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Comment!]!
+}
+
+"""
+An edge in a connection.
+"""
+type CommentEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Comment!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+type Competition implements Node {
+	slug: String!
+	title: String!
+	shortDescription: String!
+	description: String
+	createdAt: DateTime!
+	id: ID!
+	viewerCan(action: Action!, asOrganization: ID): Boolean!
+	host: User!
+	banner: Url
+	thumbnail: Url
+	topics(after: String, before: String, first: Int, last: Int): TopicConnection!
+}
+
+type CompetitionConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [CompetitionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Competition!]!
+}
+
+"""
+An edge in a connection.
+"""
+type CompetitionEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Competition!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+input CreateCommentInput {
+	content: String!
+}
+
+input CreateCompetitionInput {
+	slug: String!
+	title: String!
+	shortDescription: String!
+	description: String
+	banner: Upload
+	thumbnail: Upload
+}
+
+input CreateOrganizationInput {
+	username: String!
+	displayName: String!
+	github: String
+	linkedin: String
+	website: Url
+	location: String
+	bio: String
+	image: Upload
+}
+
+input CreatePasswordResetInput {
+	usernameOrEmail: String!
+}
+
+input CreateTopicInput {
+	title: String!
+	description: String
+}
+
+"""
+Implement the DateTime<FixedOffset> scalar
+
+The input/output is a string in RFC3339 format.
+"""
+scalar DateTime
+
+interface Entity {
+	id: ID!
+	kind: EntityKind!
+	username: String!
+	displayName: String!
+	image: Url
+	imageThumbnail: Url
+	location: String
+	github: String
+	linkedin: String
+	website: String
+	bio: String
+	createdAt: DateTime!
+	viewerCan(action: Action!, asOrganization: ID): Boolean!
+}
+
+type EntityConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [EntityEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Entity!]!
+}
+
+"""
+An edge in a connection.
+"""
+type EntityEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Entity!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+enum EntityKind {
+	USER
+	ORGANIZATION
+}
+
+
+
+
+input LoginUserInput {
+	usernameOrEmail: String!
+	password: String!
+}
+
+type Mutation {
+	signupUser(input: SignupUserInput!): UserEdge!
+	loginUser(input: LoginUserInput!): UserEdge!
+	logoutUser: Boolean!
+	createPasswordReset(input: CreatePasswordResetInput!): Boolean!
+	resetPassword(input: ResetPasswordInput!): Boolean!
+	updateUser(id: ID!, input: UpdateUserInput!): UserEdge!
+	deleteUser(id: ID!): ID!
+	createCompetition(input: CreateCompetitionInput!): CompetitionEdge!
+	updateCompetition(id: ID!, input: UpdateCompetitionInput!): CompetitionEdge!
+	deleteCompetition(id: ID!): ID!
+	createTopicForCompetition(competitionId: ID!, input: CreateTopicInput!): TopicEdge!
+	updateTopic(id: ID!, input: UpdateTopicInput!): Topic!
+	deleteTopic(id: ID!): ID!
+	createCommentForTopic(topicId: ID!, input: CreateCommentInput!): CommentEdge!
+	createCommentForComment(commentId: ID!, input: CreateCommentInput!): CommentEdge!
+	deleteComment(id: ID!): ID!
+	createOrganization(input: CreateOrganizationInput!): OrganizationEdge!
+	deleteOrganization(id: ID!): ID!
+	updateOrganization(id: ID!, input: UpdateOrganizationInput!): OrganizationEdge!
+	updateOrganizationMembership(organizationId: ID!, userId: ID!, kind: OrganizationMembershipKind!): OrganizationMembershipEdge!
+	deleteOrganizationMembership(id: ID!): ID!
+	transferOrganizationOwnership(organizationId: ID!, toUserId: ID!): [OrganizationMembershipEdge!]!
+	oauth2Authorize(input: Oauth2AuthorizeInput!): Oauth2AuthorizeOutput!
+	oauth2Token(input: Oauth2TokenInput!): Oauth2TokenOutput!
+	oauth2Refresh(input: Oauth2RefreshInput!): Oauth2TokenOutput!
+}
+
+interface Node {
+	id: ID!
+}
+
+input Oauth2AuthorizeInput {
+	clientId: String!
+	state: String
+}
+
+type Oauth2AuthorizeOutput {
+	redirectUri: Url
+	clientError: Boolean!
+	unauthorized: Boolean!
+}
+
+input Oauth2RefreshInput {
+	clientId: String!
+	refreshToken: String!
+}
+
+type Oauth2Token {
+	accessToken: String!
+	refreshToken: String!
+	expiresIn: Int!
+	scope: String!
+}
+
+input Oauth2TokenInput {
+	clientId: String!
+	redirectUri: Url!
+	code: String!
+}
+
+type Oauth2TokenOutput {
+	issued: Oauth2Token
+	clientError: Boolean!
+	unauthorized: Boolean!
+}
+
+type Organization implements Node & Entity {
+	username: String!
+	displayName: String!
+	location: String
+	linkedin: String
+	github: String
+	website: String
+	bio: String
+	createdAt: DateTime!
+	id: ID!
+	kind: EntityKind!
+	image: Url
+	imageThumbnail: Url
+	users(after: String, before: String, first: Int, last: Int): OrganizationMembershipConnection!
+	viewerCan(action: Action!, asOrganization: ID): Boolean!
+}
+
+"""
+An edge in a connection.
+"""
+type OrganizationEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Organization!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+type OrganizationMembership implements Node {
+	kind: OrganizationMembershipKind!
+	id: ID!
+	user: User!
+	organization: Organization!
+	viewerCan(action: Action!, asOrganization: ID): Boolean!
+}
+
+type OrganizationMembershipConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [OrganizationMembershipEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [OrganizationMembership!]!
+}
+
+"""
+An edge in a connection.
+"""
+type OrganizationMembershipEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: OrganizationMembership!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+enum OrganizationMembershipKind {
+	OWNER
+	ADMIN
+	EDITOR
+	READER
+}
+
+"""
+Information about pagination in a connection
+"""
+type PageInfo {
+	"""
+	When paginating backwards, are there more items?
+	"""
+	hasPreviousPage: Boolean!
+	"""
+	When paginating forwards, are there more items?
+	"""
+	hasNextPage: Boolean!
+	"""
+	When paginating backwards, the cursor to continue.
+	"""
+	startCursor: String
+	"""
+	When paginating forwards, the cursor to continue.
+	"""
+	endCursor: String
+}
+
+type Query {
+	node(id: ID!): Node!
+	viewer: User!
+	competitions(after: String, before: String, first: Int, last: Int): CompetitionConnection!
+	competitionBySlug(slug: String!): Competition
+	entities(after: String, before: String, first: Int, last: Int, search: String, kinds: [EntityKind!]): EntityConnection!
+	entityByUsername(username: String!): Entity
+}
+
+input ResetPasswordInput {
+	secret: String!
+	password: String!
+}
+
+input SignupUserInput {
+	username: String!
+	displayName: String!
+	github: String
+	linkedin: String
+	website: Url
+	location: String
+	bio: String
+	image: Upload
+	email: String!
+	password: String!
+}
+
+
+type Topic implements Node {
+	title: String!
+	description: String
+	createdAt: DateTime!
+	id: ID!
+	author: User!
+	competition: Competition
+	numComments: Int!
+	comments(after: String, before: String, first: Int, last: Int): CommentConnection!
+}
+
+type TopicConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [TopicEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Topic!]!
+}
+
+"""
+An edge in a connection.
+"""
+type TopicEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Topic!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+input UpdateCompetitionInput {
+	slug: String
+	title: String
+	shortDescription: String
+	description: String
+	banner: Upload
+	thumbnail: Upload
+}
+
+input UpdateOrganizationInput {
+	username: String
+	displayName: String
+	github: String
+	linkedin: String
+	website: Url
+	location: String
+	bio: String
+	image: Upload
+}
+
+input UpdateTopicInput {
+	title: String
+	description: String
+}
+
+input UpdateUserInput {
+	username: String
+	displayName: String
+	github: String
+	linkedin: String
+	website: Url
+	location: String
+	bio: String
+	image: Upload
+	password: String
+	oldPassword: String
+	email: String
+	jobTitle: String
+	organization: String
+}
+
+scalar Upload
+
+"""
+URL is a String implementing the [URL Standard](http://url.spec.whatwg.org/)
+"""
+scalar Url
+
+type User implements Node & Entity {
+	username: String!
+	displayName: String!
+	location: String
+	linkedin: String
+	github: String
+	website: String
+	bio: String
+	createdAt: DateTime!
+	id: ID!
+	kind: EntityKind!
+	email: String!
+	jobTitle: String
+	organization: String
+	image: Url
+	imageThumbnail: Url
+	"""
+	can this user perform the action on the given resource
+	"""
+	can(action: Action!, on: ID, asOrganization: ID): Boolean!
+	organizations(after: String, before: String, first: Int, last: Int): OrganizationMembershipConnection!
+	viewerCan(action: Action!, asOrganization: ID): Boolean!
+}
+
+"""
+An edge in a connection.
+"""
+type UserEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: User!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+schema {
+	query: Query
+	mutation: Mutation
+}
+
+directive @ifAllowed on FIELD
