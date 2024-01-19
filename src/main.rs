@@ -1,4 +1,5 @@
 mod error;
+mod graphql_client;
 mod login;
 mod test;
 

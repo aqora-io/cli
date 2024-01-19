@@ -1,7 +1,6 @@
 use crate::error::Result;
-use crate::login::get_access_token;
+use crate::graphql_client::graphql_client;
 use clap::Args;
-use url::Url;
 
 #[derive(Args, Debug)]
 #[command(author, version, about)]
@@ -11,6 +10,6 @@ pub struct Test {
 }
 
 pub async fn test(args: Test) -> Result<()> {
-    println!("{:?}", get_access_token(&Url::parse(&args.url)?).await?);
+    let client = graphql_client(args.url.parse()?).await?;
     Ok(())
 }

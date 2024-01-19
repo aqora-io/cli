@@ -26,13 +26,21 @@ use tokio::{
 use url::Url;
 
 const EXPIRATION_PADDING_SEC: i64 = 60;
-const OAUTH_PORTS: &[u16] = &[63400, 10213, 58518, 33080, 16420];
+const CLIENT_ID_PREFIX: &str = "localhost-";
 
 #[derive(Args, Debug)]
 #[command(author, version, about)]
 pub struct Login {
     #[arg(short, long, default_value = "https://app.aqora.io")]
     pub url: String,
+}
+
+fn client_id() -> String {
+    let hostname = hostname::get()
+        .ok()
+        .and_then(|s| s.into_string().ok())
+        .unwrap_or_else(|| "unknown".to_string());
+    format!("{CLIENT_ID_PREFIX}{hostname}")
 }
 
 fn graphql_url(url: &Url) -> Result<Url> {
@@ -44,38 +52,19 @@ impl Login {
         Ok(Url::parse(&self.url)?)
     }
 
-    fn client_id(&self, port: u16) -> String {
-        format!("local{port}")
-    }
-
-    fn redirect_url(&self, port: u16) -> Result<Url> {
-        Ok(Url::parse(&format!("http://localhost:{port}"))?)
-    }
-
     fn graphql_url(&self) -> Result<Url> {
         graphql_url(&self.aqora_url()?)
     }
 
-    fn authorize_url(&self, port: u16, state: &str) -> Result<Url> {
+    fn authorize_url(&self, client_id: &str, redirect_uri: &Url, state: &str) -> Result<Url> {
         let mut url = self.aqora_url()?.join("/oauth2/authorize")?;
         url.query_pairs_mut()
-            .append_pair("client_id", &self.client_id(port))
+            .append_pair("client_id", client_id)
             .append_pair("state", state)
+            .append_pair("redirect_uri", &redirect_uri.to_string())
             .finish();
         Ok(url)
     }
-}
-
-async fn tcp_listen() -> Result<(u16, TcpListener)> {
-    for port in OAUTH_PORTS.iter().copied() {
-        if let Ok(listener) = TcpListener::bind(("127.0.0.1", port)).await {
-            return Ok((port, listener));
-        }
-    }
-    Err(error::user(
-        "Could not bind to any port for OAuth callback",
-        &format!("Make sure at least one of ports {OAUTH_PORTS:?} is free"),
-    ))
 }
 
 #[derive(Deserialize, Debug)]
@@ -150,15 +139,22 @@ async fn shutdown_signal() {
     }
 }
 
-async fn get_oauth_code(login: &Login) -> Result<Option<(u16, String)>> {
-    let (port, listener) = tcp_listen().await?;
+async fn get_oauth_code(login: &Login, client_id: &str) -> Result<Option<(Url, String)>> {
+    let listener = TcpListener::bind("127.0.0.1:0").await.map_err(|e| {
+        error::user(
+            &format!("Could not bind to any port for OAuth callback: {e:?}"),
+            "Make sure you have permission to bind to a network port",
+        )
+    })?;
+    let port = listener.local_addr()?.port();
+    let redirect_uri = Url::parse(&format!("http://localhost:{port}"))?;
     let session = hex::encode(rand::random::<[u8; 16]>());
     let (tx, rx) = oneshot::channel();
     let state = ServerState::new(tx);
     let router = Router::<ServerState<LoginResponse>>::new()
         .route("/", get(login_callback))
         .with_state(state);
-    let authorize_url = login.authorize_url(port, &session)?;
+    let authorize_url = login.authorize_url(client_id, &redirect_uri, &session)?;
     println!("Logging in...");
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
@@ -182,7 +178,7 @@ async fn get_oauth_code(login: &Login) -> Result<Option<(u16, String)>> {
             "This is a bug, please report it",
         ));
     }
-    Ok(Some((port, res.code)))
+    Ok(Some((redirect_uri, res.code)))
 }
 
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
@@ -334,9 +330,11 @@ where
 }
 
 pub async fn write_credentials(file: Arc<Mutex<CredentialsFile>>, login: Login) -> Result<()> {
-    let (port, code) = if let Some(res) = get_oauth_code(&login).await? {
+    let client_id = client_id();
+    let (redirect_uri, code) = if let Some(res) = get_oauth_code(&login, &client_id).await? {
         res
     } else {
+        // cancelled
         return Ok(());
     };
     let client = reqwest::Client::new();
@@ -344,9 +342,9 @@ pub async fn write_credentials(file: Arc<Mutex<CredentialsFile>>, login: Login) 
         &client,
         login.graphql_url()?,
         oauth2_token_mutation::Variables {
-            client_id: login.client_id(port),
+            client_id: client_id.clone(),
             code,
-            redirect_uri: login.redirect_url(port)?,
+            redirect_uri,
         },
     )
     .await?
@@ -360,7 +358,7 @@ pub async fn write_credentials(file: Arc<Mutex<CredentialsFile>>, login: Login) 
     .oauth2_token;
     if let Some(issued) = result.issued {
         let credentials = Credentials {
-            client_id: login.client_id(port),
+            client_id,
             access_token: issued.access_token,
             refresh_token: issued.refresh_token,
             expires_at: Utc::now() + Duration::seconds(issued.expires_in),
@@ -423,7 +421,7 @@ async fn read_credentials(
     .oauth2_refresh;
     let credentials = if let Some(issued) = result.issued {
         let credentials = Credentials {
-            client_id: credentials.client_id.clone(),
+            client_id: credentials.client_id,
             access_token: issued.access_token,
             refresh_token: issued.refresh_token,
             expires_at: Utc::now() + Duration::seconds(issued.expires_in),

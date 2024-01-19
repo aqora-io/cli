@@ -28,6 +28,12 @@ impl From<reqwest::Error> for Error {
     }
 }
 
+impl From<reqwest::header::InvalidHeaderValue> for Error {
+    fn from(e: reqwest::header::InvalidHeaderValue) -> Self {
+        system(&format!("Invalid header value: {e}"), "")
+    }
+}
+
 impl From<serde_json::Error> for Error {
     fn from(e: serde_json::Error) -> Self {
         system(&format!("Error parsing JSON: {e}"), "")
