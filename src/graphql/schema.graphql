@@ -70,7 +70,7 @@ type Competition implements Node {
 	createdAt: DateTime!
 	id: ID!
 	viewerCan(action: Action!, asOrganization: ID): Boolean!
-	host: User!
+	host: Entity!
 	banner: Url
 	thumbnail: Url
 	topics(after: String, before: String, first: Int, last: Int): TopicConnection!
@@ -136,6 +136,14 @@ input CreatePasswordResetInput {
 input CreateTopicInput {
 	title: String!
 	description: String
+}
+
+type DataSet {
+	id: ID!
+	viewerCan(action: Action!, asOrganization: ID): Boolean!
+	useCase: UseCase!
+	downloadUrl: Url!
+	uploadUrl: Url
 }
 
 """
@@ -229,6 +237,7 @@ type Mutation {
 	oauth2Authorize(input: Oauth2AuthorizeInput!): Oauth2AuthorizeOutput!
 	oauth2Token(input: Oauth2TokenInput!): Oauth2TokenOutput!
 	oauth2Refresh(input: Oauth2RefreshInput!): Oauth2TokenOutput!
+	updateUseCase(competitionId: ID!, input: UpdateUseCaseInput!): UseCaseEdge!
 }
 
 interface Node {
@@ -238,6 +247,7 @@ interface Node {
 input Oauth2AuthorizeInput {
 	clientId: String!
 	state: String
+	redirectUri: Url
 }
 
 type Oauth2AuthorizeOutput {
@@ -270,7 +280,7 @@ type Oauth2TokenOutput {
 	unauthorized: Boolean!
 }
 
-type Organization implements Node & Entity {
+type Organization implements Entity & Node {
 	username: String!
 	displayName: String!
 	location: String
@@ -381,6 +391,8 @@ input ResetPasswordInput {
 	password: String!
 }
 
+scalar Semver
+
 input SignupUserInput {
 	username: String!
 	displayName: String!
@@ -400,7 +412,8 @@ type Topic implements Node {
 	description: String
 	createdAt: DateTime!
 	id: ID!
-	author: User!
+	viewerCan(action: Action!, asOrganization: ID): Boolean!
+	author: Entity!
 	competition: Competition
 	numComments: Int!
 	comments(after: String, before: String, first: Int, last: Int): CommentConnection!
@@ -460,6 +473,10 @@ input UpdateTopicInput {
 	description: String
 }
 
+input UpdateUseCaseInput {
+	version: Semver!
+}
+
 input UpdateUserInput {
 	username: String
 	displayName: String
@@ -482,6 +499,31 @@ scalar Upload
 URL is a String implementing the [URL Standard](http://url.spec.whatwg.org/)
 """
 scalar Url
+
+type UseCase implements Node {
+	version: Semver!
+	validated: Boolean!
+	createdAt: DateTime!
+	id: ID!
+	viewerCan(action: Action!, asOrganization: ID): Boolean!
+	entity: Entity!
+	competition: Competition!
+	dataSet: DataSet!
+}
+
+"""
+An edge in a connection.
+"""
+type UseCaseEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: UseCase!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
 
 type User implements Node & Entity {
 	username: String!

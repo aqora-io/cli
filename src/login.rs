@@ -1,4 +1,7 @@
-use crate::error::{self, Result};
+use crate::{
+    error::{self, Result},
+    graphql_client::graphql_url,
+};
 use axum::{
     extract::{Query, State},
     response::Html,
@@ -41,10 +44,6 @@ fn client_id() -> String {
         .and_then(|s| s.into_string().ok())
         .unwrap_or_else(|| "unknown".to_string());
     format!("{CLIENT_ID_PREFIX}{hostname}")
-}
-
-fn graphql_url(url: &Url) -> Result<Url> {
-    Ok(url.join("/graphql")?)
 }
 
 impl Login {

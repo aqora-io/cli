@@ -1,25 +1,25 @@
 mod error;
 mod graphql_client;
 mod login;
-mod test;
+mod upload;
 
 use clap::Parser;
 use login::{login, Login};
 use std::process::exit;
-use test::{test, Test};
+use upload::{upload, Upload};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
 enum Cli {
     Login(Login),
-    Test(Test),
+    Upload(Upload),
 }
 
 #[tokio::main]
 async fn main() {
     if let Err(e) = match Cli::parse() {
         Cli::Login(args) => login(args).await,
-        Cli::Test(args) => test(args).await,
+        Cli::Upload(args) => upload(args).await,
     } {
         eprintln!("{}", e);
         exit(1)
