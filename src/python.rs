@@ -63,6 +63,7 @@ pub async fn build_package(input: impl AsRef<Path>, output: impl AsRef<Path>) ->
     let status = tokio::process::Command::new(PYTHON_PATH.as_os_str())
         .arg("-m")
         .arg("build")
+        .arg("--sdist")
         .arg("--outdir")
         .arg(output.as_ref().as_os_str())
         .arg(input.as_ref().as_os_str())
