@@ -355,6 +355,14 @@ enum OrganizationMembershipKind {
 	READER
 }
 
+type Package {
+	id: ID!
+	viewerCan(action: Action!, asOrganization: ID): Boolean!
+	useCase: UseCase!
+	downloadUrl: Url!
+	uploadUrl: Url
+}
+
 """
 Information about pagination in a connection
 """
@@ -509,6 +517,7 @@ type UseCase implements Node {
 	entity: Entity!
 	competition: Competition!
 	dataSet: DataSet!
+	package: Package!
 }
 
 """

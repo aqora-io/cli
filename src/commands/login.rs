@@ -13,6 +13,7 @@ use chrono::{Duration, Utc};
 use clap::Args;
 use futures::prelude::*;
 use graphql_client::GraphQLQuery;
+use indicatif::ProgressBar;
 use serde::Deserialize;
 use std::{future::IntoFuture, sync::Arc};
 use tokio::{
@@ -53,7 +54,7 @@ impl Login {
         url.query_pairs_mut()
             .append_pair("client_id", client_id)
             .append_pair("state", state)
-            .append_pair("redirect_uri", &redirect_uri.to_string())
+            .append_pair("redirect_uri", redirect_uri.as_ref())
             .finish();
         Ok(url)
     }
@@ -100,7 +101,7 @@ where
             tokio::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 if tx.send(value).is_err() {
-                    println!("Failed to send OAuth callback response!");
+                    eprintln!("Failed to send OAuth callback response!");
                 }
             });
         }
@@ -131,7 +132,11 @@ async fn shutdown_signal() {
     }
 }
 
-async fn get_oauth_code(login: &Login, client_id: &str) -> Result<Option<(Url, String)>> {
+async fn get_oauth_code(
+    login: &Login,
+    client_id: &str,
+    progress: &ProgressBar,
+) -> Result<Option<(Url, String)>> {
     let listener = TcpListener::bind("127.0.0.1:0").await.map_err(|e| {
         error::user(
             &format!("Could not bind to any port for OAuth callback: {e:?}"),
@@ -147,14 +152,15 @@ async fn get_oauth_code(login: &Login, client_id: &str) -> Result<Option<(Url, S
         .route("/", get(login_callback))
         .with_state(state);
     let authorize_url = login.authorize_url(client_id, &redirect_uri, &session)?;
-    println!("Logging in...");
+    let cloned_progress = progress.clone();
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        println!("Opening {authorize_url}...");
+        cloned_progress.set_message("Opening {authorize_url}...");
         if open::that(authorize_url.as_str()).is_err() {
-            println!("Failed to open browser, please open {authorize_url} manually");
+            cloned_progress
+                .set_message("Failed to open browser, please open {authorize_url} manually");
         }
-        println!("Waiting for response...");
+        cloned_progress.set_message("Waiting for browser response...");
     });
     let res = tokio::select! {
         state = rx => state?,
@@ -181,42 +187,19 @@ async fn get_oauth_code(login: &Login, client_id: &str) -> Result<Option<(Url, S
 )]
 pub struct Oauth2TokenMutation;
 
-async fn config_dir() -> Result<std::path::PathBuf> {
-    let mut path = dirs::data_dir().or_else(dirs::config_dir).ok_or_else(|| {
-        error::system(
-            "Could not find config directory",
-            "This is a bug, please report it",
-        )
-    })?;
-    path.push("aqora");
-    tokio::fs::create_dir_all(&path).await.map_err(|e| {
-        error::system(
-            &format!(
-                "Failed to create config directory at {}: {:?}",
-                path.display(),
-                e
-            ),
-            "",
-        )
-    })?;
-    Ok(path)
-}
-
-pub async fn credentials_path() -> Result<std::path::PathBuf> {
-    Ok(config_dir().await?.join("credentials.json"))
-}
-
 pub async fn login(login: Login) -> Result<()> {
     with_locked_credentials(|file| {
         async move {
+            let progress = ProgressBar::new_spinner().with_message("Logging in...");
+            progress.enable_steady_tick(std::time::Duration::from_millis(100));
             let client_id = client_id();
-            let (redirect_uri, code) = if let Some(res) = get_oauth_code(&login, &client_id).await?
-            {
-                res
-            } else {
-                // cancelled
-                return Ok(());
-            };
+            let (redirect_uri, code) =
+                if let Some(res) = get_oauth_code(&login, &client_id, &progress).await? {
+                    res
+                } else {
+                    // cancelled
+                    return Ok(());
+                };
             let client = reqwest::Client::new();
             let result = graphql_client::reqwest::post_graphql::<Oauth2TokenMutation, _>(
                 &client,
@@ -250,10 +233,7 @@ pub async fn login(login: Login) -> Result<()> {
                     "This is a bug, please report it",
                 ));
             }
-            println!("Logged in successfully!",);
-            if let Ok(path) = credentials_path().await {
-                println!("Credentials saved to {}", path.display());
-            }
+            progress.finish_with_message("Logged in successfully!");
             Ok(())
         }
         .boxed()

@@ -533,6 +533,7 @@ dependencies = [
  "hex",
  "hostname",
  "human-errors",
+ "indicatif",
  "lazy_static",
  "maturin",
  "open",

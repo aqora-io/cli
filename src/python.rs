@@ -38,21 +38,22 @@ async fn ensure_build_installed() -> Result<()> {
             "Please install it and try again",
         ));
     }
-    let status = tokio::process::Command::new(PYTHON_PATH.as_os_str())
+    let output = tokio::process::Command::new(PYTHON_PATH.as_os_str())
         .arg("-m")
         .arg("pip")
         .arg("install")
         .arg("--upgrade")
         .arg("build")
-        .kill_on_drop(true)
-        .spawn()?
-        .wait()
+        .output()
         .await?;
-    if status.success() {
+    if output.status.success() {
         Ok(())
     } else {
         Err(error::system(
-            &format!("Could not install 'build' module: {}", status),
+            &format!(
+                "Could not install 'build' module: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ),
             "",
         ))
     }
@@ -60,21 +61,23 @@ async fn ensure_build_installed() -> Result<()> {
 
 pub async fn build_package(input: impl AsRef<Path>, output: impl AsRef<Path>) -> Result<()> {
     ensure_build_installed().await?;
-    let status = tokio::process::Command::new(PYTHON_PATH.as_os_str())
+    let output = tokio::process::Command::new(PYTHON_PATH.as_os_str())
         .arg("-m")
         .arg("build")
         .arg("--sdist")
         .arg("--outdir")
         .arg(output.as_ref().as_os_str())
         .arg(input.as_ref().as_os_str())
-        .spawn()?
-        .wait()
+        .output()
         .await?;
-    if status.success() {
+    if output.status.success() {
         Ok(())
     } else {
         Err(error::user(
-            &format!("Could not build package: {}", status),
+            &format!(
+                "Could not build package: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ),
             "",
         ))
     }

@@ -1,13 +1,16 @@
 use crate::{
+    compress::compress,
     error::{self, Result},
     graphql_client::{custom_scalars::*, GraphQLClient},
+    python::build_package,
 };
 use clap::Args;
-use flate2::GzBuilder;
+use futures::prelude::*;
 use graphql_client::GraphQLQuery;
+use indicatif::{MultiProgress, ProgressBar};
 use reqwest::header::{CONTENT_LENGTH, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
-use std::{fs::File, path::PathBuf};
+use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 use url::Url;
 
@@ -52,6 +55,35 @@ pub struct CompetitionIdBySlug;
     response_derives = "Debug"
 )]
 pub struct UpdateUseCaseMutation;
+
+async fn upload_file(
+    client: &reqwest::Client,
+    file: impl AsRef<Path>,
+    upload_url: &Url,
+    content_type: &str,
+) -> Result<()> {
+    let file = tokio::fs::File::open(file).await?;
+    let content_len = file.metadata().await?.len();
+    let response = client
+        .put(upload_url.to_string())
+        .header(CONTENT_LENGTH, content_len)
+        .header(CONTENT_TYPE, content_type)
+        .body(file)
+        .send()
+        .await?;
+    if !response.status().is_success() {
+        Err(error::system(
+            &format!(
+                "Could not upload data: [{}] {}",
+                response.status(),
+                response.text().await.unwrap_or("".to_string())
+            ),
+            "",
+        ))
+    } else {
+        Ok(())
+    }
+}
 
 pub async fn upload(args: Upload) -> Result<()> {
     let tempdir = tempdir().map_err(|err| {
@@ -105,35 +137,20 @@ pub async fn upload(args: Upload) -> Result<()> {
         .and_then(|config| config.data)
         .map(|path| args.project_dir.join(path));
 
-    let data_tar_path = if let Some(path) = data_path {
-        let destination = tempdir.path().join(format!("{package_name}.data.tar.gz"));
-        let mut file = File::create(destination.clone()).map_err(|err| {
-            error::user(
-                &format!("Could not create {}: {}", destination.display(), err),
-                "Please make sure you have permission to create files in this directory",
-            )
-        })?;
-        let mut gz = GzBuilder::new().write(&mut file, Default::default());
-        let mut tar = tar::Builder::new(&mut gz);
-        tar.append_dir_all("data", path.clone()).map_err(|err| {
-            error::user(
-                &format!(
-                    "Could not add data contents to tar from {}: {}",
-                    path.display(),
-                    err
-                ),
-                "Please make sure the data directory exists and you have permission to read it",
-            )
-        })?;
-        tar.finish()
-            .map_err(|err| error::system(&format!("Could not finish tar: {}", err), ""))?;
-        drop(tar);
-        gz.finish()
-            .map_err(|err| error::system(&format!("Could not finish gz: {}", err), ""))?;
-        Some(destination)
-    } else {
-        None
-    };
+    if let Some(data_path) = data_path.as_ref() {
+        if !data_path.exists() {
+            return Err(error::user(
+                &format!("{} does not exist", data_path.display()),
+                "Please make sure the data directory exists",
+            ));
+        }
+    }
+
+    let m = MultiProgress::new();
+
+    let mut use_case_pb = ProgressBar::new_spinner().with_message("Updating version");
+    use_case_pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    use_case_pb = m.add(use_case_pb);
 
     let client = GraphQLClient::new(args.url.parse()?).await?;
     let competition_id = client
@@ -156,32 +173,77 @@ pub async fn upload(args: Upload) -> Result<()> {
         .update_use_case
         .node;
 
+    use_case_pb.finish_with_message("Version updated");
+
     let s3_client = reqwest::Client::new();
 
-    if let Some(path) = data_tar_path {
-        let file = tokio::fs::File::open(path).await?;
-        let content_len = file.metadata().await?.len();
-        let url = use_case.data_set.upload_url.as_ref().ok_or_else(|| {
-            error::system("No data set upload URL", "This is a bug, please report it")
-        })?;
-        let response = s3_client
-            .put(url.to_string())
-            .header(CONTENT_LENGTH, content_len)
-            .header(CONTENT_TYPE, "application/gzip")
-            .body(file)
-            .send()
-            .await?;
-        if !response.status().is_success() {
+    let data_fut = if let Some(path) = data_path {
+        let upload_url = if let Some(url) = use_case.data_set.upload_url.as_ref() {
+            url
+        } else {
             return Err(error::system(
-                &format!(
-                    "Could not upload data: [{}] {}",
-                    response.status(),
-                    response.text().await.unwrap_or("".to_string())
-                ),
-                "",
+                "No upload URL found",
+                "This is a bug, please report it",
             ));
+        };
+        let data_tar_file = tempdir.path().join(format!("{package_name}.data.tar.gz"));
+        let mut data_pb = ProgressBar::new_spinner().with_message("Compressing data");
+        data_pb.enable_steady_tick(std::time::Duration::from_millis(100));
+        data_pb = m.add(data_pb);
+
+        let data_pb_cloned = data_pb.clone();
+        let client = s3_client.clone();
+        async move {
+            compress(path, "data", &data_tar_file)?;
+            data_pb_cloned.set_message("Uploading data");
+            upload_file(&client, data_tar_file, upload_url, "application/gzip").await
         }
-    }
+        .map(move |res| {
+            if res.is_ok() {
+                data_pb.finish_with_message("Data uploaded");
+            } else {
+                data_pb.finish_with_message("An error occurred while processing data");
+            }
+            res
+        })
+        .boxed()
+    } else {
+        futures::future::ok(()).boxed()
+    };
+
+    let package_fut = {
+        let upload_url = if let Some(url) = use_case.package.upload_url.as_ref() {
+            url
+        } else {
+            return Err(error::system(
+                "No upload URL found",
+                "This is a bug, please report it",
+            ));
+        };
+        let package_tar_file = tempdir.path().join(format!("{package_name}.tar.gz"));
+        let mut package_pb = ProgressBar::new_spinner().with_message("Building package");
+        package_pb.enable_steady_tick(std::time::Duration::from_millis(100));
+        package_pb = m.add(package_pb);
+
+        let package_pb_cloned = package_pb.clone();
+        let client = s3_client.clone();
+        async move {
+            build_package(&args.project_dir, tempdir.path()).await?;
+            package_pb_cloned.set_message("Uploading package");
+            upload_file(&client, package_tar_file, upload_url, "application/gzip").await
+        }
+        .map(move |res| {
+            if res.is_ok() {
+                package_pb.finish_with_message("Package uploaded");
+            } else {
+                package_pb.finish_with_message("An error occurred while processing package");
+            }
+            res
+        })
+        .boxed()
+    };
+
+    futures::future::try_join(data_fut, package_fut).await?;
 
     Ok(())
 }

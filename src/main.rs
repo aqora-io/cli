@@ -1,4 +1,5 @@
 mod commands;
+mod compress;
 mod credentials;
 mod error;
 mod graphql_client;

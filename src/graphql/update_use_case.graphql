@@ -4,6 +4,9 @@ mutation UpdateUseCaseMutation($competition_id: ID!, $version: Semver!) {
       dataSet {
         uploadUrl
       }
+      package {
+        uploadUrl
+      }
     }
   }
 }
