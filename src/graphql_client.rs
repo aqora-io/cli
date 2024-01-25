@@ -1,5 +1,5 @@
+use crate::credentials::get_access_token;
 use crate::error::{self, Error, Result};
-use crate::login::get_access_token;
 use graphql_client::{reqwest::post_graphql, GraphQLQuery};
 use reqwest::header::{AUTHORIZATION, USER_AGENT};
 use thiserror::Error;

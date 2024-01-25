@@ -1,0 +1,7 @@
+pyproject.toml
+src/hello/__init__.py
+src/hello/module.py
+src/hello.egg-info/PKG-INFO
+src/hello.egg-info/SOURCES.txt
+src/hello.egg-info/dependency_links.txt
+src/hello.egg-info/top_level.txt
