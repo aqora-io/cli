@@ -51,7 +51,7 @@ pub fn graphql_url(url: &Url) -> Result<Url> {
 
 impl GraphQLClient {
     pub async fn new(url: Url) -> Result<Self> {
-        let headers = if let Some(access_token) = get_access_token(&url).await? {
+        let headers = if let Some(access_token) = get_access_token(url.clone()).await? {
             [
                 (AUTHORIZATION, format!("Bearer {}", access_token).parse()?),
                 (USER_AGENT, "aqora".parse()?),

@@ -4,13 +4,13 @@ use crate::{
 };
 use chrono::{DateTime, Duration, Utc};
 use fs4::tokio::AsyncFileExt;
+use futures::{future::BoxFuture, prelude::*};
 use graphql_client::GraphQLQuery;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, future::Future, io::SeekFrom, sync::Arc};
+use std::{collections::HashMap, io::SeekFrom};
 use tokio::{
     fs::OpenOptions,
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
-    sync::Mutex,
 };
 use url::Url;
 
@@ -62,10 +62,9 @@ pub struct CredentialsFile {
     pub credentials: HashMap<Url, Credentials>,
 }
 
-pub async fn with_locked_credentials<T, U, F, Fut>(args: T, f: F) -> Result<U>
+pub async fn with_locked_credentials<T, F>(f: F) -> Result<T>
 where
-    F: FnOnce(Arc<Mutex<CredentialsFile>>, T) -> Fut,
-    Fut: Future<Output = Result<U>>,
+    F: for<'a> FnOnce(&'a mut CredentialsFile) -> BoxFuture<'a, Result<T>>,
 {
     let path = credentials_path().await?;
     let mut file = OpenOptions::new()
@@ -106,7 +105,7 @@ where
                 "",
             )
         })?;
-        let credentials = if contents.is_empty() {
+        let mut credentials = if contents.is_empty() {
             CredentialsFile {
                 credentials: HashMap::new(),
             }
@@ -123,14 +122,12 @@ where
             })?
         };
         let original_credentials = credentials.clone();
-        let credentials = Arc::new(Mutex::new(credentials));
-        let res = f(credentials.clone(), args).await?;
-        let credentials = credentials.lock().await;
-        if *credentials != original_credentials {
+        let res = f(&mut credentials).await?;
+        if credentials != original_credentials {
             file.set_len(0).await?;
             file.seek(SeekFrom::Start(0)).await?;
             file.write_all(
-                serde_json::to_vec_pretty(&*credentials)
+                serde_json::to_vec_pretty(&credentials)
                     .map_err(|e| {
                         error::system(&format!("Failed to serialize credentials: {}", e), "")
                     })?
@@ -172,55 +169,53 @@ where
 )]
 pub struct Oauth2RefreshMutation;
 
-async fn read_credentials(
-    file: Arc<Mutex<CredentialsFile>>,
-    url: Url,
-) -> Result<Option<Credentials>> {
-    let credentials = match file.lock().await.credentials.get(&url).cloned() {
-        Some(credentials) => credentials,
-        None => return Ok(None),
-    };
-    if (credentials.expires_at - Duration::seconds(EXPIRATION_PADDING_SEC)) > Utc::now() {
-        return Ok(Some(credentials));
-    }
-    let client = reqwest::Client::new();
-    let result = graphql_client::reqwest::post_graphql::<Oauth2RefreshMutation, _>(
-        &client,
-        graphql_url(&url)?,
-        oauth2_refresh_mutation::Variables {
-            client_id: credentials.client_id.clone(),
-            refresh_token: credentials.refresh_token,
-        },
-    )
-    .await?
-    .data
-    .ok_or_else(|| {
-        error::system(
-            "GraphQL response missing data",
-            "This is a bug, please report it",
-        )
-    })?
-    .oauth2_refresh;
-    let credentials = if let Some(issued) = result.issued {
-        let credentials = Credentials {
-            client_id: credentials.client_id,
-            access_token: issued.access_token,
-            refresh_token: issued.refresh_token,
-            expires_at: Utc::now() + Duration::seconds(issued.expires_in),
-        };
-        let mut file = file.lock().await;
-        file.credentials.insert(url, credentials.clone());
-        credentials
-    } else {
-        return Err(error::system(
-            "GraphQL response missing issued",
-            "This is a bug, please report it",
-        ));
-    };
-    Ok(Some(credentials))
-}
-
-pub async fn get_access_token(url: &Url) -> Result<Option<String>> {
-    let credentials = with_locked_credentials(url.clone(), read_credentials).await?;
+pub async fn get_access_token(url: Url) -> Result<Option<String>> {
+    let credentials = with_locked_credentials(|file| {
+        async move {
+            let credentials = match file.credentials.get(&url).cloned() {
+                Some(credentials) => credentials,
+                None => return Ok(None),
+            };
+            if (credentials.expires_at - Duration::seconds(EXPIRATION_PADDING_SEC)) > Utc::now() {
+                return Ok(Some(credentials));
+            }
+            let client = reqwest::Client::new();
+            let result = graphql_client::reqwest::post_graphql::<Oauth2RefreshMutation, _>(
+                &client,
+                graphql_url(&url)?,
+                oauth2_refresh_mutation::Variables {
+                    client_id: credentials.client_id.clone(),
+                    refresh_token: credentials.refresh_token,
+                },
+            )
+            .await?
+            .data
+            .ok_or_else(|| {
+                error::system(
+                    "GraphQL response missing data",
+                    "This is a bug, please report it",
+                )
+            })?
+            .oauth2_refresh;
+            let credentials = if let Some(issued) = result.issued {
+                let credentials = Credentials {
+                    client_id: credentials.client_id,
+                    access_token: issued.access_token,
+                    refresh_token: issued.refresh_token,
+                    expires_at: Utc::now() + Duration::seconds(issued.expires_in),
+                };
+                file.credentials.insert(url.clone(), credentials.clone());
+                credentials
+            } else {
+                return Err(error::system(
+                    "GraphQL response missing issued",
+                    "This is a bug, please report it",
+                ));
+            };
+            Ok(Some(credentials))
+        }
+        .boxed()
+    })
+    .await?;
     Ok(credentials.map(|credentials| credentials.access_token))
 }

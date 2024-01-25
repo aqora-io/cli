@@ -1,4 +1,4 @@
-use crate::credentials::{with_locked_credentials, Credentials, CredentialsFile};
+use crate::credentials::{with_locked_credentials, Credentials};
 use crate::{
     error::{self, Result},
     graphql_client::graphql_url,
@@ -11,6 +11,7 @@ use axum::{
 };
 use chrono::{Duration, Utc};
 use clap::Args;
+use futures::prelude::*;
 use graphql_client::GraphQLQuery;
 use serde::Deserialize;
 use std::{future::IntoFuture, sync::Arc};
@@ -205,55 +206,57 @@ pub async fn credentials_path() -> Result<std::path::PathBuf> {
     Ok(config_dir().await?.join("credentials.json"))
 }
 
-pub async fn write_credentials(file: Arc<Mutex<CredentialsFile>>, login: Login) -> Result<()> {
-    let client_id = client_id();
-    let (redirect_uri, code) = if let Some(res) = get_oauth_code(&login, &client_id).await? {
-        res
-    } else {
-        // cancelled
-        return Ok(());
-    };
-    let client = reqwest::Client::new();
-    let result = graphql_client::reqwest::post_graphql::<Oauth2TokenMutation, _>(
-        &client,
-        login.graphql_url()?,
-        oauth2_token_mutation::Variables {
-            client_id: client_id.clone(),
-            code,
-            redirect_uri,
-        },
-    )
-    .await?
-    .data
-    .ok_or_else(|| {
-        error::system(
-            "GraphQL response missing data",
-            "This is a bug, please report it",
-        )
-    })?
-    .oauth2_token;
-    if let Some(issued) = result.issued {
-        let credentials = Credentials {
-            client_id,
-            access_token: issued.access_token,
-            refresh_token: issued.refresh_token,
-            expires_at: Utc::now() + Duration::seconds(issued.expires_in),
-        };
-        let mut file = file.lock().await;
-        file.credentials.insert(login.aqora_url()?, credentials);
-    } else {
-        return Err(error::system(
-            "GraphQL response missing issued",
-            "This is a bug, please report it",
-        ));
-    }
-    println!("Logged in successfully!",);
-    if let Ok(path) = credentials_path().await {
-        println!("Credentials saved to {}", path.display());
-    }
-    Ok(())
-}
-
 pub async fn login(login: Login) -> Result<()> {
-    with_locked_credentials(login, write_credentials).await
+    with_locked_credentials(|file| {
+        async move {
+            let client_id = client_id();
+            let (redirect_uri, code) = if let Some(res) = get_oauth_code(&login, &client_id).await?
+            {
+                res
+            } else {
+                // cancelled
+                return Ok(());
+            };
+            let client = reqwest::Client::new();
+            let result = graphql_client::reqwest::post_graphql::<Oauth2TokenMutation, _>(
+                &client,
+                login.graphql_url()?,
+                oauth2_token_mutation::Variables {
+                    client_id: client_id.clone(),
+                    code,
+                    redirect_uri,
+                },
+            )
+            .await?
+            .data
+            .ok_or_else(|| {
+                error::system(
+                    "GraphQL response missing data",
+                    "This is a bug, please report it",
+                )
+            })?
+            .oauth2_token;
+            if let Some(issued) = result.issued {
+                let credentials = Credentials {
+                    client_id,
+                    access_token: issued.access_token,
+                    refresh_token: issued.refresh_token,
+                    expires_at: Utc::now() + Duration::seconds(issued.expires_in),
+                };
+                file.credentials.insert(login.aqora_url()?, credentials);
+            } else {
+                return Err(error::system(
+                    "GraphQL response missing issued",
+                    "This is a bug, please report it",
+                ));
+            }
+            println!("Logged in successfully!",);
+            if let Ok(path) = credentials_path().await {
+                println!("Credentials saved to {}", path.display());
+            }
+            Ok(())
+        }
+        .boxed()
+    })
+    .await
 }
