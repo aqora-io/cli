@@ -52,6 +52,12 @@ impl From<pyo3::PyErr> for Error {
     }
 }
 
+impl From<dialoguer::Error> for Error {
+    fn from(e: dialoguer::Error) -> Self {
+        system(&format!("Could not interact with the terminal: {e}"), "")
+    }
+}
+
 impl IntoResponse for Error {
     fn into_response(self) -> Response<Body> {
         let body = Body::new(format!("{}", self));

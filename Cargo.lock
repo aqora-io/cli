@@ -533,6 +533,7 @@ dependencies = [
  "hex",
  "hostname",
  "human-errors",
+ "lazy_static",
  "maturin",
  "open",
  "pyo3",

@@ -1,4 +1,4 @@
-use crate::{error::Result, python::get_python_executable};
+use crate::{error::Result, python::build_package};
 use clap::Args;
 use std::path::PathBuf;
 
@@ -11,7 +11,9 @@ pub struct Test {
     pub project_dir: PathBuf,
 }
 
-pub async fn test(_: Test) -> Result<()> {
-    dbg!(get_python_executable()?);
+pub async fn test(args: Test) -> Result<()> {
+    // TODO change this to a tempdir
+    let outdir = args.project_dir.join("dist");
+    build_package(&args.project_dir, &outdir).await?;
     Ok(())
 }
