@@ -108,6 +108,14 @@ pub struct CompetitionIdBySlug;
 )]
 pub struct UpdateUseCaseMutation;
 
+#[derive(GraphQLQuery)]
+#[graphql(
+    query_path = "src/graphql/validate_use_case.graphql",
+    schema_path = "src/graphql/schema.graphql",
+    response_derives = "Debug"
+)]
+pub struct ValidateUseCaseMutation;
+
 async fn upload_file(
     client: &reqwest::Client,
     file: impl AsRef<Path>,
@@ -162,14 +170,20 @@ pub async fn upload_use_case(args: Upload, competition_id: Id, pyproject: PyProj
         .and_then(|config| config.data)
         .map(|path| args.project_dir.join(path));
 
-    if let Some(data_path) = data_path.as_ref() {
+    let data_path = if let Some(data_path) = data_path.as_ref() {
         if !data_path.exists() {
             return Err(error::user(
                 &format!("{} does not exist", data_path.display()),
                 "Please make sure the data directory exists",
             ));
         }
-    }
+        data_path
+    } else {
+        return Err(error::user(
+            "No data directory given",
+            "Please add a data directory to 'tools.aqora' in your pyproject.toml",
+        ));
+    };
 
     let m = MultiProgress::new();
 
@@ -191,7 +205,7 @@ pub async fn upload_use_case(args: Upload, competition_id: Id, pyproject: PyProj
 
     let s3_client = reqwest::Client::new();
 
-    let data_fut = if let Some(path) = data_path {
+    let data_fut = {
         let upload_url = if let Some(url) = use_case.data_set.upload_url.as_ref() {
             url
         } else {
@@ -208,7 +222,7 @@ pub async fn upload_use_case(args: Upload, competition_id: Id, pyproject: PyProj
         let data_pb_cloned = data_pb.clone();
         let client = s3_client.clone();
         async move {
-            compress(path, "data", &data_tar_file)?;
+            compress(data_path, "data", &data_tar_file)?;
             data_pb_cloned.set_message("Uploading data");
             upload_file(&client, data_tar_file, upload_url, "application/gzip").await
         }
@@ -221,8 +235,6 @@ pub async fn upload_use_case(args: Upload, competition_id: Id, pyproject: PyProj
             res
         })
         .boxed()
-    } else {
-        futures::future::ok(()).boxed()
     };
 
     let package_fut = {
@@ -258,6 +270,16 @@ pub async fn upload_use_case(args: Upload, competition_id: Id, pyproject: PyProj
     };
 
     futures::future::try_join(data_fut, package_fut).await?;
+
+    let mut validate_pb = ProgressBar::new_spinner().with_message("Validating use case");
+    validate_pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    validate_pb = m.add(validate_pb);
+
+    let _ = client
+        .send::<ValidateUseCaseMutation>(validate_use_case_mutation::Variables { id: use_case.id })
+        .await?;
+
+    validate_pb.finish_with_message("Done!");
 
     Ok(())
 }

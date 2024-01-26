@@ -1,0 +1,7 @@
+mutation ValidateUseCaseMutation($id: ID!) {
+  validateUseCase(id: $id) {
+    node {
+      id
+    }
+  }
+}

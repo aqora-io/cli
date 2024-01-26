@@ -238,6 +238,7 @@ type Mutation {
 	oauth2Token(input: Oauth2TokenInput!): Oauth2TokenOutput!
 	oauth2Refresh(input: Oauth2RefreshInput!): Oauth2TokenOutput!
 	updateUseCase(competitionId: ID!, input: UpdateUseCaseInput!): UseCaseEdge!
+	validateUseCase(id: ID!): UseCaseEdge!
 }
 
 interface Node {

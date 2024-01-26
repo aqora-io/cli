@@ -1,6 +1,7 @@
 mutation UpdateUseCaseMutation($competition_id: ID!, $version: Semver!) {
   updateUseCase(competitionId: $competition_id, input: { version: $version }) {
     node {
+      id
       dataSet {
         uploadUrl
       }
