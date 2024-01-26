@@ -240,6 +240,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bs58"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5353f36341f7451062466f0b755b96ac3a9547e4d7f6b70d603fc721a7d7896"
+dependencies = [
+ "tinyvec",
+]
+
+[[package]]
 name = "bstr"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -522,6 +531,8 @@ name = "cli"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64 0.21.7",
+ "bs58",
  "chrono",
  "clap",
  "dialoguer",
@@ -549,6 +560,7 @@ dependencies = [
  "tokio",
  "toml 0.8.8",
  "url",
+ "uuid",
 ]
 
 [[package]]

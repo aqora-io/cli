@@ -3,6 +3,7 @@ mod compress;
 mod credentials;
 mod error;
 mod graphql_client;
+mod id;
 mod python;
 
 use clap::Parser;
