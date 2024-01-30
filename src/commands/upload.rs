@@ -52,8 +52,8 @@ pub enum PackageName {
 impl FromStr for PackageName {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.starts_with("use-case-") {
-            Id::parse_package_id(s.trim_start_matches("use-case-"), NodeType::Competition)
+        if let Some(package_id) = s.strip_prefix("use-case-") {
+            Id::parse_package_id(package_id, NodeType::Competition)
                 .map_err(|err| {
                     error::user(
                         &format!("Invalid package id: {}", err),
@@ -61,8 +61,8 @@ impl FromStr for PackageName {
                     )
                 })
                 .map(|competition| PackageName::UseCase { competition })
-        } else if s.starts_with("submission-") {
-            if let Some((competition, user)) = s.trim_start_matches("submission-").split_once('-') {
+        } else if let Some(package_id) = s.strip_prefix("submission-") {
+            if let Some((competition, user)) = package_id.split_once('-') {
                 let competition = Id::parse_package_id(competition, NodeType::Competition)
                     .map_err(|err| {
                         error::user(

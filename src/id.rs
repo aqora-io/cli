@@ -2,6 +2,8 @@ use base64::prelude::*;
 use std::{fmt, str::FromStr};
 use uuid::Uuid;
 
+const BASE32_ALPHABET: base32::Alphabet = base32::Alphabet::RFC4648 { padding: false };
+
 pub enum NodeType {
     User,
     Competition,
@@ -60,11 +62,13 @@ impl Id {
         id: impl AsRef<str>,
         ty: NodeType,
     ) -> Result<Id, Box<dyn std::error::Error>> {
-        let id = Uuid::from_slice(&bs58::decode(id.as_ref()).into_vec()?)?;
+        let id = Uuid::from_slice(
+            &base32::decode(BASE32_ALPHABET, id.as_ref()).ok_or("Invalid base32 string")?,
+        )?;
         Ok(Id { id, ty })
     }
 
     pub fn to_package_id(&self) -> String {
-        bs58::encode(self.id).into_string()
+        base32::encode(BASE32_ALPHABET, &self.id.into_bytes()).to_lowercase()
     }
 }
