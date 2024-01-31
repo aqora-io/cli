@@ -1,0 +1,12 @@
+[project]
+name = "submission-aggto77gtj2fhndxvdkr66vav4-aggtnujle573bdzyytng5esbry"
+version = "0.2.0"
+requires-python = ">=3.7"
+
+dependencies = [
+    "pyzx>=0.7.3,<0.8.0",
+]
+
+[build-system]
+requires = ["setuptools>=43.0.0", "wheel"]
+build-backend = "setuptools.build_meta"

@@ -1,39 +1,19 @@
 use crate::{
     compress::compress,
-    error::{self, Error, Result},
+    error::{self, Result},
     graphql_client::{custom_scalars::*, GraphQLClient},
-    id::{Id, NodeType},
-    python::build_package,
+    id::Id,
+    pyproject::{PackageName, PyProject},
+    python::PyEnv,
 };
 use clap::Args;
 use futures::prelude::*;
 use graphql_client::GraphQLQuery;
 use indicatif::{MultiProgress, ProgressBar};
 use reqwest::header::{CONTENT_LENGTH, CONTENT_TYPE};
-use serde::{Deserialize, Serialize};
-use std::{
-    path::{Path, PathBuf},
-    str::FromStr,
-};
+use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 use url::Url;
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct AqoraConfig {
-    pub data: Option<PathBuf>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Tools {
-    pub aqora: Option<AqoraConfig>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct PyProject {
-    pub build_system: Option<pyproject_toml::BuildSystem>,
-    pub project: Option<pyproject_toml::Project>,
-    pub tool: Option<Tools>,
-}
 
 #[derive(Args, Debug)]
 #[command(author, version, about)]
@@ -42,54 +22,6 @@ pub struct Upload {
     pub url: String,
     #[arg(short, long, default_value = ".")]
     pub project_dir: PathBuf,
-}
-
-pub enum PackageName {
-    UseCase { competition: Id },
-    Submission { competition: Id, user: Id },
-}
-
-impl FromStr for PackageName {
-    type Err = Error;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if let Some(package_id) = s.strip_prefix("use-case-") {
-            Id::parse_package_id(package_id, NodeType::Competition)
-                .map_err(|err| {
-                    error::user(
-                        &format!("Invalid package id: {}", err),
-                        "Make sure the package id is valid",
-                    )
-                })
-                .map(|competition| PackageName::UseCase { competition })
-        } else if let Some(package_id) = s.strip_prefix("submission-") {
-            if let Some((competition, user)) = package_id.split_once('-') {
-                let competition = Id::parse_package_id(competition, NodeType::Competition)
-                    .map_err(|err| {
-                        error::user(
-                            &format!("Invalid package id: {}", err),
-                            "Make sure the package id is valid",
-                        )
-                    })?;
-                let user = Id::parse_package_id(user, NodeType::User).map_err(|err| {
-                    error::user(
-                        &format!("Invalid package id: {}", err),
-                        "Make sure the package id is valid",
-                    )
-                })?;
-                Ok(PackageName::Submission { competition, user })
-            } else {
-                Err(error::user(
-                    "Invalid package name: Missing user id",
-                    "Make sure the package id is valid",
-                ))
-            }
-        } else {
-            Err(error::user(
-                "Invalid package name",
-                "Make sure the package name starts with either 'use-case' or 'submission'",
-            ))
-        }
-    }
 }
 
 #[derive(GraphQLQuery)]
@@ -145,30 +77,16 @@ async fn upload_file(
     }
 }
 
-pub async fn upload_use_case(args: Upload, competition_id: Id, pyproject: PyProject) -> Result<()> {
+pub async fn upload_use_case(args: Upload, competition_id: Id, project: PyProject) -> Result<()> {
     let tempdir = tempdir().map_err(|err| {
         error::user(
             &format!("could not create temporary directory: {}", err),
             "Please make sure you have permission to create temporary directories",
         )
     })?;
-    let aqora_config = pyproject.tool.and_then(|tool| tool.aqora);
-    let version = pyproject
-        .project
-        .as_ref()
-        .and_then(|project| project.version.to_owned())
-        .ok_or_else(|| {
-            error::user(
-                "No version given",
-                "Make sure the version is set in the project section \
-                        of your pyproject.toml",
-            )
-        })?;
+    let version = project.version()?;
     let package_name = format!("use-case-{}-{}", competition_id.to_package_id(), version);
-
-    let data_path = aqora_config
-        .and_then(|config| config.data)
-        .map(|path| args.project_dir.join(path));
+    let data_path = project.aqora().data.map(|path| args.project_dir.join(path));
 
     let data_path = if let Some(data_path) = data_path.as_ref() {
         if !data_path.exists() {
@@ -254,7 +172,11 @@ pub async fn upload_use_case(args: Upload, competition_id: Id, pyproject: PyProj
         let package_pb_cloned = package_pb.clone();
         let client = s3_client.clone();
         async move {
-            build_package(&args.project_dir, tempdir.path()).await?;
+            package_pb_cloned.set_message("Initializing Python environment");
+            let env = PyEnv::init(&args.project_dir).await?;
+            package_pb_cloned.set_message("Building package");
+            env.build_package(&args.project_dir, tempdir.path(), Some(&package_pb_cloned))
+                .await?;
             package_pb_cloned.set_message("Uploading package");
             upload_file(&client, package_tar_file, upload_url, "application/gzip").await
         }
@@ -285,35 +207,9 @@ pub async fn upload_use_case(args: Upload, competition_id: Id, pyproject: PyProj
 }
 
 pub async fn upload(args: Upload) -> Result<()> {
-    let pyproject_path = args.project_dir.join("pyproject.toml");
-    let pyproject: PyProject =
-        toml::from_str(&std::fs::read_to_string(&pyproject_path).map_err(|err| {
-            error::user(
-                &format!("could not read {}: {}", pyproject_path.display(), err),
-                "Please run this command in the root of your project or set the --project-dir flag",
-            )
-        })?)
-        .map_err(|err| {
-            error::user(
-                &format!("could not read {}: {}", pyproject_path.display(), err),
-                "Please make sure your pyproject.toml is valid",
-            )
-        })?;
-    let name = pyproject
-        .project
-        .as_ref()
-        .map(|project| project.name.to_owned())
-        .ok_or_else(|| {
-            error::user(
-                "No name given",
-                "Make sure the name is set in the project section \
-                        of your pyproject.toml and it matches the competition",
-            )
-        })?;
-    match name.parse()? {
-        PackageName::UseCase { competition } => upload_use_case(args, competition, pyproject).await,
-        PackageName::Submission { .. } => {
-            todo!()
-        }
+    let project = PyProject::for_project(&args.project_dir)?;
+    match project.name()? {
+        PackageName::UseCase { competition } => upload_use_case(args, competition, project).await,
+        PackageName::Submission { .. } => Err(error::system("Submissions not supported yet", "")),
     }
 }

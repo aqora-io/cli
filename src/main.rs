@@ -4,28 +4,14 @@ mod credentials;
 mod error;
 mod graphql_client;
 mod id;
+mod pyproject;
 mod python;
 
-use clap::Parser;
-use commands::*;
-use std::process::exit;
-
-#[derive(Parser, Debug)]
-#[command(author, version, about)]
-enum Cli {
-    Login(Login),
-    Upload(Upload),
-    Test(Test),
-}
-
-#[tokio::main]
-async fn main() {
-    if let Err(e) = match Cli::parse() {
-        Cli::Login(args) => login(args).await,
-        Cli::Upload(args) => upload(args).await,
-        Cli::Test(args) => test(args).await,
-    } {
+#[pyo3_asyncio::tokio::main]
+async fn main() -> pyo3::PyResult<()> {
+    if let Err(e) = commands::Cli::run().await {
         eprintln!("{}", e);
-        exit(1)
+        std::process::exit(1)
     }
+    Ok(())
 }

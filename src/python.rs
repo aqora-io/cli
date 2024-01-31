@@ -1,84 +1,198 @@
 use crate::error::{self, Result};
+use indicatif::ProgressBar;
 use pyo3::prelude::*;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use tokio::{
+    io::{AsyncBufReadExt, BufReader},
+    sync::RwLock,
+};
+use url::Url;
 
 lazy_static::lazy_static! {
-    static ref PYTHON_PATH: PathBuf = {
+    static ref SYSTEM_PYTHON_PATH: PathBuf = {
         Python::with_gil(|py| {
             let sys = py.import("sys").unwrap();
             let executable: String = sys
-                .getattr(pyo3::intern!(sys.py(), "executable")).unwrap()
+                .getattr(pyo3::intern!(py, "executable")).unwrap()
                 .extract().unwrap();
             PathBuf::from(executable)
         })
     };
+    static ref INITIALIZED_ENVS: RwLock<HashSet<PathBuf>> = RwLock::new(HashSet::new());
 }
 
-fn is_module_installed(module: &str) -> bool {
-    Python::with_gil(|py| py.import(module).is_ok())
+pub fn pypi_url(url: &Url, access_token: Option<impl AsRef<str>>) -> Result<Url> {
+    let mut url = url.join("/pypi")?;
+    if let Some(access_token) = access_token {
+        url.set_username(access_token.as_ref())
+            .map_err(|_| error::system("Could not set pypi access token", ""))?;
+    }
+    Ok(url)
 }
 
-async fn ensure_build_installed() -> Result<()> {
-    if is_module_installed("build") {
-        return Ok(());
-    }
-    if !is_module_installed("pip") {
-        return Err(error::user(
-            "pip is not installed",
-            "Please install pip and try again",
-        ));
-    }
-    let confirmation = dialoguer::Confirm::new()
-        .with_prompt("The Python 'build' module is not installed, install it now?")
-        .default(true)
-        .interact()?;
-    if !confirmation {
-        return Err(error::user(
-            "The Python 'build' module is not installed",
-            "Please install it and try again",
-        ));
-    }
-    let output = tokio::process::Command::new(PYTHON_PATH.as_os_str())
-        .arg("-m")
-        .arg("pip")
-        .arg("install")
-        .arg("--upgrade")
-        .arg("build")
-        .output()
-        .await?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(error::system(
-            &format!(
-                "Could not install 'build' module: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ),
-            "",
-        ))
-    }
+#[derive(Default)]
+pub struct PipOptions {
+    pub upgrade: bool,
+    pub extra_index_urls: Vec<Url>,
 }
 
-pub async fn build_package(input: impl AsRef<Path>, output: impl AsRef<Path>) -> Result<()> {
-    ensure_build_installed().await?;
-    let output = tokio::process::Command::new(PYTHON_PATH.as_os_str())
-        .arg("-m")
-        .arg("build")
-        .arg("--sdist")
-        .arg("--outdir")
-        .arg(output.as_ref().as_os_str())
-        .arg(input.as_ref().as_os_str())
-        .output()
-        .await?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(error::user(
-            &format!(
-                "Could not build package: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ),
-            "",
-        ))
+pub struct PyEnv(PathBuf);
+
+impl PyEnv {
+    pub async fn init(project_dir: impl AsRef<Path>) -> Result<Self> {
+        let path = Self::ensure_venv(project_dir).await?.canonicalize()?;
+        if INITIALIZED_ENVS.read().await.contains(&path) {
+            return Ok(Self(path));
+        }
+        let site_packages = std::fs::read_dir(path.join("lib"))?
+            .flatten()
+            .filter(|entry| {
+                entry.file_type().map(|ty| ty.is_dir()).unwrap_or(false)
+                    && entry
+                        .file_name()
+                        .to_str()
+                        .map(|name| name.starts_with("python"))
+                        .unwrap_or(false)
+                    && std::fs::read_dir(entry.path())
+                        .map(|dir| {
+                            dir.flatten().any(|entry| {
+                                entry
+                                    .file_name()
+                                    .to_str()
+                                    .map(|name| name.starts_with("site-packages"))
+                                    .unwrap_or(false)
+                            })
+                        })
+                        .unwrap_or(false)
+            })
+            .map(|path| path.path().join("site-packages"))
+            .collect::<Vec<_>>();
+        Python::with_gil(|py| {
+            let sys = py.import("sys").unwrap();
+            for path in site_packages {
+                sys.getattr(pyo3::intern!(sys.py(), "path"))?
+                    .getattr(pyo3::intern!(sys.py(), "append"))?
+                    .call1((path,))?;
+            }
+            PyResult::Ok(())
+        })?;
+        INITIALIZED_ENVS.write().await.insert(path.clone());
+        Ok(Self(path))
+    }
+
+    async fn ensure_venv(project_dir: impl AsRef<Path>) -> Result<PathBuf> {
+        let path = project_dir.as_ref().join(".aqora").join("venv");
+        if path.exists() && path.is_dir() {
+            return Ok(path);
+        }
+        let output = tokio::process::Command::new(SYSTEM_PYTHON_PATH.as_os_str())
+            .arg("-m")
+            .arg("venv")
+            .arg(&path)
+            .output()
+            .await?;
+        if output.status.success() {
+            Ok(path)
+        } else {
+            Err(error::user(
+                &format!(
+                    "Could not setup virtualenv: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                ),
+                "",
+            ))
+        }
+    }
+
+    pub fn python_path(&self) -> PathBuf {
+        self.0.join("bin").join("python")
+    }
+
+    pub fn python_cmd(&self) -> tokio::process::Command {
+        tokio::process::Command::new(self.python_path().as_os_str())
+    }
+
+    async fn is_module_installed(&self, module: &str) -> Result<bool> {
+        Ok(tokio::process::Command::new(self.python_path().as_os_str())
+            .arg("-m")
+            .arg(module)
+            .output()
+            .await?
+            .status
+            .success())
+    }
+
+    pub async fn pip_install(
+        &self,
+        modules: impl IntoIterator<Item = impl AsRef<str>>,
+        opts: &PipOptions,
+        progress: Option<&ProgressBar>,
+    ) -> Result<()> {
+        let mut cmd = self.python_cmd();
+        cmd.arg("-m").arg("pip").arg("install");
+        if opts.upgrade {
+            cmd.arg("--upgrade");
+        }
+        for extra_index_url in &opts.extra_index_urls {
+            cmd.arg("--extra-index-url")
+                .arg(extra_index_url.to_string());
+        }
+        for module in modules {
+            cmd.arg(module.as_ref());
+        }
+        let mut child = cmd.stdout(Stdio::piped()).spawn()?;
+
+        let mut output_lines = BufReader::new(child.stdout.take().unwrap()).lines();
+        if let Some(pb) = progress {
+            while let Some(line) = output_lines.next_line().await? {
+                pb.set_message(format!("pip install: {line}"));
+            }
+        }
+
+        if child.wait().await?.success() {
+            Ok(())
+        } else {
+            Err(error::system(&format!("pip install failed"), ""))
+        }
+    }
+
+    pub async fn build_package(
+        &self,
+        input: impl AsRef<Path>,
+        output: impl AsRef<Path>,
+        progress: Option<&ProgressBar>,
+    ) -> Result<()> {
+        if !self.is_module_installed("build").await? {
+            self.pip_install(["build"], &Default::default(), progress)
+                .await?;
+        }
+        let mut child = self
+            .python_cmd()
+            .arg("-m")
+            .arg("build")
+            .arg("--sdist")
+            .arg("--outdir")
+            .arg(output.as_ref().as_os_str())
+            .arg(input.as_ref().as_os_str())
+            .stdout(Stdio::piped())
+            .spawn()?;
+
+        let mut output_lines = BufReader::new(child.stdout.take().unwrap()).lines();
+        if let Some(pb) = progress {
+            while let Some(line) = output_lines.next_line().await? {
+                pb.set_message(format!("building package: {line}"));
+            }
+        }
+
+        if child.wait().await?.success() {
+            Ok(())
+        } else {
+            Err(error::user(
+                &format!("Could not build package {}", output.as_ref().display()),
+                "",
+            ))
+        }
     }
 }
