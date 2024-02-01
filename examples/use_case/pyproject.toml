@@ -1,6 +1,6 @@
 [project]
-name = "use-case-aggto77gtj2fhndxvdkr66vav4"
-version = "0.1.0"
+name = "use-case"
+version = "0.1.1"
 requires-python = ">=3.7"
 
 dependencies = [
@@ -12,10 +12,12 @@ requires = ["setuptools>=43.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.aqora]
+type = "use_case"
+competition = "AENvbXBldGl0aW9uAY1lGdRtf3iuX8d6Ugc2lQ"
 data = "data"
 generator = "use_case.cases"
 aggregator = "use_case.aggregate"
 
 [[tool.aqora.layers]]
-evaluate = "solution.reduce"
+evaluate = "$reduce"
 metric = "use_case.metric"

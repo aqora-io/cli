@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 axum = "0.7"
+base32 = "0.4"
+base64 = "0.21"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.4", features = ["derive"] }
 dialoguer = { version = "0.11", default-features = false }
@@ -16,10 +18,13 @@ graphql_client = { version = "0.13", features = ["reqwest-rustls"] }
 hex = "0.4"
 hostname = "0.3"
 human-errors = "0.1"
+indicatif = "0.17"
 lazy_static = "1.4.0"
 maturin = { version = "1.4.0", features = ["cross-compile", "log"], default-features = false }
 open = "5.0"
+pep440_rs = "0.3"
 pyo3 = { version = "0.20", features = ["auto-initialize"] }
+pyo3-asyncio = { version = "0.20", features = ["attributes", "tokio-runtime"] }
 pyproject-toml = "0.8"
 rand = "0.8"
 reqwest = { version = "0.11", features = ["stream"] }
@@ -29,11 +34,6 @@ tar = "0.4"
 tempfile = "3.9"
 thiserror = "1.0"
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", "signal", "fs", "process", "io-util"] }
-toml = { version = "0.8", features = ["parse"], default-features = false }
+toml = "0.8"
 url = { version = "2.5", features = ["serde"] }
-indicatif = "0.17.7"
-base64 = "0.21.7"
-uuid = "1.7.0"
-base32 = "0.4.0"
-pep440_rs = "0.3.12"
-pyo3-asyncio = { version = "0.20.0", features = ["attributes", "tokio-runtime"] }
+uuid = "1.7"

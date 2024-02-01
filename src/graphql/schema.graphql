@@ -6,6 +6,7 @@ enum Action {
 	CREATE_COMPETITION
 	UPDATE_COMPETITION
 	DELETE_COMPETITION
+	READ_USE_CASE
 	UPDATE_DATA_SET
 	CREATE_SUBMISSION
 	CREATE_TOPIC
@@ -73,6 +74,7 @@ type Competition implements Node {
 	host: Entity!
 	banner: Url
 	thumbnail: Url
+	useCase: UseCase
 	topics(after: String, before: String, first: Int, last: Int): TopicConnection!
 }
 
@@ -136,14 +138,6 @@ input CreatePasswordResetInput {
 input CreateTopicInput {
 	title: String!
 	description: String
-}
-
-type DataSet {
-	id: ID!
-	viewerCan(action: Action!, asOrganization: ID): Boolean!
-	useCase: UseCase!
-	downloadUrl: Url!
-	uploadUrl: Url
 }
 
 """
@@ -356,14 +350,6 @@ enum OrganizationMembershipKind {
 	READER
 }
 
-type Package {
-	id: ID!
-	viewerCan(action: Action!, asOrganization: ID): Boolean!
-	useCase: UseCase!
-	downloadUrl: Url!
-	uploadUrl: Url
-}
-
 """
 Information about pagination in a connection
 """
@@ -483,7 +469,7 @@ input UpdateTopicInput {
 }
 
 input UpdateUseCaseInput {
-	version: Semver!
+	pyprojectToml: String!
 }
 
 input UpdateUserInput {
@@ -517,8 +503,7 @@ type UseCase implements Node {
 	viewerCan(action: Action!, asOrganization: ID): Boolean!
 	entity: Entity!
 	competition: Competition!
-	dataSet: DataSet!
-	package: Package!
+	files: [UseCaseFile!]!
 }
 
 """
@@ -533,6 +518,20 @@ type UseCaseEdge {
 	A cursor for use in pagination
 	"""
 	cursor: String!
+}
+
+type UseCaseFile {
+	kind: UseCaseFileKind!
+	id: ID!
+	viewerCan(action: Action!, asOrganization: ID): Boolean!
+	useCase: UseCase!
+	downloadUrl: Url!
+	uploadUrl: Url
+}
+
+enum UseCaseFileKind {
+	DATA
+	PACKAGE
 }
 
 type User implements Node & Entity {
@@ -573,6 +572,8 @@ type UserEdge {
 	cursor: String!
 }
 
+directive @include(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+directive @skip(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
 schema {
 	query: Query
 	mutation: Mutation

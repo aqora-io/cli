@@ -1,9 +1,8 @@
 use crate::{
     compress::compress,
     error::{self, Result},
-    graphql_client::{custom_scalars::*, GraphQLClient},
-    id::Id,
-    pyproject::{PackageName, PyProject},
+    graphql_client::GraphQLClient,
+    pyproject::{PyProject, RevertFile},
     python::PyEnv,
 };
 use clap::Args;
@@ -77,31 +76,25 @@ async fn upload_file(
     }
 }
 
-pub async fn upload_use_case(args: Upload, competition_id: Id, project: PyProject) -> Result<()> {
+pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
     let tempdir = tempdir().map_err(|err| {
         error::user(
             &format!("could not create temporary directory: {}", err),
             "Please make sure you have permission to create temporary directories",
         )
     })?;
+    let pyproject_toml = std::fs::read_to_string(PyProject::path_for_project(&args.project_dir)?)?;
+    let config = project.aqora()?.as_use_case()?;
+    let competition_id = config.competition;
     let version = project.version()?;
-    let package_name = format!("use-case-{}-{}", competition_id.to_package_id(), version);
-    let data_path = project.aqora().data.map(|path| args.project_dir.join(path));
-
-    let data_path = if let Some(data_path) = data_path.as_ref() {
-        if !data_path.exists() {
-            return Err(error::user(
-                &format!("{} does not exist", data_path.display()),
-                "Please make sure the data directory exists",
-            ));
-        }
-        data_path
-    } else {
+    let package_name = format!("use-case-{}", competition_id.to_package_id());
+    let data_path = args.project_dir.join(&config.data);
+    if !data_path.exists() {
         return Err(error::user(
-            "No data directory given",
-            "Please add a data directory to 'tools.aqora' in your pyproject.toml",
+            &format!("{} does not exist", data_path.display()),
+            "Please make sure the data directory exists",
         ));
-    };
+    }
 
     let m = MultiProgress::new();
 
@@ -113,7 +106,7 @@ pub async fn upload_use_case(args: Upload, competition_id: Id, project: PyProjec
     let use_case = client
         .send::<UpdateUseCaseMutation>(update_use_case_mutation::Variables {
             competition_id: competition_id.to_node_id(),
-            version: version.to_string(),
+            pyproject_toml,
         })
         .await?
         .update_use_case
@@ -124,7 +117,12 @@ pub async fn upload_use_case(args: Upload, competition_id: Id, project: PyProjec
     let s3_client = reqwest::Client::new();
 
     let data_fut = {
-        let upload_url = if let Some(url) = use_case.data_set.upload_url.as_ref() {
+        let upload_url = if let Some(url) = use_case
+            .files
+            .iter()
+            .find(|f| matches!(f.kind, update_use_case_mutation::UseCaseFileKind::DATA))
+            .and_then(|f| f.upload_url.as_ref())
+        {
             url
         } else {
             return Err(error::system(
@@ -132,7 +130,9 @@ pub async fn upload_use_case(args: Upload, competition_id: Id, project: PyProjec
                 "This is a bug, please report it",
             ));
         };
-        let data_tar_file = tempdir.path().join(format!("{package_name}.data.tar.gz"));
+        let data_tar_file = tempdir
+            .path()
+            .join(format!("{package_name}-{version}.data.tar.gz"));
         let mut data_pb = ProgressBar::new_spinner().with_message("Compressing data");
         data_pb.enable_steady_tick(std::time::Duration::from_millis(100));
         data_pb = m.add(data_pb);
@@ -156,7 +156,12 @@ pub async fn upload_use_case(args: Upload, competition_id: Id, project: PyProjec
     };
 
     let package_fut = {
-        let upload_url = if let Some(url) = use_case.package.upload_url.as_ref() {
+        let upload_url = if let Some(url) = use_case
+            .files
+            .iter()
+            .find(|f| matches!(f.kind, update_use_case_mutation::UseCaseFileKind::PACKAGE))
+            .and_then(|f| f.upload_url.as_ref())
+        {
             url
         } else {
             return Err(error::system(
@@ -164,7 +169,9 @@ pub async fn upload_use_case(args: Upload, competition_id: Id, project: PyProjec
                 "This is a bug, please report it",
             ));
         };
-        let package_tar_file = tempdir.path().join(format!("{package_name}.tar.gz"));
+        let package_tar_file = tempdir
+            .path()
+            .join(format!("{package_name}-{version}.tar.gz"));
         let mut package_pb = ProgressBar::new_spinner().with_message("Building package");
         package_pb.enable_steady_tick(std::time::Duration::from_millis(100));
         package_pb = m.add(package_pb);
@@ -174,9 +181,17 @@ pub async fn upload_use_case(args: Upload, competition_id: Id, project: PyProjec
         async move {
             package_pb_cloned.set_message("Initializing Python environment");
             let env = PyEnv::init(&args.project_dir).await?;
+
+            let project_file = RevertFile::save(PyProject::path_for_project(&args.project_dir)?)?;
+            let mut new_project = project.clone();
+            new_project.set_name(package_name);
+            std::fs::write(&project_file, new_project.toml()?)?;
+
             package_pb_cloned.set_message("Building package");
             env.build_package(&args.project_dir, tempdir.path(), Some(&package_pb_cloned))
                 .await?;
+            project_file.revert()?;
+
             package_pb_cloned.set_message("Uploading package");
             upload_file(&client, package_tar_file, upload_url, "application/gzip").await
         }
@@ -208,8 +223,13 @@ pub async fn upload_use_case(args: Upload, competition_id: Id, project: PyProjec
 
 pub async fn upload(args: Upload) -> Result<()> {
     let project = PyProject::for_project(&args.project_dir)?;
-    match project.name()? {
-        PackageName::UseCase { competition } => upload_use_case(args, competition, project).await,
-        PackageName::Submission { .. } => Err(error::system("Submissions not supported yet", "")),
+    let aqora = project.aqora()?;
+    if aqora.is_use_case() {
+        upload_use_case(args, project).await
+    } else {
+        Err(error::user(
+            "Other project types not supported yet",
+            "Try using on a use_case project",
+        ))
     }
 }

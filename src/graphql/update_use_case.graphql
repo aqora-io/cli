@@ -1,11 +1,12 @@
-mutation UpdateUseCaseMutation($competition_id: ID!, $version: Semver!) {
-  updateUseCase(competitionId: $competition_id, input: { version: $version }) {
+mutation UpdateUseCaseMutation($competition_id: ID!, $pyprojectToml: String!) {
+  updateUseCase(
+    competitionId: $competition_id
+    input: { pyprojectToml: $pyprojectToml }
+  ) {
     node {
       id
-      dataSet {
-        uploadUrl
-      }
-      package {
+      files {
+        kind
         uploadUrl
       }
     }

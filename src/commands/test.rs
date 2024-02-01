@@ -35,37 +35,16 @@ pub async fn run_pipeline(args: Test, project: PyProject) -> Result<f32> {
         let layer_cls = pipeline.getattr("Layer")?;
         let pipeline_cls = pipeline.getattr("Pipeline")?;
 
-        let aqora = use_case_project.aqora();
-        let generator = aqora
-            .generator
-            .ok_or_else(|| {
-                error::user(
-                    "No generator given",
-                    "Make sure the generator is set in the aqora section \
-                    of your pyproject.toml",
-                )
-            })?
-            .path
-            .import(py)?
-            .call0()?;
-        let aggregator = aqora
-            .aggregator
-            .ok_or_else(|| {
-                error::user(
-                    "No aggregator given",
-                    "Make sure the aggregator is set in the aqora section \
-                    of your pyproject.toml",
-                )
-            })?
-            .path
-            .import(py)?;
+        let config = use_case_project.aqora()?.as_use_case()?;
+        let generator = config.generator.path.import(py)?.call0()?;
+        let aggregator = config.aggregator.path.import(py)?;
 
-        let layers = aqora
+        let layers = config
             .layers
-            .into_iter()
+            .iter()
             .map(|layer| {
                 let evaluator = layer.evaluate.path.import(py)?;
-                let metric = if let Some(metric) = layer.metric {
+                let metric = if let Some(metric) = layer.metric.as_ref() {
                     Some(metric.path.import(py)?)
                 } else {
                     None
@@ -85,12 +64,7 @@ pub async fn run_pipeline(args: Test, project: PyProject) -> Result<f32> {
     Ok(pyo3::Python::with_gil(|py| out.extract(py))?)
 }
 
-pub async fn test_submission(
-    args: Test,
-    competition_id: Id,
-    user_id: Id,
-    project: PyProject,
-) -> Result<()> {
+pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
     let m = MultiProgress::new();
 
     let mut pb = ProgressBar::new_spinner().with_message("Setting up virtual environment");
@@ -100,6 +74,8 @@ pub async fn test_submission(
     pb.set_message("Setting up virtual environment");
     let env = PyEnv::init(&args.project_dir).await?;
 
+    let config = project.aqora()?.as_submission()?;
+    let competition_id = config.competition;
     let use_case_package = format!("use-case-{}", competition_id.to_package_id());
     let url = args.url.parse()?;
     env.pip_install(
@@ -132,14 +108,13 @@ pub async fn test_submission(
 
 pub async fn test(args: Test) -> Result<()> {
     let project = PyProject::for_project(&args.project_dir)?;
-
-    match project.name()? {
-        PackageName::UseCase { .. } => Err(error::user(
+    let aqora = project.aqora()?;
+    if aqora.is_submission() {
+        test_submission(args, project).await
+    } else {
+        Err(error::user(
             "Use cases not supported",
             "Run test on a submission instead",
-        )),
-        PackageName::Submission { competition, user } => {
-            test_submission(args, competition, user, project).await
-        }
+        ))
     }
 }

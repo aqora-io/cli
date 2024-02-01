@@ -12,12 +12,14 @@ use serde::{de, ser, Deserialize, Serialize};
 use std::{
     borrow::Cow,
     convert::Infallible,
+    ffi::OsString,
     fmt,
     path::{Path, PathBuf},
     str::FromStr,
 };
+use tempfile::{tempfile, NamedTempFile};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PyProject {
     pub build_system: Option<BuildSystem>,
     pub project: Option<Project>,
@@ -26,7 +28,7 @@ pub struct PyProject {
 
 impl PyProject {
     pub fn for_project(project_dir: impl AsRef<Path>) -> Result<Self> {
-        let pyproject_path = project_dir.as_ref().join("pyproject.toml");
+        let pyproject_path = Self::path_for_project(project_dir)?;
         toml::from_str(&std::fs::read_to_string(&pyproject_path).map_err(|err| {
             error::user(
                 &format!("could not read {}: {}", pyproject_path.display(), err),
@@ -41,18 +43,27 @@ impl PyProject {
         })
     }
 
-    pub fn name(&self) -> Result<PackageName> {
-        self.project
-            .as_ref()
-            .map(|project| project.name.to_owned())
-            .ok_or_else(|| {
-                error::user(
-                    "No name given",
-                    "Make sure the name is set in the project section \
-                        of your pyproject.toml and it matches the competition",
-                )
-            })?
-            .parse()
+    pub fn path_for_project(project_dir: impl AsRef<Path>) -> Result<PathBuf> {
+        let pyproject_path = project_dir.as_ref().join("pyproject.toml");
+        if !pyproject_path.exists() {
+            return Err(error::user(
+                &format!("Could not find {}", pyproject_path.display()),
+                "Please run this command in the root of your project or set the --project-dir flag",
+            ));
+        }
+        Ok(pyproject_path)
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        self.project.as_ref().map(|project| project.name.as_str())
+    }
+
+    pub fn set_name(&mut self, name: impl ToString) {
+        if let Some(project) = self.project.as_mut() {
+            project.name = name.to_string();
+        } else {
+            self.project = Some(Project::new(name.to_string()));
+        }
     }
 
     pub fn version(&self) -> Result<Version> {
@@ -68,26 +79,88 @@ impl PyProject {
             })
     }
 
-    pub fn aqora(&self) -> AqoraConfig {
+    pub fn aqora(&self) -> Result<&AqoraConfig> {
         self.tool
             .as_ref()
-            .and_then(|tool| tool.aqora.clone())
-            .unwrap_or_default()
+            .and_then(|tool| tool.aqora.as_ref())
+            .ok_or_else(|| {
+                error::user(
+                    "No aqora section in pyproject.toml",
+                    "Make sure your pyproject.toml has a [tool.aqora] section",
+                )
+            })
+    }
+
+    pub fn toml(&self) -> Result<String> {
+        toml::to_string_pretty(self).map_err(|err| {
+            error::user(
+                &format!("could not serialize pyproject.toml: {}", err),
+                "Please make sure your pyproject.toml is valid",
+            )
+        })
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Tools {
     pub aqora: Option<AqoraConfig>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct AqoraConfig {
-    pub data: Option<PathBuf>,
-    pub generator: Option<FunctionDef>,
-    pub aggregator: Option<FunctionDef>,
-    #[serde(default)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AqoraConfig {
+    UseCase(AqoraUseCaseConfig),
+    Submission(AqoraSubmissionConfig),
+}
+
+impl AqoraConfig {
+    pub fn is_use_case(&self) -> bool {
+        matches!(self, AqoraConfig::UseCase(_))
+    }
+
+    pub fn is_submission(&self) -> bool {
+        matches!(self, AqoraConfig::Submission(_))
+    }
+
+    pub fn as_use_case(&self) -> Result<&AqoraUseCaseConfig> {
+        match self {
+            AqoraConfig::UseCase(use_case) => Ok(use_case),
+            AqoraConfig::Submission(_) => Err(error::user(
+                "Invalid aqora type",
+                "Make sure your pyproject.toml has a [tool.aqora] section \
+                    with a 'type' and 'competition' field",
+            )),
+        }
+    }
+
+    pub fn as_submission(&self) -> Result<&AqoraSubmissionConfig> {
+        match self {
+            AqoraConfig::UseCase(_) => Err(error::user(
+                "Invalid aqora type",
+                "Make sure your pyproject.toml has a [tool.aqora] section \
+                    with a 'type' and 'competition' field",
+            )),
+            AqoraConfig::Submission(submission) => Ok(submission),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct AqoraUseCaseConfig {
+    #[serde(with = "crate::id::node_serde")]
+    pub competition: Id,
+    pub data: PathBuf,
+    pub generator: FunctionDef,
+    pub aggregator: FunctionDef,
     pub layers: Vec<Layer>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct AqoraSubmissionConfig {
+    #[serde(with = "crate::id::node_serde")]
+    pub competition: Id,
+    #[serde(with = "crate::id::node_serde")]
+    pub entity: Id,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -112,7 +185,7 @@ impl<'de> de::Deserialize<'de> for FunctionDef {
             type Value = FunctionDef;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("a string")
+                formatter.write_str("a valid function definition")
             }
 
             fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
@@ -262,6 +335,57 @@ impl FromStr for PackageName {
                 "Invalid package name",
                 "Make sure the package name starts with either 'use-case' or 'submission'",
             ))
+        }
+    }
+}
+
+pub struct RevertFile {
+    backed_up: NamedTempFile,
+    path: PathBuf,
+    reverted: bool,
+}
+
+impl RevertFile {
+    pub fn save(path: impl Into<PathBuf>) -> std::io::Result<Self> {
+        let path = path.into();
+        let mut tmp_prefix = OsString::from(".");
+        tmp_prefix.push(path.file_name().unwrap_or_else(|| "tmp".as_ref()));
+        let backed_up = NamedTempFile::with_prefix_in(
+            tmp_prefix,
+            path.parent().unwrap_or_else(|| ".".as_ref()),
+        )?;
+        std::fs::copy(&path, backed_up.path())?;
+        Ok(Self {
+            backed_up,
+            path,
+            reverted: false,
+        })
+    }
+
+    pub fn saved(&self) -> &NamedTempFile {
+        &self.backed_up
+    }
+
+    pub fn revert(mut self) -> std::io::Result<()> {
+        std::fs::copy(self.backed_up.path(), &self.path)?;
+        self.reverted = true;
+        Ok(())
+    }
+}
+
+impl AsRef<Path> for RevertFile {
+    fn as_ref(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for RevertFile {
+    fn drop(&mut self) {
+        if self.reverted {
+            return;
+        }
+        if let Err(err) = std::fs::copy(self.backed_up.path(), &self.path) {
+            eprintln!("Could not revert file {}: {}", self.path.display(), err);
         }
     }
 }

@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 const BASE32_ALPHABET: base32::Alphabet = base32::Alphabet::RFC4648 { padding: false };
 
+#[derive(Debug, Clone, Copy)]
 pub enum NodeType {
     User,
     Competition,
@@ -30,6 +31,7 @@ impl fmt::Display for NodeType {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct Id {
     pub id: Uuid,
     pub ty: NodeType,
@@ -51,7 +53,7 @@ impl Id {
         Ok(Id { id, ty })
     }
 
-    pub fn to_node_id(&self) -> String {
+    pub fn to_node_id(self) -> String {
         let mut bytes = vec![0]; // version
         bytes.extend_from_slice(self.ty.to_string().as_bytes());
         bytes.extend_from_slice(self.id.as_bytes());
@@ -68,7 +70,43 @@ impl Id {
         Ok(Id { id, ty })
     }
 
-    pub fn to_package_id(&self) -> String {
+    pub fn to_package_id(self) -> String {
         base32::encode(BASE32_ALPHABET, &self.id.into_bytes()).to_lowercase()
+    }
+}
+
+pub mod node_serde {
+    use super::*;
+    use serde::{de, Deserializer, Serializer};
+
+    pub fn serialize<S>(id: &Id, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&id.to_node_id())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Id, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct IdVisitor;
+
+        impl<'de> de::Visitor<'de> for IdVisitor {
+            type Value = Id;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a valid node ID")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Id::parse_node_id(value).map_err(de::Error::custom)
+            }
+        }
+
+        deserializer.deserialize_str(IdVisitor)
     }
 }
