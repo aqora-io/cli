@@ -1,6 +1,6 @@
 [project]
 name = "use-case"
-version = "0.1.1"
+version = "0.1.0"
 requires-python = ">=3.7"
 
 dependencies = [
@@ -21,4 +21,4 @@ aggregator = "use_case.aggregate"
 [[tool.aqora.layers]]
 name = "reduce"
 transform = "$reduce"
-metric = "use_case.metric"
+metric = { path = "use_case.metric", context = true }

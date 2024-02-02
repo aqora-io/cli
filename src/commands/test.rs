@@ -6,13 +6,13 @@ use crate::{
     id::Id,
     pipeline::Pipeline,
     pyproject::{project_data_dir, PackageName, PyProject},
-    python::{async_generator, pypi_url, PipOptions, PyEnv},
+    python::{async_generator, pypi_url, AsyncIterator, PipOptions, PyEnv},
 };
 use clap::Args;
 use futures::prelude::*;
 use graphql_client::GraphQLQuery;
 use indicatif::{MultiProgress, ProgressBar};
-use pyo3::{types::PyModule, Python};
+use pyo3::{prelude::*, types::PyModule, Python};
 use std::path::PathBuf;
 
 #[derive(GraphQLQuery)]
@@ -144,12 +144,11 @@ pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
     let use_case = use_case_pyproject.aqora()?.as_use_case()?;
 
     let pipeline = Pipeline::import(use_case, submission)?;
-    pipeline.test_aggregator().await?;
-    let mut generator = pipeline.generator()?;
-    while let Some(item) = generator.next().await {
-        let results = pipeline.evaluate(item?).await?;
-        println!("{:?}", results);
-    }
+    let score = pipeline
+        .aggregate(pipeline.evaluate(pipeline.generator()?, pipeline.evaluator()))
+        .await?;
+
+    println!("Score: {}", score);
 
     Ok(())
 }

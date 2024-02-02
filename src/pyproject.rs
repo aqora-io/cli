@@ -96,7 +96,7 @@ impl PyProject {
     }
 
     pub fn toml(&self) -> Result<String> {
-        toml::to_string_pretty(self).map_err(|err| {
+        toml::to_string(self).map_err(|err| {
             error::user(
                 &format!("could not serialize pyproject.toml: {}", err),
                 "Please make sure your pyproject.toml is valid",
@@ -156,15 +156,16 @@ pub struct AqoraUseCaseConfig {
     pub data: PathBuf,
     pub generator: PathStr<'static>,
     pub aggregator: PathStr<'static>,
+    pub context: Option<PathStr<'static>>,
     pub layers: Vec<LayerConfig>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LayerConfig {
     pub name: String,
-    pub transform: Option<PathStr<'static>>,
-    pub metric: Option<PathStr<'static>>,
-    pub branch: Option<PathStr<'static>>,
+    pub transform: Option<FunctionDef>,
+    pub metric: Option<FunctionDef>,
+    pub branch: Option<FunctionDef>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -174,6 +175,76 @@ pub struct AqoraSubmissionConfig {
     #[serde(with = "crate::id::node_serde")]
     pub entity: Id,
     pub refs: HashMap<String, PathStr<'static>>,
+}
+
+#[derive(Clone, Serialize, Debug)]
+pub struct FunctionDef {
+    pub path: PathStr<'static>,
+    pub context: bool,
+}
+
+impl<'de> Deserialize<'de> for FunctionDef {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct FunctionDefVisitor;
+
+        impl<'de> de::Visitor<'de> for FunctionDefVisitor {
+            type Value = FunctionDef;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a valid function definition")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(FunctionDef {
+                    path: value.parse().map_err(de::Error::custom)?,
+                    context: false,
+                })
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut path = None;
+                let mut context = None;
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "path" => {
+                            if path.is_some() {
+                                return Err(de::Error::duplicate_field("path"));
+                            }
+                            path = Some(map.next_value()?);
+                        }
+                        "context" => {
+                            if context.is_some() {
+                                return Err(de::Error::duplicate_field("context"));
+                            }
+                            context = Some(map.next_value()?);
+                        }
+                        _ => {
+                            return Err(de::Error::unknown_field(
+                                key.as_str(),
+                                &["path", "context"],
+                            ));
+                        }
+                    }
+                }
+                let path = path.ok_or_else(|| de::Error::missing_field("path"))?;
+                Ok(FunctionDef {
+                    path,
+                    context: context.unwrap_or(false),
+                })
+            }
+        }
+
+        deserializer.deserialize_any(FunctionDefVisitor)
+    }
 }
 
 #[derive(Clone)]

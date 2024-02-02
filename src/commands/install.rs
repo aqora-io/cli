@@ -61,7 +61,6 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
         [args.project_dir.to_string_lossy().to_string()],
         &PipOptions {
             upgrade: args.upgrade,
-            // editable: true,
             ..Default::default()
         },
         Some(&local_pb),

@@ -23,7 +23,8 @@ lazy_static = "1.4.0"
 maturin = { version = "1.4.0", features = ["cross-compile", "log"], default-features = false }
 open = "5.0"
 pep440_rs = "0.3"
-pyo3 = { version = "0.20", features = ["auto-initialize"] }
+pin-project-lite = "0.2.13"
+pyo3 = { version = "0.20", features = ["auto-initialize", "serde"] }
 pyo3-asyncio = { version = "0.20", features = ["attributes", "tokio-runtime"] }
 pyproject-toml = "0.8"
 rand = "0.8"

@@ -2,8 +2,15 @@ use crate::error::{self, Result};
 use crate::pyproject::project_data_dir;
 use futures::prelude::*;
 use indicatif::ProgressBar;
-use pyo3::pyclass::IterANextOutput;
-use pyo3::{prelude::*, types::PyType};
+use pyo3::{
+    prelude::*,
+    pyclass::IterANextOutput,
+    types::{PyDict, PyList, PyType},
+};
+use serde::{
+    de::{Deserialize, Deserializer, Error as DeError},
+    ser::{Error as SerError, Serialize, Serializer},
+};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -254,8 +261,9 @@ pub fn async_generator(generator: Py<PyAny>) -> PyResult<impl Stream<Item = PyRe
             .call_method0(pyo3::intern!(py, "__aiter__"))?;
         PyResult::Ok(generator)
     })?;
-    Ok(
-        futures::stream::unfold(generator, move |generator| async move {
+    Ok(futures::stream::unfold(
+        generator,
+        move |generator| async move {
             let result = match Python::with_gil(|py| {
                 pyo3_asyncio::into_future_with_locals(
                     &pyo3_asyncio::tokio::get_current_locals(py)?,
@@ -280,9 +288,8 @@ pub fn async_generator(generator: Py<PyAny>) -> PyResult<impl Stream<Item = PyRe
                     }
                 }
             })
-        })
-        .boxed(),
-    )
+        },
+    ))
 }
 
 pub fn deepcopy(obj: &Py<PyAny>) -> PyResult<Py<PyAny>> {

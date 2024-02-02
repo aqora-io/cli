@@ -546,6 +546,7 @@ dependencies = [
  "maturin",
  "open",
  "pep440_rs",
+ "pin-project-lite",
  "pyo3",
  "pyo3-asyncio",
  "pyproject-toml",
@@ -2055,6 +2056,7 @@ dependencies = [
  "pyo3-build-config",
  "pyo3-ffi",
  "pyo3-macros",
+ "serde",
  "unindent",
 ]
 
