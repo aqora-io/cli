@@ -3,21 +3,22 @@ use crate::{
     id::{Id, NodeType},
 };
 use pep440_rs::Version;
-use pyo3::{
-    types::{PyModule, PyString},
-    PyAny, PyResult, Python,
-};
 use pyproject_toml::{BuildSystem, Project};
 use serde::{de, ser, Deserialize, Serialize};
 use std::{
     borrow::Cow,
+    collections::HashMap,
     convert::Infallible,
     ffi::OsString,
     fmt,
     path::{Path, PathBuf},
     str::FromStr,
 };
-use tempfile::{tempfile, NamedTempFile};
+use tempfile::NamedTempFile;
+
+pub fn project_data_dir(project_dir: impl AsRef<Path>) -> PathBuf {
+    project_dir.as_ref().join(".aqora")
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PyProject {
@@ -29,15 +30,18 @@ pub struct PyProject {
 impl PyProject {
     pub fn for_project(project_dir: impl AsRef<Path>) -> Result<Self> {
         let pyproject_path = Self::path_for_project(project_dir)?;
-        toml::from_str(&std::fs::read_to_string(&pyproject_path).map_err(|err| {
+        Self::from_toml(std::fs::read_to_string(&pyproject_path).map_err(|err| {
             error::user(
-                &format!("could not read {}: {}", pyproject_path.display(), err),
+                &format!("Could not read {}: {}", pyproject_path.display(), err),
                 "Please run this command in the root of your project or set the --project-dir flag",
             )
         })?)
-        .map_err(|err| {
+    }
+
+    pub fn from_toml(s: impl AsRef<str>) -> Result<Self> {
+        toml::from_str(s.as_ref()).map_err(|err| {
             error::user(
-                &format!("could not read {}: {}", pyproject_path.display(), err),
+                &format!("Could not read pyproject.toml: {}", err),
                 "Please make sure your pyproject.toml is valid",
             )
         })
@@ -150,9 +154,17 @@ pub struct AqoraUseCaseConfig {
     #[serde(with = "crate::id::node_serde")]
     pub competition: Id,
     pub data: PathBuf,
-    pub generator: FunctionDef,
-    pub aggregator: FunctionDef,
-    pub layers: Vec<Layer>,
+    pub generator: PathStr<'static>,
+    pub aggregator: PathStr<'static>,
+    pub layers: Vec<LayerConfig>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LayerConfig {
+    pub name: String,
+    pub transform: Option<PathStr<'static>>,
+    pub metric: Option<PathStr<'static>>,
+    pub branch: Option<PathStr<'static>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -161,45 +173,7 @@ pub struct AqoraSubmissionConfig {
     pub competition: Id,
     #[serde(with = "crate::id::node_serde")]
     pub entity: Id,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Layer {
-    pub evaluate: FunctionDef,
-    pub metric: Option<FunctionDef>,
-}
-
-#[derive(Serialize, Debug, Clone)]
-pub struct FunctionDef {
-    pub path: PathStr<'static>,
-}
-
-impl<'de> de::Deserialize<'de> for FunctionDef {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        struct FunctionDefVisitor;
-
-        impl<'de> de::Visitor<'de> for FunctionDefVisitor {
-            type Value = FunctionDef;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("a valid function definition")
-            }
-
-            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Ok(FunctionDef {
-                    path: value.parse().map_err(de::Error::custom)?,
-                })
-            }
-        }
-
-        deserializer.deserialize_str(FunctionDefVisitor)
-    }
+    pub refs: HashMap<String, PathStr<'static>>,
 }
 
 #[derive(Clone)]
@@ -212,9 +186,24 @@ impl<'a> PathStr<'a> {
     pub fn name(&self) -> &str {
         self.0.last().unwrap()
     }
-    pub fn import<'py>(&self, py: Python<'py>) -> PyResult<&'py PyAny> {
-        let module = PyModule::import(py, PyString::new(py, &self.module().to_string()))?;
-        module.getattr(PyString::new(py, self.name()))
+    pub fn replace_refs(&self, refs: &HashMap<String, PathStr>) -> Result<PathStr<'static>> {
+        let mut out = Vec::new();
+        for part in self.0.iter() {
+            if let Some(ref_key) = part.strip_prefix('$') {
+                if let Some(replacement) = refs.get(ref_key) {
+                    out.extend(replacement.0.iter().cloned());
+                } else {
+                    return Err(error::user(
+                        &format!("No replacement for ${}", ref_key),
+                        "Make sure the path is defined in the [tool.aqora.refs] section of \
+                        your pyproject.toml",
+                    ));
+                }
+            } else {
+                out.push(part.clone());
+            }
+        }
+        Ok(PathStr(Cow::Owned(out)))
     }
 }
 

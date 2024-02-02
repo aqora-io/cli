@@ -52,6 +52,12 @@ impl From<pyo3::PyErr> for Error {
     }
 }
 
+impl From<Error> for pyo3::PyErr {
+    fn from(e: Error) -> Self {
+        pyo3::exceptions::PyException::new_err(format!("{}", e))
+    }
+}
+
 impl From<dialoguer::Error> for Error {
     fn from(e: dialoguer::Error) -> Self {
         system(&format!("Could not interact with the terminal: {e}"), "")

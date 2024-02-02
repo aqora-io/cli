@@ -19,5 +19,6 @@ generator = "use_case.cases"
 aggregator = "use_case.aggregate"
 
 [[tool.aqora.layers]]
-evaluate = "$reduce"
+name = "reduce"
+transform = "$reduce"
 metric = "use_case.metric"

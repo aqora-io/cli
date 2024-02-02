@@ -1,6 +1,9 @@
 use crate::error::{self, Result};
+use crate::pyproject::project_data_dir;
+use futures::prelude::*;
 use indicatif::ProgressBar;
-use pyo3::prelude::*;
+use pyo3::pyclass::IterANextOutput;
+use pyo3::{prelude::*, types::PyType};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -23,6 +26,10 @@ lazy_static::lazy_static! {
     static ref INITIALIZED_ENVS: RwLock<HashSet<PathBuf>> = RwLock::new(HashSet::new());
 }
 
+pub fn venv_dir(project_dir: impl AsRef<Path>) -> PathBuf {
+    project_data_dir(project_dir).join("venv")
+}
+
 pub fn pypi_url(url: &Url, access_token: Option<impl AsRef<str>>) -> Result<Url> {
     let mut url = url.join("/pypi")?;
     if let Some(access_token) = access_token {
@@ -35,6 +42,8 @@ pub fn pypi_url(url: &Url, access_token: Option<impl AsRef<str>>) -> Result<Url>
 #[derive(Default)]
 pub struct PipOptions {
     pub upgrade: bool,
+    pub no_deps: bool,
+    pub editable: bool,
     pub extra_index_urls: Vec<Url>,
 }
 
@@ -83,7 +92,7 @@ impl PyEnv {
     }
 
     async fn ensure_venv(project_dir: impl AsRef<Path>) -> Result<PathBuf> {
-        let path = project_dir.as_ref().join(".aqora").join("venv");
+        let path = venv_dir(project_dir);
         if path.exists() && path.is_dir() {
             return Ok(path);
         }
@@ -108,6 +117,10 @@ impl PyEnv {
 
     pub fn python_path(&self) -> PathBuf {
         self.0.join("bin").join("python")
+    }
+
+    pub fn activate_path(&self) -> PathBuf {
+        self.0.join("bin").join("activate")
     }
 
     pub fn python_cmd(&self) -> tokio::process::Command {
@@ -138,6 +151,12 @@ impl PyEnv {
         for extra_index_url in &opts.extra_index_urls {
             cmd.arg("--extra-index-url")
                 .arg(extra_index_url.to_string());
+        }
+        if opts.no_deps {
+            cmd.arg("--no-deps");
+        }
+        if opts.editable {
+            cmd.arg("--editable");
         }
         for module in modules {
             cmd.arg(module.as_ref());
@@ -194,5 +213,141 @@ impl PyEnv {
                 "",
             ))
         }
+    }
+}
+
+macro_rules! async_python_run {
+    ($($closure:tt)*) => {
+        Python::with_gil(|py| {
+            let closure = $($closure)*;
+            let awaitable = match closure(py) {
+                Ok(awaitable) => awaitable,
+                Err(err) => return Err(err),
+            };
+            pyo3_asyncio::into_future_with_locals(
+                &pyo3_asyncio::tokio::get_current_locals(py)?,
+                awaitable,
+            )
+        })?
+        .await?
+    };
+}
+pub(crate) use async_python_run;
+
+macro_rules! python_print_var {
+    ($($($item:tt)*),*) => {{
+        let args = ( $($($item)*),*, );
+        Python::with_gil(|py| {
+            py.import(pyo3::intern!(py, "builtins"))?
+                .getattr("print")?
+                .call1(args)?;
+            PyResult::Ok(())
+        })
+    }};
+}
+pub(crate) use python_print_var;
+
+pub fn async_generator(generator: Py<PyAny>) -> PyResult<impl Stream<Item = PyResult<Py<PyAny>>>> {
+    let generator = Python::with_gil(move |py| {
+        generator
+            .as_ref(py)
+            .call_method0(pyo3::intern!(py, "__aiter__"))?;
+        PyResult::Ok(generator)
+    })?;
+    Ok(
+        futures::stream::unfold(generator, move |generator| async move {
+            let result = match Python::with_gil(|py| {
+                pyo3_asyncio::into_future_with_locals(
+                    &pyo3_asyncio::tokio::get_current_locals(py)?,
+                    generator
+                        .as_ref(py)
+                        .call_method0(pyo3::intern!(py, "__anext__"))?,
+                )
+            }) {
+                Ok(result) => result.await,
+                Err(err) => return Some((Err(err), generator)),
+            };
+            Python::with_gil(|py| match result {
+                Ok(result) => Some((Ok(result), generator)),
+                Err(err) => {
+                    if err
+                        .get_type(py)
+                        .is(PyType::new::<pyo3::exceptions::PyStopAsyncIteration>(py))
+                    {
+                        None
+                    } else {
+                        Some((Err(err), generator))
+                    }
+                }
+            })
+        })
+        .boxed(),
+    )
+}
+
+pub fn deepcopy(obj: &Py<PyAny>) -> PyResult<Py<PyAny>> {
+    Python::with_gil(|py| {
+        let copy = py.import("copy")?.getattr("deepcopy")?;
+        Ok(copy.call1((obj,))?.into_py(py))
+    })
+}
+
+type AsyncIteratorStream = futures::stream::BoxStream<'static, PyResult<Py<PyAny>>>;
+
+#[pyclass]
+pub struct AsyncIterator {
+    stream: std::sync::Arc<std::sync::Mutex<Option<AsyncIteratorStream>>>,
+}
+
+impl AsyncIterator {
+    pub fn new(stream: impl Stream<Item = PyResult<Py<PyAny>>> + Send + Sync + 'static) -> Self {
+        Self {
+            stream: std::sync::Arc::new(std::sync::Mutex::new(Some(stream.boxed()))),
+        }
+    }
+}
+
+#[pymethods]
+impl AsyncIterator {
+    fn __aiter__(&self) -> PyResult<AsyncIteratorImpl> {
+        Ok(AsyncIteratorImpl {
+            stream: std::sync::Arc::new(tokio::sync::Mutex::new(
+                self.stream
+                    .lock()
+                    .map_err(|err| {
+                        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(err.to_string())
+                    })?
+                    .take()
+                    .ok_or_else(|| {
+                        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                            "AsyncIterator already consumed",
+                        )
+                    })?,
+            )),
+        })
+    }
+}
+
+#[pyclass]
+struct AsyncIteratorImpl {
+    stream: std::sync::Arc<tokio::sync::Mutex<AsyncIteratorStream>>,
+}
+
+#[pymethods]
+impl AsyncIteratorImpl {
+    fn __anext__<'py>(&self, py: Python<'py>) -> PyResult<IterANextOutput<&'py PyAny, &'py PyAny>> {
+        let stream = self.stream.clone();
+        let result = pyo3_asyncio::tokio::future_into_py_with_locals(
+            py,
+            pyo3_asyncio::tokio::get_current_locals(py)?,
+            async move {
+                match stream.lock().await.next().await {
+                    Some(Ok(value)) => Ok(value),
+                    Some(Err(err)) => Err(err),
+                    None => Err(pyo3::exceptions::PyStopAsyncIteration::new_err(())),
+                }
+            },
+        )?;
+        Ok(IterANextOutput::Yield(result))
     }
 }

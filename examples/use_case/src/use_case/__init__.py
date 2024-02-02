@@ -15,6 +15,8 @@ async def cases() -> AsyncIterator[BaseGraph]:
 
 
 async def metric(input: BaseGraph, output: BaseGraph) -> float:
+    print(input)
+    print(output)
     input_circuit = zx.Circuit.from_graph(input)
     output_circuit = zx.extract_circuit(output)
     if not input_circuit.verify_equality(output_circuit):

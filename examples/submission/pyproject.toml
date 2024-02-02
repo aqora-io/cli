@@ -15,6 +15,6 @@ build-backend = "setuptools.build_meta"
 type = "submission"
 competition = "AENvbXBldGl0aW9uAY1lGdRtf3iuX8d6Ugc2lQ"
 entity = "AFVzZXIBjWUYOQ110JFFPnv8KqdE"
-symbols = {
-    reduce = "submission.reduce",
-}
+
+[tool.aqora.refs]
+reduce = "submission.reduce"

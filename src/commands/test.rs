@@ -1,112 +1,163 @@
+use super::{install, Install};
 use crate::{
     credentials::get_access_token,
     error::{self, Error, Result},
+    graphql_client::{custom_scalars::*, GraphQLClient},
     id::Id,
-    pyproject::{PackageName, PyProject},
-    python::{pypi_url, PipOptions, PyEnv},
+    pipeline::Pipeline,
+    pyproject::{project_data_dir, PackageName, PyProject},
+    python::{async_generator, pypi_url, PipOptions, PyEnv},
 };
 use clap::Args;
-use futures::TryFutureExt;
+use futures::prelude::*;
+use graphql_client::GraphQLQuery;
 use indicatif::{MultiProgress, ProgressBar};
-use pyo3::types::PyModule;
+use pyo3::{types::PyModule, Python};
 use std::path::PathBuf;
 
-#[derive(Args, Debug)]
+#[derive(GraphQLQuery)]
+#[graphql(
+    query_path = "src/graphql/get_competition_use_case.graphql",
+    schema_path = "src/graphql/schema.graphql",
+    response_derives = "Debug"
+)]
+pub struct GetCompetitionUseCase;
+
+async fn get_use_case(
+    client: &GraphQLClient,
+    competition_id: Id,
+) -> Result<get_competition_use_case::GetCompetitionUseCaseNodeOnCompetitionUseCase> {
+    let use_case = match client
+        .send::<GetCompetitionUseCase>(get_competition_use_case::Variables {
+            id: competition_id.to_node_id(),
+        })
+        .await?
+        .node
+    {
+        get_competition_use_case::GetCompetitionUseCaseNode::Competition(c) => {
+            if let Some(use_case) = c.use_case {
+                use_case
+            } else {
+                return Err(error::user(
+                    "No use case found",
+                    "Please contact the competition organizer",
+                ));
+            }
+        }
+        _ => {
+            return Err(error::user(
+                "No use case found",
+                "Please contact the competition organizer",
+            ));
+        }
+    };
+    Ok(use_case)
+}
+
+#[derive(Args, Debug, Clone)]
 #[command(author, version, about)]
 pub struct Test {
     #[arg(short, long, default_value = "https://app.aqora.io")]
     pub url: String,
     #[arg(short, long, default_value = ".")]
     pub project_dir: PathBuf,
-    #[arg(long)]
-    pub upgrade: bool,
 }
 
-pub async fn run_pipeline(args: Test, project: PyProject) -> Result<f32> {
-    // TODO fix me
-    let use_case_project = PyProject::for_project("examples/use_case")?;
-    let out = pyo3::Python::with_gil(|py| {
-        let pipeline = PyModule::from_code(
-            py,
-            include_str!("../py/pipeline.py"),
-            "pipeline.py",
-            "pipeline",
-        )?;
-        let layer_cls = pipeline.getattr("Layer")?;
-        let pipeline_cls = pipeline.getattr("Pipeline")?;
-
-        let config = use_case_project.aqora()?.as_use_case()?;
-        let generator = config.generator.path.import(py)?.call0()?;
-        let aggregator = config.aggregator.path.import(py)?;
-
-        let layers = config
-            .layers
-            .iter()
-            .map(|layer| {
-                let evaluator = layer.evaluate.path.import(py)?;
-                let metric = if let Some(metric) = layer.metric.as_ref() {
-                    Some(metric.path.import(py)?)
-                } else {
-                    None
-                };
-                layer_cls.call1((evaluator, metric))
-            })
-            .collect::<pyo3::PyResult<Vec<_>>>()?;
-
-        let pipeline = pipeline_cls.call1((generator, layers, aggregator))?;
-
-        Ok::<_, Error>(pyo3_asyncio::into_future_with_locals(
-            &pyo3_asyncio::tokio::get_current_locals(py)?,
-            pipeline.call_method0("run")?,
-        )?)
-    })?
-    .await?;
-    Ok(pyo3::Python::with_gil(|py| out.extract(py))?)
+impl From<Test> for Install {
+    fn from(args: Test) -> Self {
+        Install {
+            url: args.url,
+            project_dir: args.project_dir,
+            upgrade: false,
+        }
+    }
 }
+
+// pub async fn run_pipeline(args: Test, project: PyProject) -> Result<f32> {
+//     // TODO fix me
+//     let use_case_project = PyProject::for_project("examples/use_case")?;
+//     let out = pyo3::Python::with_gil(|py| {
+//         let pipeline = PyModule::from_code(
+//             py,
+//             include_str!("../py/pipeline.py"),
+//             "pipeline.py",
+//             "pipeline",
+//         )?;
+//         let layer_cls = pipeline.getattr("Layer")?;
+//         let pipeline_cls = pipeline.getattr("Pipeline")?;
+
+//         let config = use_case_project.aqora()?.as_use_case()?;
+//         let generator = config.generator.path.import(py)?.call0()?;
+//         let aggregator = config.aggregator.path.import(py)?;
+
+//         let layers = config
+//             .layers
+//             .iter()
+//             .map(|layer| {
+//                 let evaluator = layer.evaluate.path.import(py)?;
+//                 let metric = if let Some(metric) = layer.metric.as_ref() {
+//                     Some(metric.path.import(py)?)
+//                 } else {
+//                     None
+//                 };
+//                 layer_cls.call1((evaluator, metric))
+//             })
+//             .collect::<pyo3::PyResult<Vec<_>>>()?;
+
+//         let pipeline = pipeline_cls.call1((generator, layers, aggregator))?;
+
+//         Ok::<_, Error>(pyo3_asyncio::into_future_with_locals(
+//             &pyo3_asyncio::tokio::get_current_locals(py)?,
+//             pipeline.call_method0("run")?,
+//         )?)
+//     })?
+//     .await?;
+//     Ok(pyo3::Python::with_gil(|py| out.extract(py))?)
+// }
 
 pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
     let m = MultiProgress::new();
 
-    let mut pb = ProgressBar::new_spinner().with_message("Setting up virtual environment");
-    pb.enable_steady_tick(std::time::Duration::from_millis(100));
-    pb = m.add(pb);
+    let submission = project.aqora()?.as_submission()?;
 
-    pb.set_message("Setting up virtual environment");
+    let mut venv_pb = ProgressBar::new_spinner().with_message("Applying changes");
+    venv_pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    venv_pb = m.add(venv_pb);
+
     let env = PyEnv::init(&args.project_dir).await?;
 
-    let config = project.aqora()?.as_submission()?;
-    let competition_id = config.competition;
-    let use_case_package = format!("use-case-{}", competition_id.to_package_id());
-    let url = args.url.parse()?;
     env.pip_install(
-        [
-            use_case_package,
-            args.project_dir.to_string_lossy().to_string(),
-        ],
+        [args.project_dir.to_string_lossy().to_string()],
         &PipOptions {
-            upgrade: args.upgrade,
-            extra_index_urls: vec![pypi_url(&url, get_access_token(url.clone()).await?)?],
+            no_deps: true,
+            ..Default::default()
         },
-        Some(&pb),
+        Some(&venv_pb),
     )
     .await?;
 
-    pb.finish_with_message("Virtual environment setup");
+    venv_pb.finish_with_message("Changes applied");
 
-    let mut pb = ProgressBar::new_spinner().with_message("Running tests");
-    pb.enable_steady_tick(std::time::Duration::from_millis(100));
-    pb = m.add(pb);
+    let client = GraphQLClient::new(args.url.parse()?).await?;
+    let use_case_res = get_use_case(&client, submission.competition).await?;
+    let use_case_pyproject = PyProject::from_toml(use_case_res.pyproject_toml)?;
+    let use_case = use_case_pyproject.aqora()?.as_use_case()?;
 
-    let score = run_pipeline(args, project).await?;
-
-    pb.finish_with_message("Tests complete");
-
-    println!("Score: {}", score);
+    let pipeline = Pipeline::import(use_case, submission)?;
+    pipeline.test_aggregator().await?;
+    let mut generator = pipeline.generator()?;
+    while let Some(item) = generator.next().await {
+        let results = pipeline.evaluate(item?).await?;
+        println!("{:?}", results);
+    }
 
     Ok(())
 }
 
 pub async fn test(args: Test) -> Result<()> {
+    if !project_data_dir(&args.project_dir).exists() {
+        install(args.clone().into()).await?;
+    }
     let project = PyProject::for_project(&args.project_dir)?;
     let aqora = project.aqora()?;
     if aqora.is_submission() {

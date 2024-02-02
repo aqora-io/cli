@@ -4,6 +4,7 @@ mod credentials;
 mod error;
 mod graphql_client;
 mod id;
+mod pipeline;
 mod pyproject;
 mod python;
 

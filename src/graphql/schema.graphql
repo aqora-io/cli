@@ -496,6 +496,8 @@ URL is a String implementing the [URL Standard](http://url.spec.whatwg.org/)
 scalar Url
 
 type UseCase implements Node {
+	pythonRequires: String
+	pyprojectToml: String!
 	version: Semver!
 	validated: Boolean!
 	createdAt: DateTime!
