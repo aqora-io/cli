@@ -8,7 +8,7 @@ use pyo3::{
     prelude::*,
     types::{PyDict, PyString},
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct LayerFunction {
@@ -20,11 +20,10 @@ impl LayerFunction {
     pub async fn call(&self, input: &Py<PyAny>, context: &Py<PyAny>) -> PyResult<Py<PyAny>> {
         let input = deepcopy(input)?;
         if self.context {
-            Ok(async_python_run!(|py| {
-                let kwargs = PyDict::new(py);
-                kwargs.set_item("context", context)?;
-                self.func.as_ref(py).call((input,), Some(kwargs))
-            }))
+            Ok(async_python_run!(|py| self
+                .func
+                .as_ref(py)
+                .call1((input, context))))
         } else {
             Ok(async_python_run!(|py| self.func.as_ref(py).call1((input,))))
         }
@@ -96,7 +95,21 @@ impl Layer {
 }
 
 #[derive(Clone, Debug)]
+pub struct PipelineConfig {
+    pub data: PathBuf,
+}
+
+impl ToPyObject for PipelineConfig {
+    fn to_object(&self, py: Python) -> PyObject {
+        let dict = PyDict::new(py);
+        dict.set_item("data", self.data.clone()).unwrap();
+        dict.into()
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct Evaluator {
+    config: PipelineConfig,
     context: Option<Py<PyAny>>,
     layers: Vec<Layer>,
 }
@@ -106,7 +119,9 @@ impl Evaluator {
         let mut input = input;
         let context = if let Some(context) = self.context.as_ref() {
             let context_input = deepcopy(&input)?;
-            async_python_run!(|py| context.as_ref(py).call1((context_input,)))
+            async_python_run!(|py| context
+                .as_ref(py)
+                .call1((context_input, self.config.to_object(py))))
         } else {
             deepcopy(&input)?
         };
@@ -141,17 +156,18 @@ pub struct Pipeline {
     aggregator: Py<PyAny>,
     context: Option<Py<PyAny>>,
     layers: Vec<Layer>,
+    config: PipelineConfig,
 }
 
 impl Pipeline {
     pub fn import(
         use_case: &AqoraUseCaseConfig,
         submission: &AqoraSubmissionConfig,
+        config: PipelineConfig,
     ) -> Result<Self> {
         Python::with_gil(|py| {
-            let generator = Self::import_path(py, &use_case.generator, &submission.refs)?
-                .call0()?
-                .into_py(py);
+            let generator =
+                Self::import_path(py, &use_case.generator, &submission.refs)?.into_py(py);
             let aggregator =
                 Self::import_path(py, &use_case.aggregator, &submission.refs)?.into_py(py);
             let context = use_case
@@ -211,18 +227,28 @@ impl Pipeline {
                 aggregator,
                 context,
                 layers,
+                config,
             })
         })
     }
 
     pub fn generator(&self) -> PyResult<impl Stream<Item = PyResult<Py<PyAny>>>> {
-        async_generator(self.generator.clone())
+        let generator = Python::with_gil(|py| {
+            PyResult::Ok(
+                self.generator
+                    .as_ref(py)
+                    .call1((self.config.to_object(py),))?
+                    .into_py(py),
+            )
+        })?;
+        async_generator(generator)
     }
 
     pub fn evaluator(&self) -> Evaluator {
         Evaluator {
             context: self.context.clone(),
             layers: self.layers.clone(),
+            config: self.config.clone(),
         }
     }
 

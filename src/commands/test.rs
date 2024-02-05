@@ -5,7 +5,7 @@ use crate::{
     error::{self, Error, Result},
     graphql_client::{custom_scalars::*, GraphQLClient},
     id::Id,
-    pipeline::Pipeline,
+    pipeline::{Pipeline, PipelineConfig},
     pyproject::{project_data_dir, PackageName, PyProject},
     python::{async_generator, pypi_url, AsyncIterator, PipOptions, PyEnv},
 };
@@ -172,7 +172,10 @@ pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
     pipeline_pb.enable_steady_tick(std::time::Duration::from_millis(100));
     pipeline_pb = m.add(pipeline_pb);
 
-    let pipeline = Pipeline::import(use_case, submission)?;
+    let config = PipelineConfig {
+        data: data_path.canonicalize()?,
+    };
+    let pipeline = Pipeline::import(use_case, submission, config)?;
     let score = pipeline
         .aggregate(pipeline.evaluate(pipeline.generator()?, pipeline.evaluator()))
         .await?;

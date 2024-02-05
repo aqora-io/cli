@@ -2,6 +2,7 @@ import random
 from typing import AsyncIterator, List, Dict, Any
 from pyzx.graph.base import BaseGraph
 import pyzx as zx
+from pathlib import Path
 
 
 class Result:
@@ -9,13 +10,20 @@ class Result:
     metric: float
 
 
-async def cases() -> AsyncIterator[BaseGraph]:
-    random.seed(123)
-    state = random.getstate()
+def init_random(config: Dict[str, str]) -> Any:
+    seed_path = Path(config["data"]) / "seed"
+    with open(seed_path, "r") as f:
+        seed = int(f.read())
+    random.seed(seed)
+    return random.getstate()
+
+
+async def cases(config: Dict[str, str]) -> AsyncIterator[BaseGraph]:
+    random_state = init_random(config)
     for _ in range(10):
-        random.setstate(state)
+        random.setstate(random_state)
         generated = zx.generate.cliffordT(5, 5)
-        state = random.getstate()
+        random_state = random.getstate()
         yield generated
 
 
