@@ -5,6 +5,10 @@ query GetCompetitionUseCase($id: ID!) {
       useCase {
         version
         pyprojectToml
+        files {
+          kind
+          downloadUrl
+        }
       }
     }
   }

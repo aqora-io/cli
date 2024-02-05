@@ -1,5 +1,6 @@
 use super::{install, Install};
 use crate::{
+    compress::decompress,
     credentials::get_access_token,
     error::{self, Error, Result},
     graphql_client::{custom_scalars::*, GraphQLClient},
@@ -13,7 +14,9 @@ use futures::prelude::*;
 use graphql_client::GraphQLQuery;
 use indicatif::{MultiProgress, ProgressBar};
 use pyo3::{prelude::*, types::PyModule, Python};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use tempfile::tempfile;
+use url::Url;
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -73,47 +76,46 @@ impl From<Test> for Install {
     }
 }
 
-// pub async fn run_pipeline(args: Test, project: PyProject) -> Result<f32> {
-//     // TODO fix me
-//     let use_case_project = PyProject::for_project("examples/use_case")?;
-//     let out = pyo3::Python::with_gil(|py| {
-//         let pipeline = PyModule::from_code(
-//             py,
-//             include_str!("../py/pipeline.py"),
-//             "pipeline.py",
-//             "pipeline",
-//         )?;
-//         let layer_cls = pipeline.getattr("Layer")?;
-//         let pipeline_cls = pipeline.getattr("Pipeline")?;
-
-//         let config = use_case_project.aqora()?.as_use_case()?;
-//         let generator = config.generator.path.import(py)?.call0()?;
-//         let aggregator = config.aggregator.path.import(py)?;
-
-//         let layers = config
-//             .layers
-//             .iter()
-//             .map(|layer| {
-//                 let evaluator = layer.evaluate.path.import(py)?;
-//                 let metric = if let Some(metric) = layer.metric.as_ref() {
-//                     Some(metric.path.import(py)?)
-//                 } else {
-//                     None
-//                 };
-//                 layer_cls.call1((evaluator, metric))
-//             })
-//             .collect::<pyo3::PyResult<Vec<_>>>()?;
-
-//         let pipeline = pipeline_cls.call1((generator, layers, aggregator))?;
-
-//         Ok::<_, Error>(pyo3_asyncio::into_future_with_locals(
-//             &pyo3_asyncio::tokio::get_current_locals(py)?,
-//             pipeline.call_method0("run")?,
-//         )?)
-//     })?
-//     .await?;
-//     Ok(pyo3::Python::with_gil(|py| out.extract(py))?)
-// }
+pub async fn download_use_case_data(project_dir: impl AsRef<Path>, url: Url) -> Result<PathBuf> {
+    let dir = project_data_dir(project_dir.as_ref()).join("data");
+    tokio::fs::create_dir_all(&dir).await.map_err(|e| {
+        error::user(
+            &format!("Failed to create use case data directory: {e}"),
+            "Please make sure you have permission to create directories in this directory",
+        )
+    })?;
+    let client = reqwest::Client::new();
+    let mut byte_stream = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| {
+            error::user(
+                &format!("Failed to download use case data: {e}"),
+                "Check your internet connection and try again",
+            )
+        })?
+        .error_for_status()
+        .map_err(|e| error::system(&format!("Failed to download use case data: {e}"), ""))?
+        .bytes_stream();
+    let tempfile = tempfile::NamedTempFile::new().map_err(|e| {
+        error::user(
+            &format!("Failed to create temporary file: {e}"),
+            "Please make sure you have permission to create files in this directory",
+        )
+    })?;
+    let mut tar_file = tokio::fs::File::create(tempfile.path()).await?;
+    while let Some(item) = byte_stream.next().await {
+        tokio::io::copy(&mut item?.as_ref(), &mut tar_file).await?;
+    }
+    decompress(tempfile.path(), &dir).map_err(|e| {
+        error::user(
+            &format!("Failed to decompress use case data: {e}"),
+            "Please make sure you have permission to create files in this directory",
+        )
+    })?;
+    Ok(dir.join("data"))
+}
 
 pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
     let m = MultiProgress::new();
@@ -138,17 +140,44 @@ pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
 
     venv_pb.finish_with_message("Changes applied");
 
+    let mut download_pb = ProgressBar::new_spinner().with_message("Downloading use case data...");
+    download_pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    download_pb = m.add(download_pb);
+
     let client = GraphQLClient::new(args.url.parse()?).await?;
     let use_case_res = get_use_case(&client, submission.competition).await?;
     let use_case_pyproject = PyProject::from_toml(use_case_res.pyproject_toml)?;
     let use_case = use_case_pyproject.aqora()?.as_use_case()?;
+
+    let data_path = download_use_case_data(
+        &args.project_dir,
+        use_case_res
+            .files
+            .iter()
+            .find(|file| matches!(file.kind, get_competition_use_case::UseCaseFileKind::DATA))
+            .ok_or_else(|| {
+                error::system(
+                    "No use case data found",
+                    "Please contact the competition organizer",
+                )
+            })?
+            .download_url
+            .clone(),
+    )
+    .await?;
+
+    download_pb.finish_with_message("Use case data downloaded");
+
+    let mut pipeline_pb = ProgressBar::new_spinner().with_message("Downloading use case data...");
+    pipeline_pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    pipeline_pb = m.add(pipeline_pb);
 
     let pipeline = Pipeline::import(use_case, submission)?;
     let score = pipeline
         .aggregate(pipeline.evaluate(pipeline.generator()?, pipeline.evaluator()))
         .await?;
 
-    println!("Score: {}", score);
+    pipeline_pb.finish_with_message(format!("Done: {score}"));
 
     Ok(())
 }
