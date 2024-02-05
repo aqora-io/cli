@@ -2,6 +2,7 @@ use crate::{
     error::{self, Error, Result},
     id::{Id, NodeType},
 };
+use chrono::{FixedOffset, Utc};
 use pep440_rs::Version;
 use pyproject_toml::{BuildSystem, Project};
 use serde::{de, ser, Deserialize, Serialize};
@@ -56,10 +57,6 @@ impl PyProject {
             ));
         }
         Ok(pyproject_path)
-    }
-
-    pub fn name(&self) -> Option<&str> {
-        self.project.as_ref().map(|project| project.name.as_str())
     }
 
     pub fn set_name(&mut self, name: impl ToString) {
@@ -422,10 +419,6 @@ impl RevertFile {
         })
     }
 
-    pub fn saved(&self) -> &NamedTempFile {
-        &self.backed_up
-    }
-
     pub fn revert(mut self) -> std::io::Result<()> {
         std::fs::copy(self.backed_up.path(), &self.path)?;
         self.reverted = true;
@@ -448,4 +441,22 @@ impl Drop for RevertFile {
             eprintln!("Could not revert file {}: {}", self.path.display(), err);
         }
     }
+}
+
+pub fn project_updated_since(path: impl AsRef<Path>, time: chrono::DateTime<FixedOffset>) -> bool {
+    ignore::WalkBuilder::new(path).build().any(|entry| {
+        entry
+            .as_ref()
+            .ok()
+            .and_then(|entry| entry.metadata().ok())
+            .map(|meta| {
+                meta.is_file()
+                    && meta
+                        .modified()
+                        .ok()
+                        .map(|t| chrono::DateTime::<Utc>::from(t) > time)
+                        .unwrap_or(false)
+            })
+            .unwrap_or(false)
+    })
 }

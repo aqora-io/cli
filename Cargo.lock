@@ -541,6 +541,7 @@ dependencies = [
  "hex",
  "hostname",
  "human-errors",
+ "ignore",
  "indicatif",
  "lazy_static",
  "maturin",
