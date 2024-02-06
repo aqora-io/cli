@@ -75,6 +75,7 @@ type Competition implements Node {
 	useCase: Project!
 	banner: Url
 	thumbnail: Url
+	submissions(after: String, before: String, first: Int, last: Int, entityId: ID): ProjectConnection!
 	topics(after: String, before: String, first: Int, last: Int): TopicConnection!
 }
 
@@ -216,6 +217,8 @@ type Mutation {
 	createCompetition(input: CreateCompetitionInput!): CompetitionEdge!
 	updateCompetition(id: ID!, input: UpdateCompetitionInput!): CompetitionEdge!
 	deleteCompetition(id: ID!): ID!
+	createSubmissionVersion(competitionId: ID!, input: UpdateSubmissionInput!): ProjectVersionEdge!
+	validateSubmissionVersion(projectVersionId: ID!): ProjectVersionEdge!
 	createTopicForCompetition(competitionId: ID!, input: CreateTopicInput!): TopicEdge!
 	updateTopic(id: ID!, input: UpdateTopicInput!): Topic!
 	deleteTopic(id: ID!): ID!
@@ -378,6 +381,35 @@ type Project implements Node {
 	latest: ProjectVersion
 }
 
+type ProjectConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [ProjectEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Project!]!
+}
+
+"""
+An edge in a connection.
+"""
+type ProjectEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Project!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
 type ProjectVersion implements Node {
 	pythonRequires: String
 	pyprojectToml: String!
@@ -510,6 +542,10 @@ input UpdateOrganizationInput {
 	image: Upload
 }
 
+input UpdateSubmissionInput {
+	pyprojectToml: String!
+}
+
 input UpdateTopicInput {
 	title: String
 	description: String
@@ -549,7 +585,7 @@ type UseCase implements Node {
 	competition: Competition!
 }
 
-type User implements Node & Entity {
+type User implements Entity & Node {
 	username: String!
 	displayName: String!
 	location: String
@@ -570,6 +606,7 @@ type User implements Node & Entity {
 	"""
 	can(action: Action!, on: ID, asOrganization: ID): Boolean!
 	organizations(after: String, before: String, first: Int, last: Int): OrganizationMembershipConnection!
+	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID): ProjectConnection!
 	viewerCan(action: Action!, asOrganization: ID): Boolean!
 }
 

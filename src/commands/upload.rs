@@ -47,12 +47,66 @@ pub async fn get_competition_id_by_slug(
                 "Please make sure the competition is correct",
             )
         })?;
-    Ok(Id::parse_node_id(competition.id).map_err(|err| {
+    Id::parse_node_id(competition.id).map_err(|err| {
         error::system(
             &format!("Could not parse competition ID: {}", err),
             "This is a bug, please report it",
         )
-    })?)
+    })
+}
+
+#[derive(GraphQLQuery)]
+#[graphql(
+    query_path = "src/graphql/get_viewer_id.graphql",
+    schema_path = "src/graphql/schema.graphql",
+    response_derives = "Debug"
+)]
+pub struct GetViewerId;
+
+pub async fn get_viewer_id(client: &GraphQLClient) -> Result<Id> {
+    let viewer = client
+        .send::<GetViewerId>(get_viewer_id::Variables {})
+        .await?
+        .viewer;
+    Id::parse_node_id(viewer.id).map_err(|err| {
+        error::system(
+            &format!("Could not parse viewer ID: {}", err),
+            "This is a bug, please report it",
+        )
+    })
+}
+
+#[derive(GraphQLQuery)]
+#[graphql(
+    query_path = "src/graphql/get_entity_id_by_username.graphql",
+    schema_path = "src/graphql/schema.graphql",
+    response_derives = "Debug"
+)]
+pub struct GetEntityIdByUsername;
+
+pub async fn get_entity_id_by_username(
+    client: &GraphQLClient,
+    username: impl Into<String>,
+) -> Result<Id> {
+    let username = username.into();
+    let entity = client
+        .send::<GetEntityIdByUsername>(get_entity_id_by_username::Variables {
+            username: username.clone(),
+        })
+        .await?
+        .entity_by_username
+        .ok_or_else(|| {
+            error::user(
+                &format!("User '{}' not found", username),
+                "Please make sure the username is correct",
+            )
+        })?;
+    Id::parse_node_id(entity.id).map_err(|err| {
+        error::system(
+            &format!("Could not parse entity ID: {}", err),
+            "This is a bug, please report it",
+        )
+    })
 }
 
 #[derive(GraphQLQuery)]
@@ -70,6 +124,22 @@ pub struct UpdateUseCaseMutation;
     response_derives = "Debug"
 )]
 pub struct ValidateUseCaseMutation;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+    query_path = "src/graphql/update_submission.graphql",
+    schema_path = "src/graphql/schema.graphql",
+    response_derives = "Debug"
+)]
+pub struct UpdateSubmissionMutation;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+    query_path = "src/graphql/validate_submission.graphql",
+    schema_path = "src/graphql/schema.graphql",
+    response_derives = "Debug"
+)]
+pub struct ValidateSubmissionMutation;
 
 async fn upload_file(
     client: &reqwest::Client,
@@ -260,15 +330,120 @@ pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
     Ok(())
 }
 
+pub async fn upload_submission(args: Upload, project: PyProject) -> Result<()> {
+    let client = GraphQLClient::new(args.url.parse()?).await?;
+
+    let tempdir = tempdir().map_err(|err| {
+        error::user(
+            &format!("could not create temporary directory: {}", err),
+            "Please make sure you have permission to create temporary directories",
+        )
+    })?;
+    let pyproject_toml = std::fs::read_to_string(PyProject::path_for_project(&args.project_dir)?)?;
+    let config = project.aqora()?.as_submission()?;
+
+    let competition_id = get_competition_id_by_slug(&client, &config.competition).await?;
+    let entity_id = if let Some(username) = &config.entity {
+        get_entity_id_by_username(&client, username).await?
+    } else {
+        get_viewer_id(&client).await?
+    };
+
+    let version = project.version()?;
+    let package_name = format!(
+        "submission-{}-{}",
+        competition_id.to_package_id(),
+        entity_id.to_package_id()
+    );
+
+    let m = MultiProgress::new();
+
+    let mut use_case_pb = ProgressBar::new_spinner().with_message("Updating version");
+    use_case_pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    use_case_pb = m.add(use_case_pb);
+
+    let project_version = client
+        .send::<UpdateSubmissionMutation>(update_submission_mutation::Variables {
+            competition_id: competition_id.to_node_id(),
+            pyproject_toml,
+        })
+        .await?
+        .create_submission_version
+        .node;
+
+    use_case_pb.finish_with_message("Version updated");
+
+    let s3_client = reqwest::Client::new();
+
+    let upload_url = if let Some(url) = project_version
+        .files
+        .iter()
+        .find(|f| {
+            matches!(
+                f.kind,
+                update_submission_mutation::ProjectVersionFileKind::PACKAGE
+            )
+        })
+        .and_then(|f| f.upload_url.as_ref())
+    {
+        url
+    } else {
+        return Err(error::system(
+            "No upload URL found",
+            "This is a bug, please report it",
+        ));
+    };
+    let package_tar_file = tempdir
+        .path()
+        .join(format!("{package_name}-{version}.tar.gz"));
+    let mut package_pb = ProgressBar::new_spinner().with_message("Initializing Python environment");
+    package_pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    package_pb = m.add(package_pb);
+
+    let env = PyEnv::init(&args.project_dir).await?;
+
+    let project_file = RevertFile::save(PyProject::path_for_project(&args.project_dir)?)?;
+    let mut new_project = project.clone();
+    new_project.set_name(package_name);
+    std::fs::write(&project_file, new_project.toml()?)?;
+
+    package_pb.set_message("Building package");
+    env.build_package(&args.project_dir, tempdir.path(), Some(&package_pb))
+        .await?;
+    project_file.revert()?;
+
+    package_pb.set_message("Uploading package");
+
+    upload_file(&s3_client, package_tar_file, upload_url, "application/gzip").await?;
+
+    package_pb.finish_with_message("Package uploaded");
+
+    let mut validate_pb = ProgressBar::new_spinner().with_message("Validating submission");
+    validate_pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    validate_pb = m.add(validate_pb);
+
+    let _ = client
+        .send::<ValidateSubmissionMutation>(validate_submission_mutation::Variables {
+            project_version_id: project_version.id,
+        })
+        .await?;
+
+    validate_pb.finish_with_message("Done!");
+
+    Ok(())
+}
+
 pub async fn upload(args: Upload) -> Result<()> {
     let project = PyProject::for_project(&args.project_dir)?;
     let aqora = project.aqora()?;
     if aqora.is_use_case() {
         upload_use_case(args, project).await
+    } else if aqora.is_submission() {
+        upload_submission(args, project).await
     } else {
         Err(error::user(
             "Other project types not supported yet",
-            "Try using on a use_case project",
+            "Try one of the supported project types: use_case, submission",
         ))
     }
 }

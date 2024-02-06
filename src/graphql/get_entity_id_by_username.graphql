@@ -1,0 +1,6 @@
+query GetEntityIdByUsername($username: String!) {
+  entityByUsername(username: $username) {
+    id
+    __typename
+  }
+}

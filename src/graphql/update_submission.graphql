@@ -1,0 +1,14 @@
+mutation UpdateSubmissionMutation($competition_id: ID!, $pyprojectToml: String!) {
+  createSubmissionVersion(
+    competitionId: $competition_id
+    input: { pyprojectToml: $pyprojectToml }
+  ) {
+    node {
+      id
+      files {
+        kind
+        uploadUrl
+      }
+    }
+  }
+}

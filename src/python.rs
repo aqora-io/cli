@@ -172,7 +172,7 @@ impl PyEnv {
         if child.wait().await?.success() {
             Ok(())
         } else {
-            Err(error::system(&format!("pip install failed"), ""))
+            Err(error::system("pip install failed", ""))
         }
     }
 
@@ -200,7 +200,7 @@ impl PyEnv {
         let mut output_lines = BufReader::new(child.stdout.take().unwrap()).lines();
         if let Some(pb) = progress {
             while let Some(line) = output_lines.next_line().await? {
-                pb.set_message(format!("building package: {line}"));
+                pb.set_message(format!("Building package: {line}"));
             }
         }
 

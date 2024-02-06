@@ -1,0 +1,7 @@
+mutation ValidateSubmissionMutation($project_version_id: ID!) {
+  validateSubmissionVersion(projectVersionId: $project_version_id) {
+    node {
+      id
+    }
+  }
+}
