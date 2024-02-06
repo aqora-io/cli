@@ -2,6 +2,7 @@ use crate::{
     compress::compress,
     error::{self, Result},
     graphql_client::GraphQLClient,
+    id::Id,
     pyproject::{PyProject, RevertFile},
     python::PyEnv,
 };
@@ -30,6 +31,29 @@ pub struct Upload {
     response_derives = "Debug"
 )]
 pub struct CompetitionIdBySlug;
+
+pub async fn get_competition_id_by_slug(
+    client: &GraphQLClient,
+    slug: impl Into<String>,
+) -> Result<Id> {
+    let slug = slug.into();
+    let competition = client
+        .send::<CompetitionIdBySlug>(competition_id_by_slug::Variables { slug: slug.clone() })
+        .await?
+        .competition_by_slug
+        .ok_or_else(|| {
+            error::user(
+                &format!("Competition '{}' not found", slug),
+                "Please make sure the competition is correct",
+            )
+        })?;
+    Ok(Id::parse_node_id(competition.id).map_err(|err| {
+        error::system(
+            &format!("Could not parse competition ID: {}", err),
+            "This is a bug, please report it",
+        )
+    })?)
+}
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -77,6 +101,8 @@ async fn upload_file(
 }
 
 pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
+    let client = GraphQLClient::new(args.url.parse()?).await?;
+
     let tempdir = tempdir().map_err(|err| {
         error::user(
             &format!("could not create temporary directory: {}", err),
@@ -85,7 +111,9 @@ pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
     })?;
     let pyproject_toml = std::fs::read_to_string(PyProject::path_for_project(&args.project_dir)?)?;
     let config = project.aqora()?.as_use_case()?;
-    let competition_id = config.competition;
+
+    let competition_id = get_competition_id_by_slug(&client, &config.competition).await?;
+
     let version = project.version()?;
     let package_name = format!("use-case-{}", competition_id.to_package_id());
     let data_path = args.project_dir.join(&config.data);
@@ -102,7 +130,6 @@ pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
     use_case_pb.enable_steady_tick(std::time::Duration::from_millis(100));
     use_case_pb = m.add(use_case_pb);
 
-    let client = GraphQLClient::new(args.url.parse()?).await?;
     let project_version = client
         .send::<UpdateUseCaseMutation>(update_use_case_mutation::Variables {
             competition_id: competition_id.to_node_id(),

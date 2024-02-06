@@ -1,6 +1,6 @@
 [project]
 name = "use-case"
-version = "0.1.1"
+version = "0.1.2"
 requires-python = ">=3.7"
 
 dependencies = [
@@ -13,7 +13,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.aqora]
 type = "use_case"
-competition = "AENvbXBldGl0aW9uAY1lGdRtf3iuX8d6Ugc2lQ"
+competition = "test"
 data = "data"
 generator = "use_case.cases"
 aggregator = "use_case.aggregate"

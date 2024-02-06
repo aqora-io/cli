@@ -148,8 +148,7 @@ impl AqoraConfig {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AqoraUseCaseConfig {
-    #[serde(with = "crate::id::node_serde")]
-    pub competition: Id,
+    pub competition: String,
     pub data: PathBuf,
     pub generator: PathStr<'static>,
     pub aggregator: PathStr<'static>,
@@ -167,10 +166,8 @@ pub struct LayerConfig {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AqoraSubmissionConfig {
-    #[serde(with = "crate::id::node_serde")]
-    pub competition: Id,
-    #[serde(with = "crate::id::node_serde")]
-    pub entity: Id,
+    pub competition: String,
+    pub entity: Option<String>,
     pub refs: HashMap<String, PathStr<'static>>,
 }
 

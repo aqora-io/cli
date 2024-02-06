@@ -22,37 +22,6 @@ use url::Url;
 )]
 pub struct GetCompetitionUseCase;
 
-async fn get_use_case(
-    client: &GraphQLClient,
-    competition_id: Id,
-) -> Result<get_competition_use_case::GetCompetitionUseCaseNodeOnCompetitionUseCaseLatest> {
-    let version = match client
-        .send::<GetCompetitionUseCase>(get_competition_use_case::Variables {
-            id: competition_id.to_node_id(),
-        })
-        .await?
-        .node
-    {
-        get_competition_use_case::GetCompetitionUseCaseNode::Competition(c) => {
-            if let Some(version) = c.use_case.latest {
-                version
-            } else {
-                return Err(error::user(
-                    "No use case found",
-                    "Please contact the competition organizer",
-                ));
-            }
-        }
-        _ => {
-            return Err(error::user(
-                "No use case found",
-                "Please contact the competition organizer",
-            ));
-        }
-    };
-    Ok(version)
-}
-
 pub async fn download_use_case_data(dir: impl AsRef<Path>, url: Url) -> Result<()> {
     tokio::fs::create_dir_all(&dir).await.map_err(|e| {
         error::user(
@@ -105,6 +74,8 @@ pub struct Install {
 }
 
 pub async fn install_submission(args: Install, project: PyProject) -> Result<()> {
+    let client = GraphQLClient::new(args.url.parse()?).await?;
+
     let m = MultiProgress::new();
 
     let mut use_case_pb = ProgressBar::new_spinner().with_message("Getting use case...");
@@ -112,7 +83,31 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
     use_case_pb = m.add(use_case_pb);
 
     let config = project.aqora()?.as_submission()?;
-    let competition_id = config.competition;
+
+    let competition = client
+        .send::<GetCompetitionUseCase>(get_competition_use_case::Variables {
+            slug: config.competition.clone(),
+        })
+        .await?
+        .competition_by_slug
+        .ok_or_else(|| {
+            error::user(
+                &format!("Competition '{}' not found", config.competition),
+                "Please make sure the competition exists",
+            )
+        })?;
+    let competition_id = Id::parse_node_id(competition.id).map_err(|e| {
+        error::system(
+            &format!("Failed to parse competition ID: {e}"),
+            "This is a bug, please report it",
+        )
+    })?;
+    let use_case_res = competition.use_case.latest.ok_or_else(|| {
+        error::user(
+            "No use case found",
+            "Please contact the competition organizer",
+        )
+    })?;
 
     let data_dir = project_data_dir(&args.project_dir);
     tokio::fs::create_dir_all(&data_dir).await.map_err(|e| {
@@ -125,8 +120,6 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
         )
     })?;
 
-    let client = GraphQLClient::new(args.url.parse()?).await?;
-    let use_case_res = get_use_case(&client, competition_id).await?;
     let use_case_toml_path = data_dir.join("use_case.toml");
     let old_use_case = if use_case_toml_path.exists() {
         Some(PyProject::from_toml(

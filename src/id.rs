@@ -74,39 +74,3 @@ impl Id {
         base32::encode(BASE32_ALPHABET, &self.id.into_bytes()).to_lowercase()
     }
 }
-
-pub mod node_serde {
-    use super::*;
-    use serde::{de, Deserializer, Serializer};
-
-    pub fn serialize<S>(id: &Id, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&id.to_node_id())
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Id, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct IdVisitor;
-
-        impl<'de> de::Visitor<'de> for IdVisitor {
-            type Value = Id;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a valid node ID")
-            }
-
-            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Id::parse_node_id(value).map_err(de::Error::custom)
-            }
-        }
-
-        deserializer.deserialize_str(IdVisitor)
-    }
-}
