@@ -103,13 +103,13 @@ pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
     use_case_pb = m.add(use_case_pb);
 
     let client = GraphQLClient::new(args.url.parse()?).await?;
-    let use_case = client
+    let project_version = client
         .send::<UpdateUseCaseMutation>(update_use_case_mutation::Variables {
             competition_id: competition_id.to_node_id(),
             pyproject_toml,
         })
         .await?
-        .update_use_case
+        .create_use_case_version
         .node;
 
     use_case_pb.finish_with_message("Version updated");
@@ -117,10 +117,15 @@ pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
     let s3_client = reqwest::Client::new();
 
     let data_fut = {
-        let upload_url = if let Some(url) = use_case
+        let upload_url = if let Some(url) = project_version
             .files
             .iter()
-            .find(|f| matches!(f.kind, update_use_case_mutation::UseCaseFileKind::DATA))
+            .find(|f| {
+                matches!(
+                    f.kind,
+                    update_use_case_mutation::ProjectVersionFileKind::DATA
+                )
+            })
             .and_then(|f| f.upload_url.as_ref())
         {
             url
@@ -156,10 +161,15 @@ pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
     };
 
     let package_fut = {
-        let upload_url = if let Some(url) = use_case
+        let upload_url = if let Some(url) = project_version
             .files
             .iter()
-            .find(|f| matches!(f.kind, update_use_case_mutation::UseCaseFileKind::PACKAGE))
+            .find(|f| {
+                matches!(
+                    f.kind,
+                    update_use_case_mutation::ProjectVersionFileKind::PACKAGE
+                )
+            })
             .and_then(|f| f.upload_url.as_ref())
         {
             url
@@ -213,7 +223,9 @@ pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
     validate_pb = m.add(validate_pb);
 
     let _ = client
-        .send::<ValidateUseCaseMutation>(validate_use_case_mutation::Variables { id: use_case.id })
+        .send::<ValidateUseCaseMutation>(validate_use_case_mutation::Variables {
+            project_version_id: project_version.id,
+        })
         .await?;
 
     validate_pb.finish_with_message("Done!");

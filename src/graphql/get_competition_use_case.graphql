@@ -3,11 +3,13 @@ query GetCompetitionUseCase($id: ID!) {
     __typename
     ... on Competition {
       useCase {
-        version
-        pyprojectToml
-        files {
-          kind
-          downloadUrl
+        latest {
+          version
+          pyprojectToml
+          files {
+            kind
+            downloadUrl
+          }
         }
       }
     }

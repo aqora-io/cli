@@ -25,8 +25,8 @@ pub struct GetCompetitionUseCase;
 async fn get_use_case(
     client: &GraphQLClient,
     competition_id: Id,
-) -> Result<get_competition_use_case::GetCompetitionUseCaseNodeOnCompetitionUseCase> {
-    let use_case = match client
+) -> Result<get_competition_use_case::GetCompetitionUseCaseNodeOnCompetitionUseCaseLatest> {
+    let version = match client
         .send::<GetCompetitionUseCase>(get_competition_use_case::Variables {
             id: competition_id.to_node_id(),
         })
@@ -34,8 +34,8 @@ async fn get_use_case(
         .node
     {
         get_competition_use_case::GetCompetitionUseCaseNode::Competition(c) => {
-            if let Some(use_case) = c.use_case {
-                use_case
+            if let Some(version) = c.use_case.latest {
+                version
             } else {
                 return Err(error::user(
                     "No use case found",
@@ -50,7 +50,7 @@ async fn get_use_case(
             ));
         }
     };
-    Ok(use_case)
+    Ok(version)
 }
 
 pub async fn download_use_case_data(dir: impl AsRef<Path>, url: Url) -> Result<()> {
@@ -194,7 +194,12 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
             use_case_res
                 .files
                 .iter()
-                .find(|file| matches!(file.kind, get_competition_use_case::UseCaseFileKind::DATA))
+                .find(|file| {
+                    matches!(
+                        file.kind,
+                        get_competition_use_case::ProjectVersionFileKind::DATA
+                    )
+                })
                 .ok_or_else(|| {
                     error::system(
                         "No use case data found",

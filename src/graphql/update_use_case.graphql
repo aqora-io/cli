@@ -1,5 +1,5 @@
 mutation UpdateUseCaseMutation($competition_id: ID!, $pyprojectToml: String!) {
-  updateUseCase(
+  createUseCaseVersion(
     competitionId: $competition_id
     input: { pyprojectToml: $pyprojectToml }
   ) {

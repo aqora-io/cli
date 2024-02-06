@@ -114,6 +114,47 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "080e9890a082662b09c1ad45f567faeeb47f22b5fb23895fbe1e651e718e25ca"
 
 [[package]]
+name = "aqora"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base32",
+ "base64 0.21.7",
+ "chrono",
+ "clap",
+ "dialoguer",
+ "dirs",
+ "flate2",
+ "fs4",
+ "futures",
+ "graphql_client",
+ "hex",
+ "hostname",
+ "human-errors",
+ "ignore",
+ "indicatif",
+ "lazy_static",
+ "maturin",
+ "open",
+ "pep440_rs",
+ "pin-project-lite",
+ "pyo3",
+ "pyo3-asyncio",
+ "pyproject-toml",
+ "rand",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tar",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "toml 0.8.8",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "ascii"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -522,47 +563,6 @@ name = "clap_lex"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "702fc72eb24e5a1e48ce58027a675bc24edd52096d5397d4aea7c6dd9eca0bd1"
-
-[[package]]
-name = "cli"
-version = "0.1.0"
-dependencies = [
- "axum",
- "base32",
- "base64 0.21.7",
- "chrono",
- "clap",
- "dialoguer",
- "dirs",
- "flate2",
- "fs4",
- "futures",
- "graphql_client",
- "hex",
- "hostname",
- "human-errors",
- "ignore",
- "indicatif",
- "lazy_static",
- "maturin",
- "open",
- "pep440_rs",
- "pin-project-lite",
- "pyo3",
- "pyo3-asyncio",
- "pyproject-toml",
- "rand",
- "reqwest",
- "serde",
- "serde_json",
- "tar",
- "tempfile",
- "thiserror",
- "tokio",
- "toml 0.8.8",
- "url",
- "uuid",
-]
 
 [[package]]
 name = "cli-table"

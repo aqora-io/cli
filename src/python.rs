@@ -2,15 +2,7 @@ use crate::error::{self, Result};
 use crate::pyproject::project_data_dir;
 use futures::prelude::*;
 use indicatif::ProgressBar;
-use pyo3::{
-    prelude::*,
-    pyclass::IterANextOutput,
-    types::{PyDict, PyList, PyType},
-};
-use serde::{
-    de::{Deserialize, Deserializer, Error as DeError},
-    ser::{Error as SerError, Serialize, Serializer},
-};
+use pyo3::{prelude::*, pyclass::IterANextOutput, types::PyType};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -240,19 +232,6 @@ macro_rules! async_python_run {
     };
 }
 pub(crate) use async_python_run;
-
-macro_rules! python_print_var {
-    ($($($item:tt)*),*) => {{
-        let args = ( $($($item)*),*, );
-        Python::with_gil(|py| {
-            py.import(pyo3::intern!(py, "builtins"))?
-                .getattr("print")?
-                .call1(args)?;
-            PyResult::Ok(())
-        })
-    }};
-}
-pub(crate) use python_print_var;
 
 pub fn async_generator(generator: Py<PyAny>) -> PyResult<impl Stream<Item = PyResult<Py<PyAny>>>> {
     let generator = Python::with_gil(move |py| {

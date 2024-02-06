@@ -72,9 +72,9 @@ type Competition implements Node {
 	id: ID!
 	viewerCan(action: Action!, asOrganization: ID): Boolean!
 	host: Entity!
+	useCase: Project!
 	banner: Url
 	thumbnail: Url
-	useCase: UseCase
 	topics(after: String, before: String, first: Int, last: Int): TopicConnection!
 }
 
@@ -231,8 +231,8 @@ type Mutation {
 	oauth2Authorize(input: Oauth2AuthorizeInput!): Oauth2AuthorizeOutput!
 	oauth2Token(input: Oauth2TokenInput!): Oauth2TokenOutput!
 	oauth2Refresh(input: Oauth2RefreshInput!): Oauth2TokenOutput!
-	updateUseCase(competitionId: ID!, input: UpdateUseCaseInput!): UseCaseEdge!
-	validateUseCase(id: ID!): UseCaseEdge!
+	createUseCaseVersion(competitionId: ID!, input: UpdateUseCaseInput!): ProjectVersionEdge!
+	validateUseCaseVersion(projectVersionId: ID!): ProjectVersionEdge!
 }
 
 interface Node {
@@ -372,6 +372,53 @@ type PageInfo {
 	endCursor: String
 }
 
+type Project implements Node {
+	id: ID!
+	viewerCan(action: Action!, asOrganization: ID): Boolean!
+	latest: ProjectVersion
+}
+
+type ProjectVersion implements Node {
+	pythonRequires: String
+	pyprojectToml: String!
+	version: Semver!
+	validated: Boolean!
+	createdAt: DateTime!
+	id: ID!
+	viewerCan(action: Action!, asOrganization: ID): Boolean!
+	entity: Entity!
+	project: Project!
+	files: [ProjectVersionFile!]!
+}
+
+"""
+An edge in a connection.
+"""
+type ProjectVersionEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: ProjectVersion!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+type ProjectVersionFile {
+	kind: ProjectVersionFileKind!
+	id: ID!
+	viewerCan(action: Action!, asOrganization: ID): Boolean!
+	projectVersion: ProjectVersion!
+	downloadUrl: Url!
+	uploadUrl: Url
+}
+
+enum ProjectVersionFileKind {
+	DATA
+	PACKAGE
+}
+
 type Query {
 	node(id: ID!): Node!
 	viewer: User!
@@ -496,44 +543,10 @@ URL is a String implementing the [URL Standard](http://url.spec.whatwg.org/)
 scalar Url
 
 type UseCase implements Node {
-	pythonRequires: String
-	pyprojectToml: String!
-	version: Semver!
-	validated: Boolean!
-	createdAt: DateTime!
 	id: ID!
 	viewerCan(action: Action!, asOrganization: ID): Boolean!
-	entity: Entity!
+	project: Project!
 	competition: Competition!
-	files: [UseCaseFile!]!
-}
-
-"""
-An edge in a connection.
-"""
-type UseCaseEdge {
-	"""
-	The item at the end of the edge
-	"""
-	node: UseCase!
-	"""
-	A cursor for use in pagination
-	"""
-	cursor: String!
-}
-
-type UseCaseFile {
-	kind: UseCaseFileKind!
-	id: ID!
-	viewerCan(action: Action!, asOrganization: ID): Boolean!
-	useCase: UseCase!
-	downloadUrl: Url!
-	uploadUrl: Url
-}
-
-enum UseCaseFileKind {
-	DATA
-	PACKAGE
 }
 
 type User implements Node & Entity {
