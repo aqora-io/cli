@@ -5,6 +5,7 @@ use crate::{
     error::{self, Result},
     graphql_client::{custom_scalars::*, GraphQLClient},
     id::Id,
+    pypi::pypi_url,
     pyproject::{project_data_dir, PyProject},
     python::{pypi_url, PipOptions, PyEnv},
 };

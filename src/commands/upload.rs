@@ -5,6 +5,7 @@ use crate::{
     id::Id,
     pyproject::{PyProject, RevertFile},
     python::PyEnv,
+    revert_file::RevertFile,
 };
 use clap::Args;
 use futures::prelude::*;

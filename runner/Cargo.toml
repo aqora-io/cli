@@ -3,3 +3,17 @@ name = "aqora-runner"
 version = "0.1.0"
 edition = "2021"
 publish = false
+
+[dependencies]
+futures = "0.3"
+lazy_static = "1.4"
+pep440_rs = "0.3"
+pyo3 = { version = "0.20", features = ["auto-initialize", "serde"] }
+pyo3-asyncio = { version = "0.20", features = ["attributes", "tokio-runtime"] }
+pyproject-toml = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "1.0"
+tokio = { version = "1", features = ["sync", "signal", "process", "fs"] }
+toml = "0.8"
+url = "2.5"
+split-stream-by = "0.1.0"

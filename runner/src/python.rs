@@ -1,15 +1,10 @@
-use crate::error::{self, Result};
-use crate::pyproject::project_data_dir;
 use futures::prelude::*;
-use indicatif::ProgressBar;
 use pyo3::{prelude::*, pyclass::IterANextOutput, types::PyType};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use tokio::{
-    io::{AsyncBufReadExt, BufReader},
-    sync::RwLock,
-};
+use thiserror::Error;
+use tokio::sync::RwLock;
 use url::Url;
 
 lazy_static::lazy_static! {
@@ -25,19 +20,6 @@ lazy_static::lazy_static! {
     static ref INITIALIZED_ENVS: RwLock<HashSet<PathBuf>> = RwLock::new(HashSet::new());
 }
 
-pub fn venv_dir(project_dir: impl AsRef<Path>) -> PathBuf {
-    project_data_dir(project_dir).join("venv")
-}
-
-pub fn pypi_url(url: &Url, access_token: Option<impl AsRef<str>>) -> Result<Url> {
-    let mut url = url.join("/pypi")?;
-    if let Some(access_token) = access_token {
-        url.set_username(access_token.as_ref())
-            .map_err(|_| error::system("Could not set pypi access token", ""))?;
-    }
-    Ok(url)
-}
-
 #[derive(Default)]
 pub struct PipOptions {
     pub upgrade: bool,
@@ -48,68 +30,63 @@ pub struct PipOptions {
 
 pub struct PyEnv(PathBuf);
 
+#[derive(Error, Debug)]
+pub enum EnvError {
+    #[error(transparent)]
+    Io(#[from] tokio::io::Error),
+    #[error(transparent)]
+    Python(#[from] PyErr),
+    #[error("Failed to setup virtualenv: {0}")]
+    VenvFailed(String),
+}
+
 impl PyEnv {
-    pub async fn init(project_dir: impl AsRef<Path>) -> Result<Self> {
-        let path = Self::ensure_venv(project_dir).await?.canonicalize()?;
+    pub async fn init(path: impl AsRef<Path>) -> Result<Self, EnvError> {
+        let path = path.as_ref().to_path_buf();
+        Self::ensure_venv(&path).await?;
         if INITIALIZED_ENVS.read().await.contains(&path) {
             return Ok(Self(path));
         }
-        let site_packages = std::fs::read_dir(path.join("lib"))?
-            .flatten()
-            .filter(|entry| {
-                entry.file_type().map(|ty| ty.is_dir()).unwrap_or(false)
-                    && entry
-                        .file_name()
-                        .to_str()
-                        .map(|name| name.starts_with("python"))
-                        .unwrap_or(false)
-                    && std::fs::read_dir(entry.path())
-                        .map(|dir| {
-                            dir.flatten().any(|entry| {
-                                entry
-                                    .file_name()
-                                    .to_str()
-                                    .map(|name| name.starts_with("site-packages"))
-                                    .unwrap_or(false)
-                            })
-                        })
-                        .unwrap_or(false)
-            })
-            .map(|path| path.path().join("site-packages"))
-            .collect::<Vec<_>>();
-        Python::with_gil(|py| {
-            let sys = py.import("sys").unwrap();
-            for path in site_packages {
-                sys.getattr(pyo3::intern!(sys.py(), "path"))?
-                    .getattr(pyo3::intern!(sys.py(), "append"))?
-                    .call1((path,))?;
+        let mut lib_dir_entries = tokio::fs::read_dir(path.join("lib")).await?;
+        while let Some(entry) = lib_dir_entries.next_entry().await? {
+            if entry.file_type().await?.is_dir() {
+                let name = entry.file_name();
+                if let Some(name) = name.to_str() {
+                    if name.starts_with("python") {
+                        let site_packages = entry.path().join("site-packages");
+                        if site_packages.exists() {
+                            Python::with_gil(|py| {
+                                let sys = py.import("sys").unwrap();
+                                sys.getattr(pyo3::intern!(sys.py(), "path"))?
+                                    .getattr(pyo3::intern!(sys.py(), "append"))?
+                                    .call1((site_packages,))?;
+                                PyResult::Ok(())
+                            })?;
+                        }
+                    }
+                }
             }
-            PyResult::Ok(())
-        })?;
+        }
         INITIALIZED_ENVS.write().await.insert(path.clone());
         Ok(Self(path))
     }
 
-    async fn ensure_venv(project_dir: impl AsRef<Path>) -> Result<PathBuf> {
-        let path = venv_dir(project_dir);
+    async fn ensure_venv(path: impl AsRef<Path>) -> Result<(), EnvError> {
+        let path = path.as_ref();
         if path.exists() && path.is_dir() {
-            return Ok(path);
+            return Ok(());
         }
         let output = tokio::process::Command::new(SYSTEM_PYTHON_PATH.as_os_str())
             .arg("-m")
             .arg("venv")
-            .arg(&path)
+            .arg(path)
             .output()
             .await?;
         if output.status.success() {
-            Ok(path)
+            Ok(())
         } else {
-            Err(error::user(
-                &format!(
-                    "Could not setup virtualenv: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                ),
-                "",
+            Err(EnvError::VenvFailed(
+                String::from_utf8_lossy(&output.stderr).to_string(),
             ))
         }
     }
@@ -126,7 +103,7 @@ impl PyEnv {
         tokio::process::Command::new(self.python_path().as_os_str())
     }
 
-    async fn is_module_installed(&self, module: &str) -> Result<bool> {
+    async fn is_module_installed(&self, module: &str) -> tokio::io::Result<bool> {
         Ok(tokio::process::Command::new(self.python_path().as_os_str())
             .arg("-m")
             .arg(module)
@@ -136,12 +113,11 @@ impl PyEnv {
             .success())
     }
 
-    pub async fn pip_install(
+    pub fn pip_install(
         &self,
         modules: impl IntoIterator<Item = impl AsRef<str>>,
         opts: &PipOptions,
-        progress: Option<&ProgressBar>,
-    ) -> Result<()> {
+    ) -> tokio::io::Result<tokio::process::Child> {
         let mut cmd = self.python_cmd();
         cmd.arg("-m").arg("pip").arg("install");
         if opts.upgrade {
@@ -160,34 +136,23 @@ impl PyEnv {
         for module in modules {
             cmd.arg(module.as_ref());
         }
-        let mut child = cmd.stdout(Stdio::piped()).spawn()?;
+        cmd.stdout(Stdio::piped()).spawn()
+    }
 
-        let mut output_lines = BufReader::new(child.stdout.take().unwrap()).lines();
-        if let Some(pb) = progress {
-            while let Some(line) = output_lines.next_line().await? {
-                pb.set_message(format!("pip install: {line}"));
-            }
-        }
-
-        if child.wait().await?.success() {
-            Ok(())
+    pub async fn ensure_build_installed(&self) -> tokio::io::Result<Option<tokio::process::Child>> {
+        if self.is_module_installed("build").await? {
+            Ok(None)
         } else {
-            Err(error::system("pip install failed", ""))
+            Ok(Some(self.pip_install(["build"], &Default::default())?))
         }
     }
 
-    pub async fn build_package(
+    pub fn build_package(
         &self,
         input: impl AsRef<Path>,
         output: impl AsRef<Path>,
-        progress: Option<&ProgressBar>,
-    ) -> Result<()> {
-        if !self.is_module_installed("build").await? {
-            self.pip_install(["build"], &Default::default(), progress)
-                .await?;
-        }
-        let mut child = self
-            .python_cmd()
+    ) -> tokio::io::Result<tokio::process::Child> {
+        self.python_cmd()
             .arg("-m")
             .arg("build")
             .arg("--sdist")
@@ -195,23 +160,7 @@ impl PyEnv {
             .arg(output.as_ref().as_os_str())
             .arg(input.as_ref().as_os_str())
             .stdout(Stdio::piped())
-            .spawn()?;
-
-        let mut output_lines = BufReader::new(child.stdout.take().unwrap()).lines();
-        if let Some(pb) = progress {
-            while let Some(line) = output_lines.next_line().await? {
-                pb.set_message(format!("Building package: {line}"));
-            }
-        }
-
-        if child.wait().await?.success() {
-            Ok(())
-        } else {
-            Err(error::user(
-                &format!("Could not build package {}", output.as_ref().display()),
-                "",
-            ))
-        }
+            .spawn()
     }
 }
 
@@ -227,13 +176,12 @@ macro_rules! async_python_run {
                 &pyo3_asyncio::tokio::get_current_locals(py)?,
                 awaitable,
             )
-        })?
-        .await?
+        })
     };
 }
 pub(crate) use async_python_run;
 
-pub fn async_generator(generator: Py<PyAny>) -> PyResult<impl Stream<Item = PyResult<Py<PyAny>>>> {
+pub fn async_generator(generator: PyObject) -> PyResult<impl Stream<Item = PyResult<PyObject>>> {
     let generator = Python::with_gil(move |py| {
         generator
             .as_ref(py)
@@ -271,14 +219,14 @@ pub fn async_generator(generator: Py<PyAny>) -> PyResult<impl Stream<Item = PyRe
     ))
 }
 
-pub fn deepcopy(obj: &Py<PyAny>) -> PyResult<Py<PyAny>> {
+pub fn deepcopy(obj: &PyObject) -> PyResult<PyObject> {
     Python::with_gil(|py| {
         let copy = py.import("copy")?.getattr("deepcopy")?;
         Ok(copy.call1((obj,))?.into_py(py))
     })
 }
 
-type AsyncIteratorStream = futures::stream::BoxStream<'static, PyResult<Py<PyAny>>>;
+type AsyncIteratorStream = futures::stream::BoxStream<'static, PyObject>;
 
 #[pyclass]
 pub struct AsyncIterator {
@@ -286,7 +234,7 @@ pub struct AsyncIterator {
 }
 
 impl AsyncIterator {
-    pub fn new(stream: impl Stream<Item = PyResult<Py<PyAny>>> + Send + Sync + 'static) -> Self {
+    pub fn new(stream: impl Stream<Item = PyObject> + Send + Sync + 'static) -> Self {
         Self {
             stream: std::sync::Arc::new(std::sync::Mutex::new(Some(stream.boxed()))),
         }
@@ -328,8 +276,7 @@ impl AsyncIteratorImpl {
             pyo3_asyncio::tokio::get_current_locals(py)?,
             async move {
                 match stream.lock().await.next().await {
-                    Some(Ok(value)) => Ok(value),
-                    Some(Err(err)) => Err(err),
+                    Some(value) => Ok(value),
                     None => Err(pyo3::exceptions::PyStopAsyncIteration::new_err(())),
                 }
             },

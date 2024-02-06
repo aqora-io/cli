@@ -1,6 +1,5 @@
 use crate::{
-    error::{self, Result},
-    pyproject::{AqoraSubmissionConfig, AqoraUseCaseConfig, PathStr},
+    pyproject::{AqoraSubmissionConfig, AqoraUseCaseConfig, PathStr, PathStrReplaceError},
     python::{async_generator, async_python_run, deepcopy, AsyncIterator},
 };
 use futures::prelude::*;
@@ -8,24 +7,23 @@ use pyo3::{
     prelude::*,
     types::{PyDict, PyString},
 };
+use split_stream_by::{Either, SplitStreamByMapExt};
 use std::{collections::HashMap, path::PathBuf};
+use thiserror::Error;
 
 #[derive(Debug, Clone)]
 pub struct LayerFunction {
-    func: Py<PyAny>,
+    func: PyObject,
     context: bool,
 }
 
 impl LayerFunction {
-    pub async fn call(&self, input: &Py<PyAny>, context: &Py<PyAny>) -> PyResult<Py<PyAny>> {
+    pub async fn call(&self, input: &PyObject, context: &PyObject) -> PyResult<PyObject> {
         let input = deepcopy(input)?;
         if self.context {
-            Ok(async_python_run!(|py| self
-                .func
-                .as_ref(py)
-                .call1((input, context))))
+            Ok(async_python_run!(|py| self.func.as_ref(py).call1((input, context)))?.await?)
         } else {
-            Ok(async_python_run!(|py| self.func.as_ref(py).call1((input,))))
+            Ok(async_python_run!(|py| self.func.as_ref(py).call1((input,)))?.await?)
         }
     }
 }
@@ -40,8 +38,8 @@ pub struct Layer {
 
 #[derive(Debug)]
 pub struct LayerEvaluation {
-    output: Py<PyAny>,
-    metric: Option<Py<PyAny>>,
+    output: PyObject,
+    metric: Option<PyObject>,
     branch: Option<String>,
 }
 
@@ -64,8 +62,8 @@ impl ToPyObject for LayerEvaluation {
 impl Layer {
     pub async fn evaluate(
         &self,
-        input: &Py<PyAny>,
-        context: &Py<PyAny>,
+        input: &PyObject,
+        context: &PyObject,
     ) -> PyResult<LayerEvaluation> {
         let output = if let Some(transform) = self.transform.as_ref() {
             transform.call(input, context).await?
@@ -110,18 +108,27 @@ impl ToPyObject for PipelineConfig {
 #[derive(Clone, Debug)]
 pub struct Evaluator {
     config: PipelineConfig,
-    context: Option<Py<PyAny>>,
+    context: Option<PyObject>,
     layers: Vec<Layer>,
 }
 
+#[derive(Error, Debug)]
+pub enum EvaluationError {
+    #[error(transparent)]
+    Python(#[from] PyErr),
+    #[error("Layer not found: {0}")]
+    LayerNotFound(String),
+}
+
 impl Evaluator {
-    pub async fn evaluate(&self, input: Py<PyAny>) -> Result<EvaluationResult> {
+    pub async fn evaluate(&self, input: PyObject) -> Result<EvaluationResult, EvaluationError> {
         let mut input = input;
         let context = if let Some(context) = self.context.as_ref() {
             let context_input = deepcopy(&input)?;
             async_python_run!(|py| context
                 .as_ref(py)
-                .call1((context_input, self.config.to_object(py))))
+                .call1((context_input, self.config.to_object(py))))?
+            .await?
         } else {
             deepcopy(&input)?
         };
@@ -136,12 +143,7 @@ impl Evaluator {
                     .layers
                     .iter()
                     .position(|layer| layer.name == *branch)
-                    .ok_or_else(|| {
-                        error::user(
-                            &format!("Branch layer {} not found", branch),
-                            "Check the layer names in the use case configuration",
-                        )
-                    })?;
+                    .ok_or_else(|| EvaluationError::LayerNotFound(branch.clone()))?;
             } else {
                 layer_index += 1;
             }
@@ -152,11 +154,19 @@ impl Evaluator {
 }
 
 pub struct Pipeline {
-    generator: Py<PyAny>,
-    aggregator: Py<PyAny>,
-    context: Option<Py<PyAny>>,
+    generator: PyObject,
+    aggregator: PyObject,
+    context: Option<PyObject>,
     layers: Vec<Layer>,
     config: PipelineConfig,
+}
+
+#[derive(Error, Debug)]
+pub enum PipelineImportError {
+    #[error(transparent)]
+    Python(#[from] PyErr),
+    #[error(transparent)]
+    PathStrReplace(#[from] PathStrReplaceError),
 }
 
 impl Pipeline {
@@ -164,7 +174,7 @@ impl Pipeline {
         use_case: &AqoraUseCaseConfig,
         submission: &AqoraSubmissionConfig,
         config: PipelineConfig,
-    ) -> Result<Self> {
+    ) -> Result<Self, PipelineImportError> {
         Python::with_gil(|py| {
             let generator =
                 Self::import_path(py, &use_case.generator, &submission.refs)?.into_py(py);
@@ -174,7 +184,9 @@ impl Pipeline {
                 .context
                 .as_ref()
                 .map(|path| {
-                    PyResult::Ok(Self::import_path(py, path, &submission.refs)?.into_py(py))
+                    Result::<_, PipelineImportError>::Ok(
+                        Self::import_path(py, path, &submission.refs)?.into_py(py),
+                    )
                 })
                 .transpose()?;
             let layers = use_case
@@ -185,7 +197,7 @@ impl Pipeline {
                         .transform
                         .as_ref()
                         .map(|def| {
-                            PyResult::Ok(LayerFunction {
+                            Result::<_, PipelineImportError>::Ok(LayerFunction {
                                 func: Self::import_path(py, &def.path, &submission.refs)?
                                     .into_py(py),
                                 context: def.context,
@@ -196,7 +208,7 @@ impl Pipeline {
                         .metric
                         .as_ref()
                         .map(|def| {
-                            PyResult::Ok(LayerFunction {
+                            Result::<_, PipelineImportError>::Ok(LayerFunction {
                                 func: Self::import_path(py, &def.path, &submission.refs)?
                                     .into_py(py),
                                 context: def.context,
@@ -207,7 +219,7 @@ impl Pipeline {
                         .branch
                         .as_ref()
                         .map(|def| {
-                            PyResult::Ok(LayerFunction {
+                            Result::<_, PipelineImportError>::Ok(LayerFunction {
                                 func: Self::import_path(py, &def.path, &submission.refs)?
                                     .into_py(py),
                                 context: def.context,
@@ -221,7 +233,7 @@ impl Pipeline {
                         branch,
                     })
                 })
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<Result<Vec<_>, PipelineImportError>>()?;
             Ok(Self {
                 generator,
                 aggregator,
@@ -232,7 +244,7 @@ impl Pipeline {
         })
     }
 
-    pub fn generator(&self) -> PyResult<impl Stream<Item = PyResult<Py<PyAny>>>> {
+    pub fn generator(&self) -> PyResult<impl Stream<Item = PyResult<PyObject>>> {
         let generator = Python::with_gil(|py| {
             PyResult::Ok(
                 self.generator
@@ -254,36 +266,40 @@ impl Pipeline {
 
     pub fn evaluate(
         &self,
-        inputs: impl Stream<Item = PyResult<Py<PyAny>>>,
+        inputs: impl Stream<Item = PyResult<PyObject>>,
         evaluator: Evaluator,
-    ) -> impl Stream<Item = PyResult<Py<PyAny>>> {
+    ) -> impl Stream<Item = Result<EvaluationResult, EvaluationError>> {
         inputs
-            .map_err(PyErr::from)
+            .map_err(EvaluationError::Python)
             .map_ok(move |input| (input, evaluator.clone()))
-            .and_then(|(input, evaluator)| async move {
-                match evaluator.evaluate(input).await {
-                    Ok(result) => Ok(Python::with_gil(|py| result.to_object(py))),
-                    Err(err) => Err(PyErr::from(err)),
-                }
-            })
+            .and_then(|(input, evaluator)| async move { evaluator.evaluate(input).await })
     }
 
     pub async fn aggregate(
         &self,
-        results: impl Stream<Item = PyResult<Py<PyAny>>> + Send + Sync + 'static,
-    ) -> PyResult<Py<PyAny>> {
-        let iterator = AsyncIterator::new(results);
-        Ok(async_python_run!(|py| self
-            .aggregator
-            .as_ref(py)
-            .call1((iterator,))))
+        results: impl Stream<Item = Result<EvaluationResult, EvaluationError>> + Send + Sync + 'static,
+    ) -> Result<PyObject, EvaluationError> {
+        let (mut left, right) = results.boxed().split_by_map(move |result| match result {
+            Ok(result) => Python::with_gil(|py| Either::Right(result.to_object(py))),
+            Err(err) => Either::Left(Result::<PyObject, _>::Err(err)),
+        });
+        let err_fut = left.next().then(|result| match result {
+            Some(result) => futures::future::ready(result).boxed(),
+            None => futures::future::pending().boxed(),
+        });
+        let iterator = AsyncIterator::new(right);
+        let agg_fut = async_python_run!(|py| self.aggregator.as_ref(py).call1((iterator,)))?
+            .map_err(EvaluationError::Python);
+        futures::future::try_join(agg_fut, err_fut)
+            .await
+            .map(|(agg, _)| agg)
     }
 
     fn import_path<'py>(
         py: Python<'py>,
         path: &PathStr,
         refs: &HashMap<String, PathStr>,
-    ) -> Result<&'py PyAny> {
+    ) -> Result<&'py PyAny, PipelineImportError> {
         let path = path.replace_refs(refs)?;
         let module = PyModule::import(py, PyString::new(py, &path.module().to_string()))?;
         Ok(module.getattr(PyString::new(py, path.name()))?)
