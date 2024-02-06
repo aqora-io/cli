@@ -2,7 +2,6 @@ use crate::{
     error::{self, Error, Result},
     id::{Id, NodeType},
 };
-use chrono::{FixedOffset, Utc};
 use pep440_rs::Version;
 use pyproject_toml::{BuildSystem, Project};
 use serde::{de, ser, Deserialize, Serialize};
@@ -438,22 +437,4 @@ impl Drop for RevertFile {
             eprintln!("Could not revert file {}: {}", self.path.display(), err);
         }
     }
-}
-
-pub fn project_updated_since(path: impl AsRef<Path>, time: chrono::DateTime<FixedOffset>) -> bool {
-    ignore::WalkBuilder::new(path).build().any(|entry| {
-        entry
-            .as_ref()
-            .ok()
-            .and_then(|entry| entry.metadata().ok())
-            .map(|meta| {
-                meta.is_file()
-                    && meta
-                        .modified()
-                        .ok()
-                        .map(|t| chrono::DateTime::<Utc>::from(t) > time)
-                        .unwrap_or(false)
-            })
-            .unwrap_or(false)
-    })
 }

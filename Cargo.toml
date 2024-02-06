@@ -1,7 +1,15 @@
+[workspace]
+resolver = "2"
+members = [
+    "runner"
+]
+
 [package]
 name = "aqora"
 version = "0.1.0"
 edition = "2021"
+default-run = "aqora"
+publish = false
 
 [dependencies]
 axum = "0.7"

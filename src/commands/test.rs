@@ -1,7 +1,8 @@
 use crate::{
+    cache::{needs_update, set_last_update_time},
     error::{self, Result},
     pipeline::{Pipeline, PipelineConfig},
-    pyproject::{project_data_dir, project_updated_since, PyProject},
+    pyproject::{project_data_dir, PyProject},
     python::{PipOptions, PyEnv},
 };
 use clap::Args;
@@ -20,13 +21,8 @@ pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
 
     let data_dir = project_data_dir(&args.project_dir);
     let use_case_toml_path = data_dir.join("use_case.toml");
-    let last_update_path = data_dir.join("last-update");
     let data_path = data_dir.join("data").join("data");
-    if !data_dir.exists()
-        || !use_case_toml_path.exists()
-        || !last_update_path.exists()
-        || !data_path.exists()
-    {
+    if !data_dir.exists() || !use_case_toml_path.exists() || !data_path.exists() {
         return Err(error::user(
             "Project not setup",
             "Run `aqora install` first.",
@@ -40,14 +36,6 @@ pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
             )
         })?;
     let use_case = use_case_toml.aqora()?.as_use_case()?;
-    let last_update =
-        chrono::DateTime::parse_from_rfc3339(&tokio::fs::read_to_string(&last_update_path).await?)
-            .map_err(|e| {
-                error::system(
-                    &format!("Failed to read last update time: {e}"),
-                    "Try running `aqora install` again",
-                )
-            })?;
 
     let submission = project.aqora()?.as_submission()?;
 
@@ -57,7 +45,7 @@ pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
 
     let env = PyEnv::init(&args.project_dir).await?;
 
-    if project_updated_since(&args.project_dir, last_update) {
+    if needs_update(&args.project_dir).await? {
         env.pip_install(
             [args.project_dir.to_string_lossy().to_string()],
             &PipOptions {
@@ -67,17 +55,7 @@ pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
             Some(&venv_pb),
         )
         .await?;
-        tokio::fs::write(last_update_path, chrono::Utc::now().to_rfc3339().as_bytes())
-            .await
-            .map_err(|e| {
-                error::user(
-                    &format!("Failed to write last-update: {e}"),
-                    &format!(
-                        "Make sure you have permissions to write to {}",
-                        data_dir.join("last-update").display()
-                    ),
-                )
-            })?;
+        set_last_update_time(&args.project_dir).await?;
         venv_pb.finish_with_message("Changes applied");
     } else {
         venv_pb.finish_with_message("Already up to date");

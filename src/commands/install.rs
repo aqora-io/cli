@@ -1,10 +1,11 @@
 use crate::{
+    cache::{needs_update, set_last_update_time},
     compress::decompress,
     credentials::get_access_token,
     error::{self, Result},
     graphql_client::{custom_scalars::*, GraphQLClient},
     id::Id,
-    pyproject::{project_data_dir, project_updated_since, PyProject},
+    pyproject::{project_data_dir, PyProject},
     python::{pypi_url, PipOptions, PyEnv},
 };
 use clap::Args;
@@ -144,23 +145,6 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
         )
     })?;
 
-    let last_update_path = data_dir.join("last-update");
-    let last_update = if last_update_path.exists() {
-        Some(
-            chrono::DateTime::parse_from_rfc3339(
-                &tokio::fs::read_to_string(data_dir.join("last-update")).await?,
-            )
-            .map_err(|e| {
-                error::system(
-                    &format!("Failed to read last update time: {e}"),
-                    "Try running `aqora install` again",
-                )
-            })?,
-        )
-    } else {
-        None
-    };
-
     use_case_pb.finish_with_message("Use case updated");
 
     let mut venv_pb = ProgressBar::new_spinner().with_message("Setting up virtual environment");
@@ -172,9 +156,7 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
     let should_update_use_case = args.upgrade
         || old_use_case.is_none()
         || new_use_case.version()? > old_use_case.as_ref().unwrap().version()?;
-    let should_update_project = should_update_use_case
-        || last_update.is_none()
-        || project_updated_since(&args.project_dir, last_update.unwrap());
+    let should_update_project = should_update_use_case || needs_update(&args.project_dir).await?;
 
     if should_update_use_case {
         let mut download_pb =
@@ -260,17 +242,7 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
         )
         .await?;
 
-        tokio::fs::write(last_update_path, chrono::Utc::now().to_rfc3339().as_bytes())
-            .await
-            .map_err(|e| {
-                error::user(
-                    &format!("Failed to write last-update: {e}"),
-                    &format!(
-                        "Make sure you have permissions to write to {}",
-                        data_dir.join("last-update").display()
-                    ),
-                )
-            })?;
+        set_last_update_time(&args.project_dir).await?;
 
         local_pb.finish_with_message("Local project installed");
     }
