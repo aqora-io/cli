@@ -9,6 +9,7 @@ use axum::{
     routing::get,
     Router,
 };
+use base64::prelude::*;
 use chrono::{Duration, Utc};
 use clap::Args;
 use futures::prelude::*;
@@ -145,7 +146,7 @@ async fn get_oauth_code(
     })?;
     let port = listener.local_addr()?.port();
     let redirect_uri = Url::parse(&format!("http://localhost:{port}"))?;
-    let session = hex::encode(rand::random::<[u8; 16]>());
+    let session = BASE64_URL_SAFE_NO_PAD.encode(rand::random::<[u8; 16]>());
     let (tx, rx) = oneshot::channel();
     let state = ServerState::new(tx);
     let router = Router::<ServerState<LoginResponse>>::new()

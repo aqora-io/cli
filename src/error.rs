@@ -58,12 +58,6 @@ impl From<tokio::sync::oneshot::error::RecvError> for Error {
     }
 }
 
-impl From<pyo3::PyErr> for Error {
-    fn from(e: pyo3::PyErr) -> Self {
-        system(&format!("Python error occured: {e}"), "")
-    }
-}
-
 impl IntoResponse for Error {
     fn into_response(self) -> Response<Body> {
         let body = Body::new(format!("{}", self));

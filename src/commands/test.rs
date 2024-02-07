@@ -5,12 +5,13 @@ use crate::{
     python::pip_install,
 };
 use aqora_runner::{
-    pipeline::{Pipeline, PipelineConfig},
+    pipeline::{EvaluationError, Pipeline, PipelineConfig, PipelineImportError},
     pyproject::PyProject,
     python::PipOptions,
 };
 use clap::Args;
 use indicatif::{MultiProgress, ProgressBar};
+use pyo3::Python;
 use std::path::PathBuf;
 
 #[derive(Args, Debug, Clone)]
@@ -84,18 +85,63 @@ pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
     let config = PipelineConfig {
         data: data_path.canonicalize()?,
     };
-    let pipeline = Pipeline::import(use_case, submission, config)
-        .map_err(|e| error::user(&format!("Failed to import pipeline: {e}"), ""))?;
-    let score = pipeline
-        .aggregate(pipeline.evaluate(pipeline.generator()?, pipeline.evaluator()))
+    let pipeline = match Pipeline::import(use_case, submission, config) {
+        Ok(pipeline) => pipeline,
+        Err(PipelineImportError::Python(e)) => {
+            pipeline_pb.finish_with_message("Failed to import pipeline");
+            Python::with_gil(|py| e.print_and_set_sys_last_vars(py));
+            return Err(error::user(
+                "Failed to import pipeline",
+                "Check the above error and try again",
+            ));
+        }
+        Err(e) => {
+            pipeline_pb.finish_with_message("Failed to import pipeline");
+            return Err(error::system(
+                &format!("Failed to import pipeline: {e}"),
+                "Check the pipeline configuration and try again",
+            ));
+        }
+    };
+    let generator = match pipeline.generator() {
+        Ok(g) => g,
+        Err(e) => {
+            pipeline_pb.finish_with_message("Failed to run pipeline");
+            Python::with_gil(|py| e.print_and_set_sys_last_vars(py));
+            return Err(error::user(
+                "Unable to generate an inputs",
+                "Check the above error and try again",
+            ));
+        }
+    };
+    let score = match pipeline
+        .aggregate(pipeline.evaluate(generator, pipeline.evaluator()))
         .await
-        .map_err(|e| error::user(&format!("Failed to run pipeline: {e}"), ""))?
-        .ok_or_else(|| {
-            error::user(
-                "No score returned",
-                "Check your pipeline and submission config",
-            )
-        })?;
+    {
+        Ok(Some(score)) => score,
+        Ok(None) => {
+            pipeline_pb.finish_with_message("Failed to run pipeline");
+            return Err(error::system(
+                "No score returned. Use case may not have any inputs",
+                "",
+            ));
+        }
+        Err(EvaluationError::Python(e)) => {
+            pipeline_pb.finish_with_message("Failed to run pipeline");
+            Python::with_gil(|py| e.print_and_set_sys_last_vars(py));
+            return Err(error::user(
+                "Failed to run pipeline",
+                "Check the above error and try again",
+            ));
+        }
+        Err(e) => {
+            pipeline_pb.finish_with_message("Failed to run pipeline");
+            return Err(error::user(
+                &format!("Failed to run pipeline: {e}"),
+                "Check the pipeline configuration and try again",
+            ));
+        }
+    };
 
     pipeline_pb.finish_with_message(format!("Done: {score}"));
 
