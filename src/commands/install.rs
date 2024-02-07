@@ -1,13 +1,10 @@
 use crate::{
     cache::{needs_update, set_last_update_time},
-    credentials::get_access_token,
     dirs::{
         init_venv, project_config_dir, project_data_dir, project_use_case_toml_path, read_pyproject,
     },
     error::{self, Result},
     graphql_client::{custom_scalars::*, GraphQLClient},
-    id::Id,
-    pypi::pypi_url,
     python::pip_install,
 };
 use aqora_runner::{compress::decompress, pyproject::PyProject, python::PipOptions};
@@ -26,7 +23,7 @@ use url::Url;
 )]
 pub struct GetCompetitionUseCase;
 
-pub async fn download_use_case_data(dir: impl AsRef<Path>, url: Url) -> Result<()> {
+async fn download_use_case_data(dir: impl AsRef<Path>, url: Url) -> Result<()> {
     tokio::fs::create_dir_all(&dir).await.map_err(|e| {
         error::user(
             &format!("Failed to create use case data directory: {e}"),
@@ -108,12 +105,6 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
                 "Please make sure the competition exists",
             )
         })?;
-    let competition_id = Id::parse_node_id(competition.id).map_err(|e| {
-        error::system(
-            &format!("Failed to parse competition ID: {e}"),
-            "This is a bug, please report it",
-        )
-    })?;
     let use_case_res = competition.use_case.latest.ok_or_else(|| {
         error::user(
             "No use case found",
@@ -177,25 +168,45 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
         download_pb.enable_steady_tick(std::time::Duration::from_millis(100));
         download_pb = m.insert_before(&venv_pb, download_pb);
 
+        let use_case_data_url = use_case_res
+            .files
+            .iter()
+            .find(|file| {
+                matches!(
+                    file.kind,
+                    get_competition_use_case::ProjectVersionFileKind::DATA
+                )
+            })
+            .ok_or_else(|| {
+                error::system(
+                    "No use case data found",
+                    "Please contact the competition organizer",
+                )
+            })?
+            .download_url
+            .clone();
+
+        let use_case_package_url = use_case_res
+            .files
+            .iter()
+            .find(|file| {
+                matches!(
+                    file.kind,
+                    get_competition_use_case::ProjectVersionFileKind::PACKAGE
+                )
+            })
+            .ok_or_else(|| {
+                error::system(
+                    "No use case data found",
+                    "Please contact the competition organizer",
+                )
+            })?
+            .download_url
+            .clone();
+
         let download_fut = download_use_case_data(
             project_data_dir(&args.project_dir, "data"),
-            use_case_res
-                .files
-                .iter()
-                .find(|file| {
-                    matches!(
-                        file.kind,
-                        get_competition_use_case::ProjectVersionFileKind::DATA
-                    )
-                })
-                .ok_or_else(|| {
-                    error::system(
-                        "No use case data found",
-                        "Please contact the competition organizer",
-                    )
-                })?
-                .download_url
-                .clone(),
+            use_case_data_url,
         )
         .map(move |res| {
             if res.is_ok() {
@@ -206,16 +217,6 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
             res
         });
 
-        let use_case_package = format!(
-            "use-case-{}=={}",
-            competition_id.to_package_id(),
-            use_case_res.version
-        );
-        let extra_index_urls = {
-            let url = args.url.clone().parse()?;
-            vec![pypi_url(&url, get_access_token(url.clone()).await?)?]
-        };
-
         let mut use_case_pb = ProgressBar::new_spinner().with_message("Installing use case...");
         use_case_pb.enable_steady_tick(std::time::Duration::from_millis(100));
         use_case_pb = m.insert_before(&venv_pb, use_case_pb);
@@ -223,11 +224,10 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
         let cloned_pb = use_case_pb.clone();
         let options = PipOptions {
             upgrade: args.upgrade,
-            extra_index_urls,
             ..Default::default()
         };
         let install_fut =
-            pip_install(&env, [use_case_package], &options, &use_case_pb).map(move |res| {
+            pip_install(&env, [use_case_package_url], &options, &use_case_pb).map(move |res| {
                 if res.is_ok() {
                     cloned_pb.finish_with_message("Use case installed");
                 } else {

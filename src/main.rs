@@ -6,7 +6,6 @@ mod error;
 mod graphql_client;
 mod id;
 mod process;
-mod pypi;
 mod python;
 mod revert_file;
 

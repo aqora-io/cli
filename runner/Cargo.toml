@@ -15,7 +15,6 @@ serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0"
 tokio = { version = "1", features = ["sync", "signal", "process", "fs"] }
 toml = "0.8"
-url = "2.5"
 split-stream-by = "0.1"
 async-compression = { version = "0.4", features = ["tokio", "gzip"] }
 tokio-tar = "0.3"

@@ -4,7 +4,6 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 use tokio::{process::Command, sync::RwLock};
-use url::Url;
 
 lazy_static::lazy_static! {
     static ref SYSTEM_PYTHON_PATH: PathBuf = {
@@ -23,8 +22,6 @@ lazy_static::lazy_static! {
 pub struct PipOptions {
     pub upgrade: bool,
     pub no_deps: bool,
-    pub editable: bool,
-    pub extra_index_urls: Vec<Url>,
 }
 
 pub struct PyEnv(PathBuf);
@@ -122,15 +119,8 @@ impl PyEnv {
         if opts.upgrade {
             cmd.arg("--upgrade");
         }
-        for extra_index_url in &opts.extra_index_urls {
-            cmd.arg("--extra-index-url")
-                .arg(extra_index_url.to_string());
-        }
         if opts.no_deps {
             cmd.arg("--no-deps");
-        }
-        if opts.editable {
-            cmd.arg("--editable");
         }
         for module in modules {
             cmd.arg(module.as_ref());
