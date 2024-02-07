@@ -2,9 +2,8 @@ use futures::prelude::*;
 use pyo3::{prelude::*, pyclass::IterANextOutput, types::PyType};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use thiserror::Error;
-use tokio::sync::RwLock;
+use tokio::{process::Command, sync::RwLock};
 use url::Url;
 
 lazy_static::lazy_static! {
@@ -42,8 +41,8 @@ pub enum EnvError {
 
 impl PyEnv {
     pub async fn init(path: impl AsRef<Path>) -> Result<Self, EnvError> {
-        let path = path.as_ref().to_path_buf();
         Self::ensure_venv(&path).await?;
+        let path = path.as_ref().canonicalize()?;
         if INITIALIZED_ENVS.read().await.contains(&path) {
             return Ok(Self(path));
         }
@@ -76,7 +75,7 @@ impl PyEnv {
         if path.exists() && path.is_dir() {
             return Ok(());
         }
-        let output = tokio::process::Command::new(SYSTEM_PYTHON_PATH.as_os_str())
+        let output = Command::new(SYSTEM_PYTHON_PATH.as_os_str())
             .arg("-m")
             .arg("venv")
             .arg(path)
@@ -99,12 +98,12 @@ impl PyEnv {
         self.0.join("bin").join("activate")
     }
 
-    pub fn python_cmd(&self) -> tokio::process::Command {
-        tokio::process::Command::new(self.python_path().as_os_str())
+    pub fn python_cmd(&self) -> Command {
+        Command::new(self.python_path().as_os_str())
     }
 
-    async fn is_module_installed(&self, module: &str) -> tokio::io::Result<bool> {
-        Ok(tokio::process::Command::new(self.python_path().as_os_str())
+    pub async fn is_module_installed(&self, module: &str) -> tokio::io::Result<bool> {
+        Ok(Command::new(self.python_path().as_os_str())
             .arg("-m")
             .arg(module)
             .output()
@@ -117,7 +116,7 @@ impl PyEnv {
         &self,
         modules: impl IntoIterator<Item = impl AsRef<str>>,
         opts: &PipOptions,
-    ) -> tokio::io::Result<tokio::process::Child> {
+    ) -> Command {
         let mut cmd = self.python_cmd();
         cmd.arg("-m").arg("pip").arg("install");
         if opts.upgrade {
@@ -136,31 +135,18 @@ impl PyEnv {
         for module in modules {
             cmd.arg(module.as_ref());
         }
-        cmd.stdout(Stdio::piped()).spawn()
+        cmd
     }
 
-    pub async fn ensure_build_installed(&self) -> tokio::io::Result<Option<tokio::process::Child>> {
-        if self.is_module_installed("build").await? {
-            Ok(None)
-        } else {
-            Ok(Some(self.pip_install(["build"], &Default::default())?))
-        }
-    }
-
-    pub fn build_package(
-        &self,
-        input: impl AsRef<Path>,
-        output: impl AsRef<Path>,
-    ) -> tokio::io::Result<tokio::process::Child> {
-        self.python_cmd()
-            .arg("-m")
+    pub fn build_package(&self, input: impl AsRef<Path>, output: impl AsRef<Path>) -> Command {
+        let mut cmd = self.python_cmd();
+        cmd.arg("-m")
             .arg("build")
             .arg("--sdist")
             .arg("--outdir")
             .arg(output.as_ref().as_os_str())
-            .arg(input.as_ref().as_os_str())
-            .stdout(Stdio::piped())
-            .spawn()
+            .arg(input.as_ref().as_os_str());
+        cmd
     }
 }
 
@@ -188,9 +174,8 @@ pub fn async_generator(generator: PyObject) -> PyResult<impl Stream<Item = PyRes
             .call_method0(pyo3::intern!(py, "__aiter__"))?;
         PyResult::Ok(generator)
     })?;
-    Ok(futures::stream::unfold(
-        generator,
-        move |generator| async move {
+    Ok(
+        futures::stream::unfold(generator, move |generator| async move {
             let result = match Python::with_gil(|py| {
                 pyo3_asyncio::into_future_with_locals(
                     &pyo3_asyncio::tokio::get_current_locals(py)?,
@@ -215,8 +200,9 @@ pub fn async_generator(generator: PyObject) -> PyResult<impl Stream<Item = PyRes
                     }
                 }
             })
-        },
-    ))
+        })
+        .fuse(),
+    )
 }
 
 pub fn deepcopy(obj: &PyObject) -> PyResult<PyObject> {

@@ -1,6 +1,6 @@
 use crate::{
+    dirs::project_config_dir,
     error::{self, Result},
-    pyproject::project_data_dir,
 };
 use chrono::{DateTime, FixedOffset, Utc};
 use std::path::{Path, PathBuf};
@@ -24,7 +24,7 @@ fn project_updated_since(project_dir: impl AsRef<Path>, time: DateTime<FixedOffs
 }
 
 fn last_update_path(project_dir: impl AsRef<Path>) -> PathBuf {
-    project_data_dir(project_dir).join("last_update")
+    project_config_dir(project_dir).join("last_update")
 }
 
 async fn get_last_update_time(

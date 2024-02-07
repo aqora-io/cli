@@ -17,23 +17,23 @@ use clap::Parser;
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
 pub enum Cli {
-    Login(Login),
-    Upload(Upload),
-    Test(Test),
     Install(Install),
-    Shell(Shell),
+    Login(Login),
     Python(Python),
+    Shell(Shell),
+    Test(Test),
+    Upload(Upload),
 }
 
 impl Cli {
     pub async fn run() -> crate::error::Result<()> {
         match Self::parse() {
-            Cli::Login(args) => login(args).await,
-            Cli::Upload(args) => upload(args).await,
-            Cli::Test(args) => test(args).await,
             Cli::Install(args) => install(args).await,
-            Cli::Shell(args) => shell(args).await,
+            Cli::Login(args) => login(args).await,
             Cli::Python(args) => python(args).await,
+            Cli::Shell(args) => shell(args).await,
+            Cli::Test(args) => test(args).await,
+            Cli::Upload(args) => upload(args).await,
         }
     }
 }

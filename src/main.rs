@@ -1,11 +1,13 @@
 mod cache;
 mod commands;
-mod compress;
 mod credentials;
+mod dirs;
 mod error;
 mod graphql_client;
 mod id;
+mod process;
 mod pypi;
+mod python;
 mod revert_file;
 
 #[pyo3_asyncio::tokio::main]

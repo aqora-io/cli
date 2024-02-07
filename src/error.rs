@@ -28,6 +28,18 @@ impl From<reqwest::Error> for Error {
     }
 }
 
+impl From<toml::de::Error> for Error {
+    fn from(e: toml::de::Error) -> Self {
+        user(&format!("Error parsing toml: {e}"), "")
+    }
+}
+
+impl From<toml::ser::Error> for Error {
+    fn from(e: toml::ser::Error) -> Self {
+        system(&format!("Error serializing toml: {e}"), "")
+    }
+}
+
 impl From<reqwest::header::InvalidHeaderValue> for Error {
     fn from(e: reqwest::header::InvalidHeaderValue) -> Self {
         system(&format!("Invalid header value: {e}"), "")
@@ -49,18 +61,6 @@ impl From<tokio::sync::oneshot::error::RecvError> for Error {
 impl From<pyo3::PyErr> for Error {
     fn from(e: pyo3::PyErr) -> Self {
         system(&format!("Python error occured: {e}"), "")
-    }
-}
-
-impl From<Error> for pyo3::PyErr {
-    fn from(e: Error) -> Self {
-        pyo3::exceptions::PyException::new_err(format!("{}", e))
-    }
-}
-
-impl From<dialoguer::Error> for Error {
-    fn from(e: dialoguer::Error) -> Self {
-        system(&format!("Could not interact with the terminal: {e}"), "")
     }
 }
 

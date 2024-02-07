@@ -17,3 +17,5 @@ tokio = { version = "1", features = ["sync", "signal", "process", "fs"] }
 toml = "0.8"
 url = "2.5"
 split-stream-by = "0.1.0"
+async-compression = { version = "0.4.6", features = ["tokio", "gzip"] }
+tokio-tar = "0.3.1"

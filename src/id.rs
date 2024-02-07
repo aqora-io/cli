@@ -60,16 +60,6 @@ impl Id {
         BASE64_URL_SAFE_NO_PAD.encode(&bytes)
     }
 
-    pub fn parse_package_id(
-        id: impl AsRef<str>,
-        ty: NodeType,
-    ) -> Result<Id, Box<dyn std::error::Error>> {
-        let id = Uuid::from_slice(
-            &base32::decode(BASE32_ALPHABET, id.as_ref()).ok_or("Invalid base32 string")?,
-        )?;
-        Ok(Id { id, ty })
-    }
-
     pub fn to_package_id(self) -> String {
         base32::encode(BASE32_ALPHABET, &self.id.into_bytes()).to_lowercase()
     }

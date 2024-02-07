@@ -1,3 +1,9 @@
+use std::{
+    ffi::OsString,
+    path::{Path, PathBuf},
+};
+use tempfile::NamedTempFile;
+
 pub struct RevertFile {
     backed_up: NamedTempFile,
     path: PathBuf,

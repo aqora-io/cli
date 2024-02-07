@@ -1,4 +1,4 @@
-use crate::{pyproject::PyProject, python::PyEnv};
+use crate::dirs::{init_venv, read_pyproject};
 use clap::Args;
 use std::path::PathBuf;
 
@@ -10,8 +10,8 @@ pub struct Shell {
 }
 
 pub async fn shell(args: Shell) -> crate::error::Result<()> {
-    let _ = PyProject::for_project(&args.project_dir)?;
-    let env = PyEnv::init(&args.project_dir).await?;
+    let _ = read_pyproject(&args.project_dir).await?;
+    let env = init_venv(&args.project_dir).await?;
     let tempfile = tempfile::NamedTempFile::new()?;
     std::fs::write(
         &tempfile,

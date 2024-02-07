@@ -278,21 +278,19 @@ impl Pipeline {
     pub async fn aggregate(
         &self,
         results: impl Stream<Item = Result<EvaluationResult, EvaluationError>> + Send + Sync + 'static,
-    ) -> Result<PyObject, EvaluationError> {
-        let (mut left, right) = results.boxed().split_by_map(move |result| match result {
+    ) -> Result<Option<PyObject>, EvaluationError> {
+        let (errs, results) = results.boxed().split_by_map(move |result| match result {
             Ok(result) => Python::with_gil(|py| Either::Right(result.to_object(py))),
             Err(err) => Either::Left(Result::<PyObject, _>::Err(err)),
         });
-        let err_fut = left.next().then(|result| match result {
-            Some(result) => futures::future::ready(result).boxed(),
-            None => futures::future::pending().boxed(),
-        });
-        let iterator = AsyncIterator::new(right);
-        let agg_fut = async_python_run!(|py| self.aggregator.as_ref(py).call1((iterator,)))?
-            .map_err(EvaluationError::Python);
-        futures::future::try_join(agg_fut, err_fut)
-            .await
-            .map(|(agg, _)| agg)
+        let iterator = AsyncIterator::new(results);
+        let result = futures::stream::once(
+            async_python_run!(|py| self.aggregator.as_ref(py).call1((iterator,)))?
+                .map_err(EvaluationError::Python),
+        )
+        .boxed();
+        let mut out_stream = futures::stream::select(result, errs);
+        out_stream.next().await.transpose()
     }
 
     fn import_path<'py>(

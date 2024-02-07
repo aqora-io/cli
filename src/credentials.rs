@@ -1,4 +1,5 @@
 use crate::{
+    dirs::config_dir,
     error::{self, Result},
     graphql_client::graphql_url,
 };
@@ -31,27 +32,6 @@ pub struct Credentials {
     response_derives = "Debug"
 )]
 pub struct Oauth2TokenMutation;
-
-pub async fn config_dir() -> Result<std::path::PathBuf> {
-    let mut path = dirs::data_dir().or_else(dirs::config_dir).ok_or_else(|| {
-        error::system(
-            "Could not find config directory",
-            "This is a bug, please report it",
-        )
-    })?;
-    path.push("aqora");
-    tokio::fs::create_dir_all(&path).await.map_err(|e| {
-        error::system(
-            &format!(
-                "Failed to create config directory at {}: {:?}",
-                path.display(),
-                e
-            ),
-            "",
-        )
-    })?;
-    Ok(path)
-}
 
 pub async fn credentials_path() -> Result<std::path::PathBuf> {
     Ok(config_dir().await?.join("credentials.json"))

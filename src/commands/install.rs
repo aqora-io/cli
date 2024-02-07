@@ -1,14 +1,16 @@
 use crate::{
     cache::{needs_update, set_last_update_time},
-    compress::decompress,
     credentials::get_access_token,
+    dirs::{
+        init_venv, project_config_dir, project_data_dir, project_use_case_toml_path, read_pyproject,
+    },
     error::{self, Result},
     graphql_client::{custom_scalars::*, GraphQLClient},
     id::Id,
     pypi::pypi_url,
-    pyproject::{project_data_dir, PyProject},
-    python::{pypi_url, PipOptions, PyEnv},
+    python::pip_install,
 };
+use aqora_runner::{compress::decompress, pyproject::PyProject, python::PipOptions};
 use clap::Args;
 use futures::prelude::*;
 use graphql_client::GraphQLQuery;
@@ -55,7 +57,7 @@ pub async fn download_use_case_data(dir: impl AsRef<Path>, url: Url) -> Result<(
     while let Some(item) = byte_stream.next().await {
         tokio::io::copy(&mut item?.as_ref(), &mut tar_file).await?;
     }
-    decompress(tempfile.path(), &dir).map_err(|e| {
+    decompress(tempfile.path(), &dir).await.map_err(|e| {
         error::user(
             &format!("Failed to decompress use case data: {e}"),
             "Please make sure you have permission to create files in this directory",
@@ -84,7 +86,15 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
     use_case_pb.enable_steady_tick(std::time::Duration::from_millis(100));
     use_case_pb = m.add(use_case_pb);
 
-    let config = project.aqora()?.as_submission()?;
+    let config = project
+        .aqora()
+        .and_then(|aqora| aqora.as_submission())
+        .ok_or_else(|| {
+            error::user(
+                "Project is not a submission",
+                "Please make sure you are in the correct directory",
+            )
+        })?;
 
     let competition = client
         .send::<GetCompetitionUseCase>(get_competition_use_case::Variables {
@@ -111,18 +121,18 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
         )
     })?;
 
-    let data_dir = project_data_dir(&args.project_dir);
-    tokio::fs::create_dir_all(&data_dir).await.map_err(|e| {
+    let config_dir = project_config_dir(&args.project_dir);
+    tokio::fs::create_dir_all(&config_dir).await.map_err(|e| {
         error::user(
             &format!("Failed to create data directory: {e}"),
             &format!(
                 "Make sure you have permissions to write to {}",
-                data_dir.display()
+                config_dir.display()
             ),
         )
     })?;
 
-    let use_case_toml_path = data_dir.join("use_case.toml");
+    let use_case_toml_path = project_use_case_toml_path(&args.project_dir);
     let old_use_case = if use_case_toml_path.exists() {
         Some(PyProject::from_toml(
             tokio::fs::read_to_string(&use_case_toml_path).await?,
@@ -131,20 +141,23 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
         None
     };
     let new_use_case = PyProject::from_toml(&use_case_res.pyproject_toml)?;
-    tokio::fs::write(
-        data_dir.join("use_case.toml"),
-        use_case_res.pyproject_toml.as_bytes(),
-    )
-    .await
-    .map_err(|e| {
+    let new_version = new_use_case.version().ok_or_else(|| {
         error::user(
-            &format!("Failed to write use case pyproject.toml: {e}"),
-            &format!(
-                "Make sure you have permissions to write to {}",
-                data_dir.display()
-            ),
+            "Could not get project version",
+            "Please make sure the project is valid",
         )
     })?;
+    let old_version = old_use_case
+        .as_ref()
+        .map(|use_case| {
+            use_case.version().ok_or_else(|| {
+                error::user(
+                    "Could not get project version",
+                    "Please make sure the project is valid",
+                )
+            })
+        })
+        .transpose()?;
 
     use_case_pb.finish_with_message("Use case updated");
 
@@ -152,11 +165,10 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
     venv_pb.enable_steady_tick(std::time::Duration::from_millis(100));
     venv_pb = m.add(venv_pb);
 
-    let env = PyEnv::init(&args.project_dir).await?;
+    let env = init_venv(&args.project_dir).await?;
 
-    let should_update_use_case = args.upgrade
-        || old_use_case.is_none()
-        || new_use_case.version()? > old_use_case.as_ref().unwrap().version()?;
+    let should_update_use_case =
+        args.upgrade || old_version.is_none() || new_version > old_version.unwrap();
     let should_update_project = should_update_use_case || needs_update(&args.project_dir).await?;
 
     if should_update_use_case {
@@ -166,7 +178,7 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
         download_pb = m.insert_before(&venv_pb, download_pb);
 
         let download_fut = download_use_case_data(
-            data_dir.join("data"),
+            project_data_dir(&args.project_dir, "data"),
             use_case_res
                 .files
                 .iter()
@@ -214,9 +226,8 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
             extra_index_urls,
             ..Default::default()
         };
-        let install_fut = env
-            .pip_install([use_case_package], &options, Some(&use_case_pb))
-            .map(move |res| {
+        let install_fut =
+            pip_install(&env, [use_case_package], &options, &use_case_pb).map(move |res| {
                 if res.is_ok() {
                     cloned_pb.finish_with_message("Use case installed");
                 } else {
@@ -226,6 +237,18 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
             });
 
         futures::future::try_join(download_fut, install_fut).await?;
+
+        tokio::fs::write(use_case_toml_path, use_case_res.pyproject_toml.as_bytes())
+            .await
+            .map_err(|e| {
+                error::user(
+                    &format!("Failed to write use case pyproject.toml: {e}"),
+                    &format!(
+                        "Make sure you have permissions to write to {}",
+                        config_dir.display()
+                    ),
+                )
+            })?;
     }
 
     if should_update_project {
@@ -233,13 +256,14 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
         local_pb.enable_steady_tick(std::time::Duration::from_millis(100));
         local_pb = m.insert_before(&venv_pb, local_pb);
 
-        env.pip_install(
+        pip_install(
+            &env,
             [args.project_dir.to_string_lossy().to_string()],
             &PipOptions {
                 upgrade: args.upgrade,
                 ..Default::default()
             },
-            Some(&local_pb),
+            &local_pb,
         )
         .await?;
 
@@ -254,8 +278,13 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
 }
 
 pub async fn install(args: Install) -> Result<()> {
-    let project = PyProject::for_project(&args.project_dir)?;
-    let aqora = project.aqora()?;
+    let project = read_pyproject(&args.project_dir).await?;
+    let aqora = project.aqora().ok_or_else(|| {
+        error::user(
+            "No [tool.aqora] section found in pyproject.toml",
+            "Please make sure you are in the correct directory",
+        )
+    })?;
     if aqora.is_submission() {
         install_submission(args, project).await
     } else {

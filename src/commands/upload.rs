@@ -1,12 +1,12 @@
 use crate::{
-    compress::compress,
+    dirs::{init_venv, pyproject_path, read_pyproject},
     error::{self, Result},
     graphql_client::GraphQLClient,
     id::Id,
-    pyproject::{PyProject, RevertFile},
-    python::PyEnv,
+    python::build_package,
     revert_file::RevertFile,
 };
+use aqora_runner::{compress::compress, pyproject::PyProject};
 use clap::Args;
 use futures::prelude::*;
 use graphql_client::GraphQLQuery;
@@ -180,12 +180,25 @@ pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
             "Please make sure you have permission to create temporary directories",
         )
     })?;
-    let pyproject_toml = std::fs::read_to_string(PyProject::path_for_project(&args.project_dir)?)?;
-    let config = project.aqora()?.as_use_case()?;
+    let pyproject_toml = std::fs::read_to_string(pyproject_path(&args.project_dir))?;
+    let config = project
+        .aqora()
+        .and_then(|aqora| aqora.as_use_case())
+        .ok_or_else(|| {
+            error::user(
+                "Project is not a use case",
+                "Please make sure you are in the correct directory",
+            )
+        })?;
 
     let competition_id = get_competition_id_by_slug(&client, &config.competition).await?;
 
-    let version = project.version()?;
+    let version = project.version().ok_or_else(|| {
+        error::user(
+            "Could not get project version",
+            "Please make sure the project is valid",
+        )
+    })?;
     let package_name = format!("use-case-{}", competition_id.to_package_id());
     let data_path = args.project_dir.join(&config.data);
     if !data_path.exists() {
@@ -243,7 +256,12 @@ pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
         let data_pb_cloned = data_pb.clone();
         let client = s3_client.clone();
         async move {
-            compress(data_path, "data", &data_tar_file)?;
+            compress(data_path, &data_tar_file).await.map_err(|err| {
+                error::system(
+                    &format!("Could not compress data: {}", err),
+                    "Please make sure the data directory is valid",
+                )
+            })?;
             data_pb_cloned.set_message("Uploading data");
             upload_file(&client, data_tar_file, upload_url, "application/gzip").await
         }
@@ -288,16 +306,13 @@ pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
         let client = s3_client.clone();
         async move {
             package_pb_cloned.set_message("Initializing Python environment");
-            let env = PyEnv::init(&args.project_dir).await?;
+            let env = init_venv(&args.project_dir).await?;
 
-            let project_file = RevertFile::save(PyProject::path_for_project(&args.project_dir)?)?;
+            let project_file = RevertFile::save(pyproject_path(&args.project_dir))?;
             let mut new_project = project.clone();
             new_project.set_name(package_name);
             std::fs::write(&project_file, new_project.toml()?)?;
-
-            package_pb_cloned.set_message("Building package");
-            env.build_package(&args.project_dir, tempdir.path(), Some(&package_pb_cloned))
-                .await?;
+            build_package(&env, &args.project_dir, tempdir.path(), &package_pb_cloned).await?;
             project_file.revert()?;
 
             package_pb_cloned.set_message("Uploading package");
@@ -340,8 +355,16 @@ pub async fn upload_submission(args: Upload, project: PyProject) -> Result<()> {
             "Please make sure you have permission to create temporary directories",
         )
     })?;
-    let pyproject_toml = std::fs::read_to_string(PyProject::path_for_project(&args.project_dir)?)?;
-    let config = project.aqora()?.as_submission()?;
+    let pyproject_toml = std::fs::read_to_string(pyproject_path(&args.project_dir))?;
+    let config = project
+        .aqora()
+        .and_then(|aqora| aqora.as_submission())
+        .ok_or_else(|| {
+            error::user(
+                "Project is not a submission",
+                "Please make sure you are in the correct directory",
+            )
+        })?;
 
     let competition_id = get_competition_id_by_slug(&client, &config.competition).await?;
     let entity_id = if let Some(username) = &config.entity {
@@ -350,7 +373,12 @@ pub async fn upload_submission(args: Upload, project: PyProject) -> Result<()> {
         get_viewer_id(&client).await?
     };
 
-    let version = project.version()?;
+    let version = project.version().ok_or_else(|| {
+        error::user(
+            "Could not get project version",
+            "Please make sure the project is valid",
+        )
+    })?;
     let package_name = format!(
         "submission-{}-{}",
         competition_id.to_package_id(),
@@ -401,16 +429,14 @@ pub async fn upload_submission(args: Upload, project: PyProject) -> Result<()> {
     package_pb.enable_steady_tick(std::time::Duration::from_millis(100));
     package_pb = m.add(package_pb);
 
-    let env = PyEnv::init(&args.project_dir).await?;
+    let env = init_venv(&args.project_dir).await?;
 
-    let project_file = RevertFile::save(PyProject::path_for_project(&args.project_dir)?)?;
+    let project_file = RevertFile::save(pyproject_path(&args.project_dir))?;
     let mut new_project = project.clone();
     new_project.set_name(package_name);
     std::fs::write(&project_file, new_project.toml()?)?;
 
-    package_pb.set_message("Building package");
-    env.build_package(&args.project_dir, tempdir.path(), Some(&package_pb))
-        .await?;
+    build_package(&env, &args.project_dir, tempdir.path(), &package_pb).await?;
     project_file.revert()?;
 
     package_pb.set_message("Uploading package");
@@ -435,8 +461,13 @@ pub async fn upload_submission(args: Upload, project: PyProject) -> Result<()> {
 }
 
 pub async fn upload(args: Upload) -> Result<()> {
-    let project = PyProject::for_project(&args.project_dir)?;
-    let aqora = project.aqora()?;
+    let project = read_pyproject(&args.project_dir).await?;
+    let aqora = project.aqora().ok_or_else(|| {
+        error::user(
+            "No [tool.aqora] section found in pyproject.toml",
+            "Please make sure you are in the correct directory",
+        )
+    })?;
     if aqora.is_use_case() {
         upload_use_case(args, project).await
     } else if aqora.is_submission() {

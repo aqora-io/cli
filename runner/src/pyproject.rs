@@ -2,12 +2,7 @@ use pep440_rs::Version;
 use pyproject_toml::{BuildSystem, Project};
 use serde::{de, ser, Deserialize, Serialize};
 use std::{
-    borrow::Cow,
-    collections::HashMap,
-    convert::Infallible,
-    fmt,
-    path::{Path, PathBuf},
-    str::FromStr,
+    borrow::Cow, collections::HashMap, convert::Infallible, fmt, path::PathBuf, str::FromStr,
 };
 use thiserror::Error;
 
@@ -29,20 +24,6 @@ pub enum ReadPyProjectError {
 }
 
 impl PyProject {
-    pub async fn for_project(project_dir: impl AsRef<Path>) -> Result<Self, ReadPyProjectError> {
-        let pyproject_path = Self::path_for_project(project_dir);
-        if !pyproject_path.exists() {
-            return Err(ReadPyProjectError::PyProjectTomlNotFound);
-        }
-        Ok(Self::from_toml(
-            tokio::fs::read_to_string(&pyproject_path).await?,
-        )?)
-    }
-
-    pub fn path_for_project(project_dir: impl AsRef<Path>) -> PathBuf {
-        project_dir.as_ref().join("pyproject.toml")
-    }
-
     pub fn set_name(&mut self, name: impl ToString) {
         if let Some(project) = self.project.as_mut() {
             project.name = name.to_string();

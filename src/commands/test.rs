@@ -1,9 +1,13 @@
 use crate::{
     cache::{needs_update, set_last_update_time},
+    dirs::{init_venv, project_data_dir, project_use_case_toml_path, read_pyproject},
     error::{self, Result},
+    python::pip_install,
+};
+use aqora_runner::{
     pipeline::{Pipeline, PipelineConfig},
-    pyproject::{project_data_dir, PyProject},
-    python::{PipOptions, PyEnv},
+    pyproject::PyProject,
+    python::PipOptions,
 };
 use clap::Args;
 use indicatif::{MultiProgress, ProgressBar};
@@ -19,15 +23,20 @@ pub struct Test {
 pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
     let m = MultiProgress::new();
 
-    let data_dir = project_data_dir(&args.project_dir);
-    let use_case_toml_path = data_dir.join("use_case.toml");
-    let data_path = data_dir.join("data").join("data");
-    if !data_dir.exists() || !use_case_toml_path.exists() || !data_path.exists() {
+    let submission = project
+        .aqora()
+        .and_then(|aqora| aqora.as_submission())
+        .ok_or_else(|| error::user("Submission config is not valid", ""))?;
+
+    let use_case_toml_path = project_use_case_toml_path(&args.project_dir);
+    let data_path = project_data_dir(&args.project_dir, "data");
+    if !use_case_toml_path.exists() || !data_path.exists() {
         return Err(error::user(
             "Project not setup",
             "Run `aqora install` first.",
         ));
     }
+
     let use_case_toml = PyProject::from_toml(tokio::fs::read_to_string(use_case_toml_path).await?)
         .map_err(|e| {
             error::system(
@@ -35,24 +44,31 @@ pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
                 "Try running `aqora install` again",
             )
         })?;
-    let use_case = use_case_toml.aqora()?.as_use_case()?;
-
-    let submission = project.aqora()?.as_submission()?;
+    let use_case = use_case_toml
+        .aqora()
+        .and_then(|aqora| aqora.as_use_case())
+        .ok_or_else(|| {
+            error::system(
+                "Use case config is not valid",
+                "Check with your competition provider",
+            )
+        })?;
 
     let mut venv_pb = ProgressBar::new_spinner().with_message("Applying changes");
     venv_pb.enable_steady_tick(std::time::Duration::from_millis(100));
     venv_pb = m.add(venv_pb);
 
-    let env = PyEnv::init(&args.project_dir).await?;
+    let env = init_venv(&args.project_dir).await?;
 
     if needs_update(&args.project_dir).await? {
-        env.pip_install(
+        pip_install(
+            &env,
             [args.project_dir.to_string_lossy().to_string()],
             &PipOptions {
                 no_deps: true,
                 ..Default::default()
             },
-            Some(&venv_pb),
+            &venv_pb,
         )
         .await?;
         set_last_update_time(&args.project_dir).await?;
@@ -68,10 +84,18 @@ pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
     let config = PipelineConfig {
         data: data_path.canonicalize()?,
     };
-    let pipeline = Pipeline::import(use_case, submission, config)?;
+    let pipeline = Pipeline::import(use_case, submission, config)
+        .map_err(|e| error::user(&format!("Failed to import pipeline: {e}"), ""))?;
     let score = pipeline
         .aggregate(pipeline.evaluate(pipeline.generator()?, pipeline.evaluator()))
-        .await?;
+        .await
+        .map_err(|e| error::user(&format!("Failed to run pipeline: {e}"), ""))?
+        .ok_or_else(|| {
+            error::user(
+                "No score returned",
+                "Check your pipeline and submission config",
+            )
+        })?;
 
     pipeline_pb.finish_with_message(format!("Done: {score}"));
 
@@ -79,8 +103,13 @@ pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
 }
 
 pub async fn test(args: Test) -> Result<()> {
-    let project = PyProject::for_project(&args.project_dir)?;
-    let aqora = project.aqora()?;
+    let project = read_pyproject(&args.project_dir).await?;
+    let aqora = project.aqora().ok_or_else(|| {
+        error::user(
+            "No [tool.aqora] section found in pyproject.toml",
+            "Please make sure you are in the correct directory",
+        )
+    })?;
     if aqora.is_submission() {
         test_submission(args, project).await
     } else {
