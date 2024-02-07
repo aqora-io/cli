@@ -68,6 +68,25 @@ impl PyEnv {
         Ok(Self(path))
     }
 
+    pub async fn clear(self) -> Result<(), EnvError> {
+        let mut envs = INITIALIZED_ENVS.write().await;
+        Python::with_gil(|py| {
+            py.run(
+                r#"
+import sys
+this = sys.modules[__name__]
+for n in dir():
+    if n[0]!='_': delattr(this, n)
+"#,
+                None,
+                None,
+            )?;
+            PyResult::Ok(())
+        })?;
+        envs.clear();
+        Ok(())
+    }
+
     async fn ensure_venv(path: impl AsRef<Path>) -> Result<(), EnvError> {
         let path = path.as_ref();
         if path.exists() && path.is_dir() {
