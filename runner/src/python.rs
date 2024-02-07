@@ -1,6 +1,7 @@
 use futures::prelude::*;
 use pyo3::{prelude::*, pyclass::IterANextOutput, types::PyType};
 use std::collections::HashSet;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 use tokio::{process::Command, sync::RwLock};
@@ -99,7 +100,7 @@ impl PyEnv {
         Command::new(self.python_path().as_os_str())
     }
 
-    pub async fn is_module_installed(&self, module: &str) -> tokio::io::Result<bool> {
+    pub async fn is_module_installed(&self, module: impl AsRef<OsStr>) -> tokio::io::Result<bool> {
         Ok(Command::new(self.python_path().as_os_str())
             .arg("-m")
             .arg(module)
@@ -111,7 +112,7 @@ impl PyEnv {
 
     pub fn pip_install(
         &self,
-        modules: impl IntoIterator<Item = impl AsRef<str>>,
+        modules: impl IntoIterator<Item = impl AsRef<OsStr>>,
         opts: &PipOptions,
     ) -> Command {
         let mut cmd = self.python_cmd();
