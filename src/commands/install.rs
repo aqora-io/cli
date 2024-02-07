@@ -79,9 +79,13 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
 
     let m = MultiProgress::new();
 
+    let mut venv_pb = ProgressBar::new_spinner().with_message("Setting up virtual environment");
+    venv_pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    venv_pb = m.add(venv_pb);
+
     let mut use_case_pb = ProgressBar::new_spinner().with_message("Getting use case...");
     use_case_pb.enable_steady_tick(std::time::Duration::from_millis(100));
-    use_case_pb = m.add(use_case_pb);
+    use_case_pb = m.insert_before(&venv_pb, use_case_pb);
 
     let config = project
         .aqora()
@@ -105,12 +109,6 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
                 "Please make sure the competition exists",
             )
         })?;
-    let use_case_res = competition.use_case.latest.ok_or_else(|| {
-        error::user(
-            "No use case found",
-            "Please contact the competition organizer",
-        )
-    })?;
 
     let config_dir = project_config_dir(&args.project_dir);
     tokio::fs::create_dir_all(&config_dir).await.map_err(|e| {
@@ -131,13 +129,6 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
     } else {
         None
     };
-    let new_use_case = PyProject::from_toml(&use_case_res.pyproject_toml)?;
-    let new_version = new_use_case.version().ok_or_else(|| {
-        error::user(
-            "Could not get project version",
-            "Please make sure the project is valid",
-        )
-    })?;
     let old_version = old_use_case
         .as_ref()
         .map(|use_case| {
@@ -150,17 +141,26 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
         })
         .transpose()?;
 
-    use_case_pb.finish_with_message("Use case updated");
-
-    let mut venv_pb = ProgressBar::new_spinner().with_message("Setting up virtual environment");
-    venv_pb.enable_steady_tick(std::time::Duration::from_millis(100));
-    venv_pb = m.add(venv_pb);
-
     let env = init_venv(&args.project_dir).await?;
+
+    let use_case_res = competition.use_case.latest.ok_or_else(|| {
+        error::user(
+            "No use case found",
+            "Please contact the competition organizer",
+        )
+    })?;
+    let new_use_case = PyProject::from_toml(&use_case_res.pyproject_toml)?;
+    let new_version = new_use_case.version().ok_or_else(|| {
+        error::user(
+            "Could not get project version",
+            "Please make sure the project is valid",
+        )
+    })?;
+
+    use_case_pb.finish_with_message("Use case updated");
 
     let should_update_use_case =
         args.upgrade || old_version.is_none() || new_version > old_version.unwrap();
-    let should_update_project = should_update_use_case || needs_update(&args.project_dir).await?;
 
     if should_update_use_case {
         let mut download_pb =
@@ -251,7 +251,7 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
             })?;
     }
 
-    if should_update_project {
+    if should_update_use_case || needs_update(&args.project_dir).await? {
         let mut local_pb = ProgressBar::new_spinner().with_message("Installing local project...");
         local_pb.enable_steady_tick(std::time::Duration::from_millis(100));
         local_pb = m.insert_before(&venv_pb, local_pb);
