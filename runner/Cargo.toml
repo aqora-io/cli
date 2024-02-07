@@ -7,7 +7,7 @@ publish = false
 [dependencies]
 futures = "0.3"
 lazy_static = "1.4"
-pep440_rs = "0.3"
+pep440_rs = "0.4"
 pyo3 = { version = "0.20", features = ["auto-initialize", "serde"] }
 pyo3-asyncio = { version = "0.20", features = ["attributes", "tokio-runtime"] }
 pyproject-toml = "0.8"
