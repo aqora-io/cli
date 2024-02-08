@@ -1,5 +1,6 @@
 mod cache;
 mod commands;
+mod compress;
 mod credentials;
 mod dirs;
 mod error;

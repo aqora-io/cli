@@ -93,7 +93,9 @@ dependencies = [
 name = "aqora"
 version = "0.1.0"
 dependencies = [
+ "aqora-config",
  "aqora-runner",
+ "async-compression",
  "axum",
  "base32",
  "base64",
@@ -118,28 +120,35 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
+ "tokio-tar",
  "toml",
  "url",
  "uuid",
 ]
 
 [[package]]
+name = "aqora-config"
+version = "0.1.0"
+dependencies = [
+ "pep440_rs 0.4.0",
+ "pyproject-toml",
+ "serde",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
 name = "aqora-runner"
 version = "0.1.0"
 dependencies = [
- "async-compression",
+ "aqora-config",
  "futures",
  "lazy_static",
- "pep440_rs 0.4.0",
  "pyo3",
  "pyo3-asyncio",
- "pyproject-toml",
- "serde",
  "split-stream-by",
  "thiserror",
  "tokio",
- "tokio-tar",
- "toml",
 ]
 
 [[package]]

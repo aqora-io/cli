@@ -1,26 +1,17 @@
-use pep440_rs::Version;
-use pyproject_toml::{BuildSystem, Project};
 use serde::{de, ser, Deserialize, Serialize};
 use std::{
     borrow::Cow, collections::HashMap, convert::Infallible, fmt, path::PathBuf, str::FromStr,
 };
 use thiserror::Error;
 
+pub use pep440_rs::Version;
+pub use pyproject_toml::{BuildSystem, Project};
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PyProject {
     pub build_system: Option<BuildSystem>,
     pub project: Option<Project>,
     pub tool: Option<Tools>,
-}
-
-#[derive(Error, Debug)]
-pub enum ReadPyProjectError {
-    #[error("pyproject.toml not found")]
-    PyProjectTomlNotFound,
-    #[error(transparent)]
-    Toml(#[from] toml::de::Error),
-    #[error(transparent)]
-    Io(#[from] tokio::io::Error),
 }
 
 impl PyProject {

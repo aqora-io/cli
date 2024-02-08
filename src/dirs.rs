@@ -1,5 +1,6 @@
 use crate::error::{self, Result};
-use aqora_runner::{pyproject::PyProject, python::PyEnv};
+use aqora_config::PyProject;
+use aqora_runner::python::PyEnv;
 use std::path::{Path, PathBuf};
 
 pub async fn config_dir() -> Result<PathBuf> {

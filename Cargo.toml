@@ -1,7 +1,8 @@
 [workspace]
 resolver = "2"
 members = [
-    "runner"
+    "config",
+    "runner",
 ]
 
 [package]
@@ -12,7 +13,9 @@ default-run = "aqora"
 publish = false
 
 [dependencies]
+aqora-config = { path = "config" }
 aqora-runner = { path = "runner" }
+async-compression = { version = "0.4", features = ["tokio", "gzip"] }
 axum = "0.7"
 base32 = "0.4"
 base64 = "0.21"
@@ -37,6 +40,7 @@ tempfile = "3.9"
 thiserror = "1.0"
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", "signal", "fs", "process", "io-util"] }
 tokio-stream = { version = "0.1", features = ["io-util"] }
+tokio-tar = "0.3"
 toml = "0.8"
 url = { version = "2.5", features = ["serde"] }
 uuid = "1.7"

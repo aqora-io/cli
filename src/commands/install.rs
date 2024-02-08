@@ -1,5 +1,6 @@
 use crate::{
     cache::{needs_update, set_last_update_time},
+    compress::decompress,
     dirs::{
         init_venv, project_config_dir, project_data_dir, project_use_case_toml_path, read_pyproject,
     },
@@ -7,7 +8,8 @@ use crate::{
     graphql_client::{custom_scalars::*, GraphQLClient},
     python::pip_install,
 };
-use aqora_runner::{compress::decompress, pyproject::PyProject, python::PipOptions};
+use aqora_config::PyProject;
+use aqora_runner::python::PipOptions;
 use clap::Args;
 use futures::prelude::*;
 use graphql_client::GraphQLQuery;

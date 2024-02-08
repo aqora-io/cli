@@ -1,7 +1,5 @@
-use crate::{
-    pyproject::{AqoraSubmissionConfig, AqoraUseCaseConfig, PathStr, PathStrReplaceError},
-    python::{async_generator, async_python_run, deepcopy, AsyncIterator},
-};
+use crate::python::{async_generator, async_python_run, deepcopy, AsyncIterator};
+use aqora_config::{AqoraSubmissionConfig, AqoraUseCaseConfig, PathStr, PathStrReplaceError};
 use futures::prelude::*;
 use pyo3::{
     prelude::*,

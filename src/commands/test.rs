@@ -4,9 +4,9 @@ use crate::{
     error::{self, Result},
     python::pip_install,
 };
+use aqora_config::PyProject;
 use aqora_runner::{
     pipeline::{EvaluationError, Pipeline, PipelineConfig, PipelineImportError},
-    pyproject::PyProject,
     python::PipOptions,
 };
 use clap::Args;

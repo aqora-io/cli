@@ -1,4 +1,5 @@
 use crate::{
+    compress::compress,
     dirs::{init_venv, pyproject_path, read_pyproject},
     error::{self, Result},
     graphql_client::GraphQLClient,
@@ -6,7 +7,7 @@ use crate::{
     python::build_package,
     revert_file::RevertFile,
 };
-use aqora_runner::{compress::compress, pyproject::PyProject};
+use aqora_config::PyProject;
 use clap::Args;
 use futures::prelude::*;
 use graphql_client::GraphQLQuery;
