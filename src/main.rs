@@ -8,6 +8,7 @@ mod graphql_client;
 mod id;
 mod process;
 mod python;
+mod readme;
 mod revert_file;
 
 #[pyo3_asyncio::tokio::main]

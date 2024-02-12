@@ -4,8 +4,8 @@ use std::{
 };
 use thiserror::Error;
 
-pub use pep440_rs::Version;
-pub use pyproject_toml::{BuildSystem, Project};
+pub use pep440_rs::{self, Version};
+pub use pyproject_toml::{self, BuildSystem, Contact, License, LicenseFiles, Project, ReadMe};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PyProject {

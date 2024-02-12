@@ -109,6 +109,7 @@ dependencies = [
  "human-errors",
  "ignore",
  "indicatif",
+ "mime",
  "open",
  "pyo3",
  "pyo3-asyncio",

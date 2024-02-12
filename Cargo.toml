@@ -29,6 +29,7 @@ hostname = "0.3"
 human-errors = "0.1"
 ignore = "0.4.22"
 indicatif = "0.17"
+mime = "0.3.17"
 open = "5.0"
 pyo3 = { version = "0.20", features = ["auto-initialize", "serde"] }
 pyo3-asyncio = { version = "0.20", features = ["attributes", "tokio-runtime"] }

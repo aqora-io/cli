@@ -6,8 +6,6 @@ enum Action {
 	CREATE_COMPETITION
 	UPDATE_COMPETITION
 	DELETE_COMPETITION
-	READ_USE_CASE
-	UPDATE_DATA_SET
 	CREATE_SUBMISSION
 	CREATE_TOPIC
 	UPDATE_TOPIC
@@ -72,10 +70,11 @@ type Competition implements Node {
 	id: ID!
 	viewerCan(action: Action!, asOrganization: ID): Boolean!
 	host: Entity!
-	useCase: Project!
+	useCase: UseCase!
 	banner: Url
 	thumbnail: Url
-	submissions(after: String, before: String, first: Int, last: Int, entityId: ID): ProjectConnection!
+	leaderboard(after: String, before: String, first: Int, last: Int): ProjectVersionEvaluationConnection!
+	submissions(after: String, before: String, first: Int, last: Int, entityId: ID): SubmissionConnection!
 	topics(after: String, before: String, first: Int, last: Int): TopicConnection!
 }
 
@@ -375,52 +374,26 @@ type PageInfo {
 	endCursor: String
 }
 
-type Project implements Node {
+interface Project {
 	id: ID!
+	competition: Competition!
 	viewerCan(action: Action!, asOrganization: ID): Boolean!
-	latest: ProjectVersion
-}
-
-type ProjectConnection {
-	"""
-	Information to aid in pagination.
-	"""
-	pageInfo: PageInfo!
-	"""
-	A list of edges.
-	"""
-	edges: [ProjectEdge!]!
-	"""
-	A list of nodes.
-	"""
-	nodes: [Project!]!
-}
-
-"""
-An edge in a connection.
-"""
-type ProjectEdge {
-	"""
-	The item at the end of the edge
-	"""
-	node: Project!
-	"""
-	A cursor for use in pagination
-	"""
-	cursor: String!
 }
 
 type ProjectVersion implements Node {
 	pythonRequires: String
 	pyprojectToml: String!
+	readme: String
 	version: Semver!
-	validated: Boolean!
+	latest: Boolean!
+	validatedAt: DateTime
 	createdAt: DateTime!
 	id: ID!
 	viewerCan(action: Action!, asOrganization: ID): Boolean!
 	entity: Entity!
 	project: Project!
 	files: [ProjectVersionFile!]!
+	evaluation: ProjectVersionEvaluation
 }
 
 """
@@ -437,7 +410,47 @@ type ProjectVersionEdge {
 	cursor: String!
 }
 
-type ProjectVersionFile {
+type ProjectVersionEvaluation implements Node {
+	score: Float
+	error: String
+	latest: Boolean!
+	finalizedAt: DateTime
+	createdAt: DateTime!
+	id: ID!
+	viewerCan(action: Action!, asOrganization: ID): Boolean!
+	projectVersion: ProjectVersion!
+}
+
+type ProjectVersionEvaluationConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [ProjectVersionEvaluationEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [ProjectVersionEvaluation!]!
+}
+
+"""
+An edge in a connection.
+"""
+type ProjectVersionEvaluationEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: ProjectVersionEvaluation!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+type ProjectVersionFile implements Node {
 	kind: ProjectVersionFileKind!
 	id: ID!
 	viewerCan(action: Action!, asOrganization: ID): Boolean!
@@ -480,6 +493,43 @@ input SignupUserInput {
 	password: String!
 }
 
+
+type Submission implements Project & Node {
+	id: ID!
+	viewerCan(action: Action!, asOrganization: ID): Boolean!
+	latest: ProjectVersion
+	competition: Competition!
+	entity: Entity!
+}
+
+type SubmissionConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [SubmissionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Submission!]!
+}
+
+"""
+An edge in a connection.
+"""
+type SubmissionEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Submission!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
 
 type Topic implements Node {
 	title: String!
@@ -544,6 +594,7 @@ input UpdateOrganizationInput {
 
 input UpdateSubmissionInput {
 	pyprojectToml: String!
+	readme: String
 }
 
 input UpdateTopicInput {
@@ -553,6 +604,7 @@ input UpdateTopicInput {
 
 input UpdateUseCaseInput {
 	pyprojectToml: String!
+	readme: String
 }
 
 input UpdateUserInput {
@@ -578,10 +630,10 @@ URL is a String implementing the [URL Standard](http://url.spec.whatwg.org/)
 """
 scalar Url
 
-type UseCase implements Node {
+type UseCase implements Project & Node {
 	id: ID!
 	viewerCan(action: Action!, asOrganization: ID): Boolean!
-	project: Project!
+	latest: ProjectVersion
 	competition: Competition!
 }
 
@@ -606,7 +658,7 @@ type User implements Entity & Node {
 	"""
 	can(action: Action!, on: ID, asOrganization: ID): Boolean!
 	organizations(after: String, before: String, first: Int, last: Int): OrganizationMembershipConnection!
-	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID): ProjectConnection!
+	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID): SubmissionConnection!
 	viewerCan(action: Action!, asOrganization: ID): Boolean!
 }
 

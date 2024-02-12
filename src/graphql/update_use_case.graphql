@@ -1,7 +1,11 @@
-mutation UpdateUseCaseMutation($competition_id: ID!, $pyprojectToml: String!) {
+mutation UpdateUseCaseMutation(
+  $competition_id: ID!
+  $pyprojectToml: String!
+  $readme: String
+) {
   createUseCaseVersion(
     competitionId: $competition_id
-    input: { pyprojectToml: $pyprojectToml }
+    input: { pyprojectToml: $pyprojectToml, readme: $readme }
   ) {
     node {
       id
@@ -12,3 +16,4 @@ mutation UpdateUseCaseMutation($competition_id: ID!, $pyprojectToml: String!) {
     }
   }
 }
+
