@@ -4,6 +4,7 @@ mod python;
 mod shell;
 mod test;
 mod upload;
+mod version;
 
 use install::{install, Install};
 use login::{login, Login};
@@ -15,7 +16,7 @@ use upload::{upload, Upload};
 use clap::Parser;
 
 #[derive(Parser, Debug)]
-#[command(author, version, about)]
+#[command(author, version = version::version(), about)]
 pub enum Cli {
     Install(Install),
     Login(Login),

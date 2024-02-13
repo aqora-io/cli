@@ -20,7 +20,7 @@ axum = "0.7"
 base32 = "0.4"
 base64 = "0.21"
 chrono = { version = "0.4", features = ["serde"] }
-clap = { version = "4.4", features = ["derive"] }
+clap = { version = "4.4", features = ["derive", "cargo"] }
 dirs = "5.0"
 fs4 = { version = "0.7", features = ["tokio"] }
 futures = "0.3"
@@ -29,6 +29,7 @@ hostname = "0.3"
 human-errors = "0.1"
 ignore = "0.4.22"
 indicatif = "0.17"
+lazy_static = "1.4.0"
 mime = "0.3.17"
 open = "5.0"
 pyo3 = { version = "0.20", features = ["auto-initialize", "serde"] }
