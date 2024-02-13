@@ -215,6 +215,10 @@ pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
             "Please make sure the data directory exists",
         ));
     }
+    let template_path = config
+        .template
+        .as_ref()
+        .map(|template| args.project_dir.join(template));
 
     let readme = read_readme(
         &args.project_dir,
@@ -290,6 +294,61 @@ pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
         .boxed()
     };
 
+    let template_fut = {
+        if let Some(template_path) = template_path {
+            let upload_url = if let Some(url) = project_version
+                .files
+                .iter()
+                .find(|f| {
+                    matches!(
+                        f.kind,
+                        update_use_case_mutation::ProjectVersionFileKind::TEMPLATE
+                    )
+                })
+                .and_then(|f| f.upload_url.as_ref())
+            {
+                url
+            } else {
+                return Err(error::system(
+                    "No upload URL found",
+                    "This is a bug, please report it",
+                ));
+            };
+            let template_tar_file = tempdir
+                .path()
+                .join(format!("{package_name}-{version}.template.tar.gz"));
+            let mut template_pb = ProgressBar::new_spinner().with_message("Compressing template");
+            template_pb.enable_steady_tick(std::time::Duration::from_millis(100));
+            template_pb = m.add(template_pb);
+
+            let template_pb_cloned = template_pb.clone();
+            let client = s3_client.clone();
+            async move {
+                compress(template_path, &template_tar_file)
+                    .await
+                    .map_err(|err| {
+                        error::system(
+                            &format!("Could not compress template: {}", err),
+                            "Please make sure the template directory is valid",
+                        )
+                    })?;
+                template_pb_cloned.set_message("Uploading template");
+                upload_file(&client, template_tar_file, upload_url, "application/gzip").await
+            }
+            .map(move |res| {
+                if res.is_ok() {
+                    template_pb.finish_with_message("template uploaded");
+                } else {
+                    template_pb.finish_with_message("An error occurred while processing template");
+                }
+                res
+            })
+            .boxed()
+        } else {
+            futures::future::ready(Ok(())).boxed()
+        }
+    };
+
     let package_fut = {
         let upload_url = if let Some(url) = project_version
             .files
@@ -343,7 +402,7 @@ pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
         .boxed()
     };
 
-    futures::future::try_join(data_fut, package_fut).await?;
+    futures::future::try_join_all([data_fut, template_fut, package_fut]).await?;
 
     let mut validate_pb = ProgressBar::new_spinner().with_message("Validating use case");
     validate_pb.enable_steady_tick(std::time::Duration::from_millis(100));

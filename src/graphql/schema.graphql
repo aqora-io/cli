@@ -6,7 +6,6 @@ enum Action {
 	CREATE_COMPETITION
 	UPDATE_COMPETITION
 	DELETE_COMPETITION
-	CREATE_SUBMISSION
 	CREATE_TOPIC
 	UPDATE_TOPIC
 	DELETE_TOPIC
@@ -18,6 +17,10 @@ enum Action {
 	UPDATE_ORGANIZATION_MEMBERSHIP
 	DELETE_ORGANIZATION_MEMBERSHIP
 	TRANSFER_ORGANIZATION_OWNERSHIP
+	CREATE_USE_CASE_VERSION
+	CREATE_SUBMISSION_VERSION
+	UPDATE_PROJECT_VERSION
+	READ_SUBMISSION_PROJECT
 }
 
 
@@ -419,6 +422,7 @@ type ProjectVersionEvaluation implements Node {
 	id: ID!
 	viewerCan(action: Action!, asOrganization: ID): Boolean!
 	projectVersion: ProjectVersion!
+	submission: Submission!
 }
 
 type ProjectVersionEvaluationConnection {
@@ -462,6 +466,7 @@ type ProjectVersionFile implements Node {
 enum ProjectVersionFileKind {
 	DATA
 	PACKAGE
+	TEMPLATE
 }
 
 type Query {

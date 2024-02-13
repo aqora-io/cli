@@ -6,21 +6,24 @@ use chrono::{DateTime, FixedOffset, Utc};
 use std::path::{Path, PathBuf};
 
 fn project_updated_since(project_dir: impl AsRef<Path>, time: DateTime<FixedOffset>) -> bool {
-    ignore::WalkBuilder::new(project_dir).build().any(|entry| {
-        entry
-            .as_ref()
-            .ok()
-            .and_then(|entry| entry.metadata().ok())
-            .map(|meta| {
-                meta.is_file()
-                    && meta
-                        .modified()
-                        .ok()
-                        .map(|t| chrono::DateTime::<Utc>::from(t) > time)
-                        .unwrap_or(false)
-            })
-            .unwrap_or(false)
-    })
+    ignore::WalkBuilder::new(project_dir)
+        .hidden(false)
+        .build()
+        .any(|entry| {
+            entry
+                .as_ref()
+                .ok()
+                .and_then(|entry| entry.metadata().ok())
+                .map(|meta| {
+                    meta.is_file()
+                        && meta
+                            .modified()
+                            .ok()
+                            .map(|t| chrono::DateTime::<Utc>::from(t) > time)
+                            .unwrap_or(false)
+                })
+                .unwrap_or(false)
+        })
 }
 
 fn last_update_path(project_dir: impl AsRef<Path>) -> PathBuf {

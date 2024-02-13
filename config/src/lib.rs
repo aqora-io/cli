@@ -82,6 +82,7 @@ impl AqoraConfig {
 pub struct AqoraUseCaseConfig {
     pub competition: String,
     pub data: PathBuf,
+    pub template: Option<PathBuf>,
     pub generator: PathStr<'static>,
     pub aggregator: PathStr<'static>,
     pub context: Option<PathStr<'static>>,
