@@ -1,5 +1,4 @@
 use futures::prelude::*;
-use pyo3::types::PyDict;
 use pyo3::{prelude::*, pyclass::IterANextOutput, types::PyType};
 use std::collections::HashSet;
 use std::ffi::OsStr;
@@ -8,6 +7,7 @@ use thiserror::Error;
 use tokio::{process::Command, sync::RwLock};
 
 lazy_static::lazy_static! {
+    static ref SYSTEM_PYTHON_PATH: Result<PathBuf, which::Error> = which::which("python3");
     static ref INITIALIZED_ENVS: RwLock<HashSet<PathBuf>> = RwLock::new(HashSet::new());
 }
 
@@ -25,6 +25,10 @@ pub enum EnvError {
     Io(#[from] tokio::io::Error),
     #[error(transparent)]
     Python(#[from] PyErr),
+    #[error("Python missing: {0}")]
+    PythonMissing(#[from] which::Error),
+    #[error("Failed to setup virtualenv: {0}")]
+    VenvFailed(String),
 }
 
 impl PyEnv {
@@ -63,20 +67,19 @@ impl PyEnv {
         if path.join("pyvenv.cfg").exists() {
             return Ok(());
         }
-        tokio::fs::create_dir_all(path).await?;
-        Python::with_gil(|py| -> PyResult<()> {
-            let config = PyDict::new(py);
-            config.set_item("with_pip", true)?;
-            let builder = py
-                .import("venv")?
-                .getattr(pyo3::intern!(py, "EnvBuilder"))?
-                .call((), Some(config))?;
-            builder
-                .getattr(pyo3::intern!(py, "create"))?
-                .call1((path,))?;
+        let output = Command::new(SYSTEM_PYTHON_PATH.clone()?.as_os_str())
+            .arg("-m")
+            .arg("venv")
+            .arg(path)
+            .output()
+            .await?;
+        if output.status.success() {
             Ok(())
-        })?;
-        Ok(())
+        } else {
+            Err(EnvError::VenvFailed(
+                String::from_utf8_lossy(&output.stderr).to_string(),
+            ))
+        }
     }
 
     pub fn python_path(&self) -> PathBuf {
