@@ -1,0 +1,13 @@
+query GetCompetitionTemplate($slug: String!) {
+  competitionBySlug(slug: $slug) {
+    id
+    useCase {
+      latest {
+        files {
+          kind
+          downloadUrl
+        }
+      }
+    }
+  }
+}

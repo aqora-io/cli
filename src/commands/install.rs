@@ -1,9 +1,9 @@
 use crate::{
     cache::{needs_update, set_last_update_time},
-    compress::decompress,
     dirs::{
         init_venv, project_config_dir, project_data_dir, project_use_case_toml_path, read_pyproject,
     },
+    download::download_tar_gz,
     error::{self, Result},
     graphql_client::{custom_scalars::*, GraphQLClient},
     python::pip_install,
@@ -14,7 +14,7 @@ use clap::Args;
 use futures::prelude::*;
 use graphql_client::GraphQLQuery;
 use indicatif::{MultiProgress, ProgressBar};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use url::Url;
 
 #[derive(GraphQLQuery)]
@@ -24,46 +24,6 @@ use url::Url;
     response_derives = "Debug"
 )]
 pub struct GetCompetitionUseCase;
-
-async fn download_use_case_data(dir: impl AsRef<Path>, url: Url) -> Result<()> {
-    tokio::fs::create_dir_all(&dir).await.map_err(|e| {
-        error::user(
-            &format!("Failed to create use case data directory: {e}"),
-            "Please make sure you have permission to create directories in this directory",
-        )
-    })?;
-    let client = reqwest::Client::new();
-    let mut byte_stream = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| {
-            error::user(
-                &format!("Failed to download use case data: {e}"),
-                "Check your internet connection and try again",
-            )
-        })?
-        .error_for_status()
-        .map_err(|e| error::system(&format!("Failed to download use case data: {e}"), ""))?
-        .bytes_stream();
-    let tempfile = tempfile::NamedTempFile::new().map_err(|e| {
-        error::user(
-            &format!("Failed to create temporary file: {e}"),
-            "Please make sure you have permission to create files in this directory",
-        )
-    })?;
-    let mut tar_file = tokio::fs::File::create(tempfile.path()).await?;
-    while let Some(item) = byte_stream.next().await {
-        tokio::io::copy(&mut item?.as_ref(), &mut tar_file).await?;
-    }
-    decompress(tempfile.path(), &dir).await.map_err(|e| {
-        error::user(
-            &format!("Failed to decompress use case data: {e}"),
-            "Please make sure you have permission to create files in this directory",
-        )
-    })?;
-    Ok(())
-}
 
 #[derive(Args, Debug)]
 #[command(author, version, about)]
@@ -206,9 +166,9 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
             .download_url
             .clone();
 
-        let download_fut = download_use_case_data(
-            project_data_dir(&args.project_dir, "data"),
+        let download_fut = download_tar_gz(
             use_case_data_url,
+            project_data_dir(&args.project_dir, "data"),
         )
         .map(move |res| {
             if res.is_ok() {

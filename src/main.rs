@@ -3,6 +3,7 @@ mod commands;
 mod compress;
 mod credentials;
 mod dirs;
+mod download;
 mod error;
 mod graphql_client;
 mod id;

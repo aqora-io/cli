@@ -2,6 +2,7 @@ mod install;
 mod login;
 mod python;
 mod shell;
+mod template;
 mod test;
 mod upload;
 mod version;
@@ -10,6 +11,7 @@ use install::{install, Install};
 use login::{login, Login};
 use python::{python, Python};
 use shell::{shell, Shell};
+use template::{template, Template};
 use test::{test, Test};
 use upload::{upload, Upload};
 
@@ -24,6 +26,7 @@ pub enum Cli {
     Shell(Shell),
     Test(Test),
     Upload(Upload),
+    Template(Template),
 }
 
 impl Cli {
@@ -35,6 +38,7 @@ impl Cli {
             Cli::Shell(args) => shell(args).await,
             Cli::Test(args) => test(args).await,
             Cli::Upload(args) => upload(args).await,
+            Cli::Template(args) => template(args).await,
         }
     }
 }
