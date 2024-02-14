@@ -70,7 +70,7 @@ impl PyEnv {
 
     async fn ensure_venv(path: impl AsRef<Path>) -> Result<(), EnvError> {
         let path = path.as_ref();
-        if path.exists() && path.is_dir() {
+        if path.join("pyvenv.cfg").exists() {
             return Ok(());
         }
         let output = Command::new(SYSTEM_PYTHON_PATH.as_os_str())
