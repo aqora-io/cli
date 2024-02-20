@@ -7,7 +7,10 @@ use thiserror::Error;
 use tokio::{process::Command, sync::RwLock};
 
 lazy_static::lazy_static! {
-    static ref SYSTEM_PYTHON_PATH: Result<PathBuf, which::Error> = which::which("python3");
+    static ref PYTHON_VERSION: String = Python::with_gil(|py| {
+        let version = py.version_info();
+        format!("{}.{}", version.major, version.minor)
+    });
     static ref INITIALIZED_ENVS: RwLock<HashSet<PathBuf>> = RwLock::new(HashSet::new());
 }
 
@@ -25,16 +28,17 @@ pub enum EnvError {
     Io(#[from] tokio::io::Error),
     #[error(transparent)]
     Python(#[from] PyErr),
-    #[error("Python missing: {0}")]
-    PythonMissing(#[from] which::Error),
     #[error("Failed to setup virtualenv: {0}")]
     VenvFailed(String),
 }
 
 impl PyEnv {
-    pub async fn init(path: impl AsRef<Path>) -> Result<Self, EnvError> {
-        Self::ensure_venv(&path).await?;
-        let path = path.as_ref().canonicalize()?;
+    pub async fn init(
+        uv_path: impl AsRef<Path>,
+        venv_path: impl AsRef<Path>,
+    ) -> Result<Self, EnvError> {
+        Self::ensure_venv(&uv_path, &venv_path).await?;
+        let path = venv_path.as_ref().canonicalize()?;
         if INITIALIZED_ENVS.read().await.contains(&path) {
             return Ok(Self(path));
         }
@@ -62,15 +66,34 @@ impl PyEnv {
         Ok(Self(path))
     }
 
-    async fn ensure_venv(path: impl AsRef<Path>) -> Result<(), EnvError> {
-        let path = path.as_ref();
+    async fn ensure_venv(
+        uv_path: impl AsRef<Path>,
+        venv_path: impl AsRef<Path>,
+    ) -> Result<(), EnvError> {
+        let path = venv_path.as_ref();
         if path.join("pyvenv.cfg").exists() {
             return Ok(());
         }
-        let output = Command::new(SYSTEM_PYTHON_PATH.clone()?.as_os_str())
-            .arg("-m")
+        let output = Command::new(uv_path.as_ref())
             .arg("venv")
-            .arg(path)
+            .arg("--python")
+            .arg(PYTHON_VERSION.as_str())
+            .arg(venv_path.as_ref())
+            .output()
+            .await?;
+        if !output.status.success() {
+            return Err(EnvError::VenvFailed(
+                String::from_utf8_lossy(&output.stderr).to_string(),
+            ));
+        }
+        let output = Command::new(uv_path.as_ref())
+            .env("VIRTUAL_ENV", venv_path.as_ref())
+            .arg("pip")
+            .arg("install")
+            .arg("uv")
+            .arg("setuptools")
+            .arg("wheel")
+            .arg("build")
             .output()
             .await?;
         if output.status.success() {
@@ -86,22 +109,24 @@ impl PyEnv {
         self.0.join("bin").join("python")
     }
 
+    pub fn uv_path(&self) -> PathBuf {
+        self.0.join("bin").join("uv")
+    }
+
     pub fn activate_path(&self) -> PathBuf {
         self.0.join("bin").join("activate")
     }
 
     pub fn python_cmd(&self) -> Command {
-        Command::new(self.python_path().as_os_str())
+        let mut cmd = Command::new(self.python_path().as_os_str());
+        cmd.env("VIRTUAL_ENV", self.0.as_os_str());
+        cmd
     }
 
-    pub async fn is_module_installed(&self, module: impl AsRef<OsStr>) -> tokio::io::Result<bool> {
-        Ok(Command::new(self.python_path().as_os_str())
-            .arg("-m")
-            .arg(module)
-            .output()
-            .await?
-            .status
-            .success())
+    pub fn uv_cmd(&self) -> Command {
+        let mut cmd = Command::new(self.uv_path().as_os_str());
+        cmd.env("VIRTUAL_ENV", self.0.as_os_str());
+        cmd
     }
 
     pub fn pip_install(
@@ -109,8 +134,8 @@ impl PyEnv {
         modules: impl IntoIterator<Item = impl AsRef<OsStr>>,
         opts: &PipOptions,
     ) -> Command {
-        let mut cmd = self.python_cmd();
-        cmd.arg("-m").arg("pip").arg("install");
+        let mut cmd = self.uv_cmd();
+        cmd.arg("pip").arg("install");
         if opts.upgrade {
             cmd.arg("--upgrade");
         }

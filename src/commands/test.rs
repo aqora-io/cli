@@ -18,7 +18,9 @@ use std::path::PathBuf;
 #[command(author, version, about)]
 pub struct Test {
     #[arg(short, long, default_value = ".")]
-    pub project_dir: PathBuf,
+    pub project: PathBuf,
+    #[arg(long)]
+    pub uv: Option<PathBuf>,
 }
 
 pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
@@ -28,9 +30,15 @@ pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
         .aqora()
         .and_then(|aqora| aqora.as_submission())
         .ok_or_else(|| error::user("Submission config is not valid", ""))?;
+    let submission_package_name = project.name().ok_or_else(|| {
+        error::user(
+            "Could not get project name",
+            "Please make sure the pyproject includes a [project] section",
+        )
+    })?;
 
-    let use_case_toml_path = project_use_case_toml_path(&args.project_dir);
-    let data_path = project_data_dir(&args.project_dir, "data");
+    let use_case_toml_path = project_use_case_toml_path(&args.project);
+    let data_path = project_data_dir(&args.project, "data");
     if !use_case_toml_path.exists() || !data_path.exists() {
         return Err(error::user(
             "Project not setup",
@@ -59,12 +67,16 @@ pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
     venv_pb.enable_steady_tick(std::time::Duration::from_millis(100));
     venv_pb = m.add(venv_pb);
 
-    let env = init_venv(&args.project_dir).await?;
+    let env = init_venv(&args.project, args.uv.as_ref(), &venv_pb).await?;
 
-    if needs_update(&args.project_dir).await? {
+    if needs_update(&args.project).await? {
         pip_install(
             &env,
-            [args.project_dir.to_string_lossy().to_string()],
+            [format!(
+                "{} @ {}",
+                submission_package_name,
+                args.project.display()
+            )],
             &PipOptions {
                 no_deps: true,
                 ..Default::default()
@@ -72,7 +84,7 @@ pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
             &venv_pb,
         )
         .await?;
-        set_last_update_time(&args.project_dir).await?;
+        set_last_update_time(&args.project).await?;
         venv_pb.finish_with_message("Changes applied");
     } else {
         venv_pb.finish_with_message("Already up to date");
@@ -149,7 +161,7 @@ pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
 }
 
 pub async fn test(args: Test) -> Result<()> {
-    let project = read_pyproject(&args.project_dir).await?;
+    let project = read_pyproject(&args.project).await?;
     let aqora = project.aqora().ok_or_else(|| {
         error::user(
             "No [tool.aqora] section found in pyproject.toml",

@@ -31,7 +31,9 @@ pub struct Install {
     #[arg(short, long, default_value = "https://app.aqora.io")]
     pub url: String,
     #[arg(short, long, default_value = ".")]
-    pub project_dir: PathBuf,
+    pub project: PathBuf,
+    #[arg(long)]
+    pub uv: Option<PathBuf>,
     #[arg(long)]
     pub upgrade: bool,
 }
@@ -58,6 +60,12 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
                 "Please make sure you are in the correct directory",
             )
         })?;
+    let submission_package_name = project.name().ok_or_else(|| {
+        error::user(
+            "Could not get project name",
+            "Please make sure the pyproject includes a [project] section",
+        )
+    })?;
 
     let competition = client
         .send::<GetCompetitionUseCase>(get_competition_use_case::Variables {
@@ -72,7 +80,7 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
             )
         })?;
 
-    let config_dir = project_config_dir(&args.project_dir);
+    let config_dir = project_config_dir(&args.project);
     tokio::fs::create_dir_all(&config_dir).await.map_err(|e| {
         error::user(
             &format!("Failed to create data directory: {e}"),
@@ -83,7 +91,7 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
         )
     })?;
 
-    let use_case_toml_path = project_use_case_toml_path(&args.project_dir);
+    let use_case_toml_path = project_use_case_toml_path(&args.project);
     let old_use_case = if use_case_toml_path.exists() {
         Some(PyProject::from_toml(
             tokio::fs::read_to_string(&use_case_toml_path).await?,
@@ -103,8 +111,9 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
         })
         .transpose()?;
 
-    let env = init_venv(&args.project_dir).await?;
+    let env = init_venv(&args.project, args.uv.as_ref(), &venv_pb).await?;
 
+    let use_case_package_name = competition.use_case.name.clone();
     let use_case_res = competition.use_case.latest.ok_or_else(|| {
         error::user(
             "No use case found",
@@ -166,18 +175,17 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
             .download_url
             .clone();
 
-        let download_fut = download_tar_gz(
-            use_case_data_url,
-            project_data_dir(&args.project_dir, "data"),
-        )
-        .map(move |res| {
-            if res.is_ok() {
-                download_pb.finish_with_message("Use case data downloaded");
-            } else {
-                download_pb.finish_with_message("Failed to download use case data");
-            }
-            res
-        });
+        let download_fut =
+            download_tar_gz(use_case_data_url, project_data_dir(&args.project, "data")).map(
+                move |res| {
+                    if res.is_ok() {
+                        download_pb.finish_with_message("Use case data downloaded");
+                    } else {
+                        download_pb.finish_with_message("Failed to download use case data");
+                    }
+                    res
+                },
+            );
 
         let mut use_case_pb = ProgressBar::new_spinner().with_message("Installing use case...");
         use_case_pb.enable_steady_tick(std::time::Duration::from_millis(100));
@@ -188,15 +196,23 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
             upgrade: args.upgrade,
             ..Default::default()
         };
-        let install_fut =
-            pip_install(&env, [use_case_package_url], &options, &use_case_pb).map(move |res| {
-                if res.is_ok() {
-                    cloned_pb.finish_with_message("Use case installed");
-                } else {
-                    cloned_pb.finish_with_message("Failed to install use case");
-                }
-                res
-            });
+        let install_fut = pip_install(
+            &env,
+            [format!(
+                "{} @ {}",
+                use_case_package_name, use_case_package_url
+            )],
+            &options,
+            &use_case_pb,
+        )
+        .map(move |res| {
+            if res.is_ok() {
+                cloned_pb.finish_with_message("Use case installed");
+            } else {
+                cloned_pb.finish_with_message("Failed to install use case");
+            }
+            res
+        });
 
         futures::future::try_join(download_fut, install_fut).await?;
 
@@ -213,14 +229,18 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
             })?;
     }
 
-    if should_update_use_case || needs_update(&args.project_dir).await? {
+    if should_update_use_case || needs_update(&args.project).await? {
         let mut local_pb = ProgressBar::new_spinner().with_message("Installing local project...");
         local_pb.enable_steady_tick(std::time::Duration::from_millis(100));
         local_pb = m.insert_before(&venv_pb, local_pb);
 
         pip_install(
             &env,
-            [args.project_dir.to_string_lossy().to_string()],
+            [format!(
+                "{} @ {}",
+                submission_package_name,
+                args.project.display()
+            )],
             &PipOptions {
                 upgrade: args.upgrade,
                 ..Default::default()
@@ -229,7 +249,7 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
         )
         .await?;
 
-        set_last_update_time(&args.project_dir).await?;
+        set_last_update_time(&args.project).await?;
 
         local_pb.finish_with_message("Local project installed");
     }
@@ -240,7 +260,7 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
 }
 
 pub async fn install(args: Install) -> Result<()> {
-    let project = read_pyproject(&args.project_dir).await?;
+    let project = read_pyproject(&args.project).await?;
     let aqora = project.aqora().ok_or_else(|| {
         error::user(
             "No [tool.aqora] section found in pyproject.toml",

@@ -58,6 +58,12 @@ impl From<tokio::sync::oneshot::error::RecvError> for Error {
     }
 }
 
+impl From<dialoguer::Error> for Error {
+    fn from(e: dialoguer::Error) -> Self {
+        system(&format!("Error with dialog: {e}"), "")
+    }
+}
+
 impl IntoResponse for Error {
     fn into_response(self) -> Response<Body> {
         let body = Body::new(format!("{}", self));

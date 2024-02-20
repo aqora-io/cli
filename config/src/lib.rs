@@ -15,6 +15,10 @@ pub struct PyProject {
 }
 
 impl PyProject {
+    pub fn name(&self) -> Option<&str> {
+        self.project.as_ref().map(|project| project.name.as_str())
+    }
+
     pub fn set_name(&mut self, name: impl ToString) {
         if let Some(project) = self.project.as_mut() {
             project.name = name.to_string();

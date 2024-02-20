@@ -13,4 +13,3 @@ pyo3-asyncio = { version = "0.20", features = ["attributes", "tokio-runtime"] }
 thiserror = "1.0"
 tokio = { version = "1", features = ["sync", "signal", "process", "fs"] }
 split-stream-by = "0.1"
-which = "6.0"

@@ -29,7 +29,7 @@ pub async fn run_command(
                 if line.trim().is_empty() {
                     pb.println("");
                 } else {
-                    pb.println(format!("{}{}", prefix, line));
+                    pb.println(line);
                 }
             }
         }
