@@ -18,6 +18,7 @@ lazy_static::lazy_static! {
 pub struct PipOptions {
     pub upgrade: bool,
     pub no_deps: bool,
+    pub editable: bool,
 }
 
 pub struct PyEnv(PathBuf);
@@ -50,11 +51,33 @@ impl PyEnv {
                     if name.starts_with("python") {
                         let site_packages = entry.path().join("site-packages");
                         if site_packages.exists() {
+                            let mut editable_paths = Vec::new();
+                            let mut entries = tokio::fs::read_dir(&site_packages).await?;
+                            while let Some(entry) = entries.next_entry().await? {
+                                let name = entry.file_name();
+                                if let Some(name) = name.to_str() {
+                                    if name.starts_with("__editable__")
+                                        && name.ends_with(".pth")
+                                        && entry.file_type().await?.is_file()
+                                    {
+                                        editable_paths.push(
+                                            tokio::fs::read_to_string(&entry.path())
+                                                .await?
+                                                .trim()
+                                                .to_string(),
+                                        );
+                                    }
+                                }
+                            }
                             Python::with_gil(|py| {
                                 let sys = py.import("sys").unwrap();
-                                sys.getattr(pyo3::intern!(sys.py(), "path"))?
-                                    .getattr(pyo3::intern!(sys.py(), "append"))?
-                                    .call1((site_packages,))?;
+                                let append = sys
+                                    .getattr(pyo3::intern!(sys.py(), "path"))?
+                                    .getattr(pyo3::intern!(sys.py(), "append"))?;
+                                append.call1((site_packages,))?;
+                                for path in editable_paths {
+                                    append.call1((path,))?;
+                                }
                                 PyResult::Ok(())
                             })?;
                         }
@@ -141,6 +164,9 @@ impl PyEnv {
         }
         if opts.no_deps {
             cmd.arg("--no-deps");
+        }
+        if opts.editable {
+            cmd.arg("--editable");
         }
         for module in modules {
             cmd.arg(module.as_ref());

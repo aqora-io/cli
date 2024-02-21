@@ -1,4 +1,3 @@
-mod cache;
 mod commands;
 mod compress;
 mod credentials;

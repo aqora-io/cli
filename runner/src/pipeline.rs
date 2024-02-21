@@ -1,4 +1,4 @@
-use crate::python::{async_generator, async_python_run, deepcopy, AsyncIterator};
+use crate::python::{async_generator, async_python_run, deepcopy, AsyncIterator, PyEnv};
 use aqora_config::{AqoraSubmissionConfig, AqoraUseCaseConfig, PathStr, PathStrReplaceError};
 use futures::prelude::*;
 use pyo3::{
@@ -169,6 +169,7 @@ pub enum PipelineImportError {
 
 impl Pipeline {
     pub fn import(
+        _: &PyEnv,
         use_case: &AqoraUseCaseConfig,
         submission: &AqoraSubmissionConfig,
         config: PipelineConfig,

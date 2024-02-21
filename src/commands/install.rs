@@ -1,5 +1,4 @@
 use crate::{
-    cache::{needs_update, set_last_update_time},
     dirs::{
         init_venv, project_config_dir, project_data_dir, project_use_case_toml_path, read_pyproject,
     },
@@ -61,12 +60,6 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
                 "Please make sure you are in the correct directory",
             )
         })?;
-    let submission_package_name = project.name().ok_or_else(|| {
-        error::user(
-            "Could not get project name",
-            "Please make sure the pyproject includes a [project] section",
-        )
-    })?;
 
     let slug = args
         .competition
@@ -139,10 +132,9 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
 
     use_case_pb.finish_with_message("Use case updated");
 
-    let should_update_use_case =
-        args.upgrade || old_version.is_none() || new_version > old_version.unwrap();
+    let should_update = args.upgrade || old_version.is_none() || new_version > old_version.unwrap();
 
-    if should_update_use_case {
+    if should_update {
         let mut download_pb =
             ProgressBar::new_spinner().with_message("Downloading use case data...");
         download_pb.enable_steady_tick(std::time::Duration::from_millis(100));
@@ -238,27 +230,22 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
             })?;
     }
 
-    if should_update_use_case || needs_update(&args.project).await? {
+    if should_update {
         let mut local_pb = ProgressBar::new_spinner().with_message("Installing local project...");
         local_pb.enable_steady_tick(std::time::Duration::from_millis(100));
         local_pb = m.insert_before(&venv_pb, local_pb);
 
         pip_install(
             &env,
-            [format!(
-                "{} @ {}",
-                submission_package_name,
-                args.project.display()
-            )],
+            [args.project.display()],
             &PipOptions {
+                editable: true,
                 upgrade: args.upgrade,
                 ..Default::default()
             },
             &local_pb,
         )
         .await?;
-
-        set_last_update_time(&args.project).await?;
 
         local_pb.finish_with_message("Local project installed");
     }

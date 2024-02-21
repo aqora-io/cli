@@ -1,14 +1,9 @@
 use crate::{
-    cache::{needs_update, set_last_update_time},
     dirs::{init_venv, project_data_dir, project_use_case_toml_path, read_pyproject},
     error::{self, Result},
-    python::pip_install,
 };
 use aqora_config::PyProject;
-use aqora_runner::{
-    pipeline::{EvaluationError, Pipeline, PipelineConfig, PipelineImportError},
-    python::PipOptions,
-};
+use aqora_runner::pipeline::{EvaluationError, Pipeline, PipelineConfig, PipelineImportError};
 use clap::Args;
 use indicatif::{MultiProgress, ProgressBar};
 use pyo3::Python;
@@ -30,12 +25,6 @@ pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
         .aqora()
         .and_then(|aqora| aqora.as_submission())
         .ok_or_else(|| error::user("Submission config is not valid", ""))?;
-    let submission_package_name = project.name().ok_or_else(|| {
-        error::user(
-            "Could not get project name",
-            "Please make sure the pyproject includes a [project] section",
-        )
-    })?;
 
     let use_case_toml_path = project_use_case_toml_path(&args.project);
     let data_path = project_data_dir(&args.project, "data");
@@ -63,41 +52,16 @@ pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
             )
         })?;
 
-    let mut venv_pb = ProgressBar::new_spinner().with_message("Applying changes");
-    venv_pb.enable_steady_tick(std::time::Duration::from_millis(100));
-    venv_pb = m.add(venv_pb);
-
-    let env = init_venv(&args.project, args.uv.as_ref(), &venv_pb).await?;
-
-    if needs_update(&args.project).await? {
-        pip_install(
-            &env,
-            [format!(
-                "{} @ {}",
-                submission_package_name,
-                args.project.display()
-            )],
-            &PipOptions {
-                no_deps: true,
-                ..Default::default()
-            },
-            &venv_pb,
-        )
-        .await?;
-        set_last_update_time(&args.project).await?;
-        venv_pb.finish_with_message("Changes applied");
-    } else {
-        venv_pb.finish_with_message("Already up to date");
-    }
-
     let mut pipeline_pb = ProgressBar::new_spinner().with_message("Running pipeline...");
     pipeline_pb.enable_steady_tick(std::time::Duration::from_millis(100));
     pipeline_pb = m.add(pipeline_pb);
 
+    let env = init_venv(&args.project, args.uv.as_ref(), &pipeline_pb).await?;
+
     let config = PipelineConfig {
         data: data_path.canonicalize()?,
     };
-    let pipeline = match Pipeline::import(use_case, submission, config) {
+    let pipeline = match Pipeline::import(&env, use_case, submission, config) {
         Ok(pipeline) => pipeline,
         Err(PipelineImportError::Python(e)) => {
             pipeline_pb.finish_with_message("Failed to import pipeline");
