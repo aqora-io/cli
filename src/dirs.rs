@@ -1,6 +1,10 @@
-use crate::error::{self, Result};
+use crate::{
+    error::{self, Result},
+    process::run_command,
+};
 use aqora_config::PyProject;
 use aqora_runner::python::PyEnv;
+use indicatif::ProgressBar;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -84,7 +88,7 @@ enum SymlinkError {
 }
 
 fn create_venv_symlink(project_dir: impl AsRef<Path>) -> Result<(), SymlinkError> {
-    let symlink_dir = project_dir.as_ref().join(VENV_DIRNAME);
+    let symlink_dir = project_dir.as_ref().join(".venv");
     let venv_dir = [AQORA_DIRNAME, VENV_DIRNAME].iter().collect::<PathBuf>();
 
     if symlink_dir.exists() {
@@ -103,9 +107,62 @@ fn create_venv_symlink(project_dir: impl AsRef<Path>) -> Result<(), SymlinkError
         .map_err(|err| SymlinkError::CreateSymlink(symlink_dir, venv_dir, err))
 }
 
-pub async fn init_venv(project_dir: impl AsRef<Path>) -> Result<PyEnv> {
+async fn ensure_uv(uv_path: Option<impl AsRef<Path>>, pb: &ProgressBar) -> Result<PathBuf> {
+    if let Some(uv_path) = uv_path
+        .map(|p| PathBuf::from(p.as_ref()))
+        .or_else(|| which::which("uv").ok())
+    {
+        return if uv_path.exists() {
+            Ok(uv_path)
+        } else {
+            Err(error::user(
+                &format!("`uv` executable not found at {}", uv_path.display()),
+                "Please make sure you have the correct path to `uv`",
+            ))
+        };
+    }
+
+    let confirmation = pb.suspend(|| {
+        dialoguer::Confirm::new()
+            .with_prompt("`uv` is required. Install it now? (python3 -m pip install uv)")
+            .interact()
+    })?;
+
+    if confirmation {
+        let mut cmd = tokio::process::Command::new("python3");
+        cmd.arg("-m").arg("pip").arg("install").arg("uv");
+        run_command(&mut cmd, pb, Some("Installing `uv`"))
+            .await
+            .map_err(|e| {
+                error::system(
+                    &format!("Failed to install `uv`: {}", e),
+                    "Please try installing `uv` manually",
+                )
+            })?;
+        let uv_path = which::which("uv").map_err(|e| {
+            error::system(
+                &format!("Failed to find `uv` after installing: {}", e),
+                "Please make sure uv is in your PATH",
+            )
+        })?;
+        Ok(uv_path)
+    } else {
+        Err(error::user(
+            "`uv` not found",
+            "Please install uv and try again",
+        ))
+    }
+}
+
+pub async fn init_venv(
+    project_dir: impl AsRef<Path>,
+    uv_path: Option<impl AsRef<Path>>,
+    pb: &ProgressBar,
+) -> Result<PyEnv> {
+    pb.set_message("Initializing the Python environment...");
+    let uv_path = ensure_uv(uv_path, pb).await?;
     let venv_dir = project_venv_dir(&project_dir);
-    let env = PyEnv::init(&venv_dir).await.map_err(|e| {
+    let env = PyEnv::init(uv_path, &venv_dir).await.map_err(|e| {
         error::user(
             &format!("Failed to setup virtualenv: {}", e),
             &format!(

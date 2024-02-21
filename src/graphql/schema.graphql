@@ -380,6 +380,7 @@ type PageInfo {
 interface Project {
 	id: ID!
 	competition: Competition!
+	name: String!
 	viewerCan(action: Action!, asOrganization: ID): Boolean!
 }
 
@@ -505,6 +506,7 @@ type Submission implements Project & Node {
 	latest: ProjectVersion
 	competition: Competition!
 	entity: Entity!
+	name: String!
 }
 
 type SubmissionConnection {
@@ -640,6 +642,7 @@ type UseCase implements Project & Node {
 	viewerCan(action: Action!, asOrganization: ID): Boolean!
 	latest: ProjectVersion
 	competition: Competition!
+	name: String!
 }
 
 type User implements Entity & Node {

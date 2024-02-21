@@ -24,7 +24,10 @@ pub struct Upload {
     #[arg(short, long, default_value = "https://app.aqora.io")]
     pub url: String,
     #[arg(short, long, default_value = ".")]
-    pub project_dir: PathBuf,
+    pub project: PathBuf,
+    #[arg(long)]
+    pub uv: Option<PathBuf>,
+    pub competition: Option<String>,
 }
 
 #[derive(GraphQLQuery)]
@@ -188,7 +191,7 @@ pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
             "Please make sure you have permission to create temporary directories",
         )
     })?;
-    let pyproject_toml = std::fs::read_to_string(pyproject_path(&args.project_dir))?;
+    let pyproject_toml = std::fs::read_to_string(pyproject_path(&args.project))?;
     let config = project
         .aqora()
         .and_then(|aqora| aqora.as_use_case())
@@ -199,7 +202,17 @@ pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
             )
         })?;
 
-    let competition_id = get_competition_id_by_slug(&client, &config.competition).await?;
+    let slug = args
+        .competition
+        .as_ref()
+        .or(config.competition.as_ref())
+        .ok_or_else(|| {
+            error::user(
+                "No competition provided",
+                "Please specify a competition in either the pyproject.toml or the command line",
+            )
+        })?;
+    let competition_id = get_competition_id_by_slug(&client, slug).await?;
 
     let version = project.version().ok_or_else(|| {
         error::user(
@@ -208,7 +221,7 @@ pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
         )
     })?;
     let package_name = format!("use-case-{}", competition_id.to_package_id());
-    let data_path = args.project_dir.join(&config.data);
+    let data_path = args.project.join(&config.data);
     if !data_path.exists() {
         return Err(error::user(
             &format!("{} does not exist", data_path.display()),
@@ -218,10 +231,10 @@ pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
     let template_path = config
         .template
         .as_ref()
-        .map(|template| args.project_dir.join(template));
+        .map(|template| args.project.join(template));
 
     let readme = read_readme(
-        &args.project_dir,
+        &args.project,
         project.project.as_ref().and_then(|p| p.readme.as_ref()),
     )
     .await
@@ -337,7 +350,7 @@ pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
             }
             .map(move |res| {
                 if res.is_ok() {
-                    template_pb.finish_with_message("template uploaded");
+                    template_pb.finish_with_message("Template uploaded");
                 } else {
                     template_pb.finish_with_message("An error occurred while processing template");
                 }
@@ -378,14 +391,13 @@ pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
         let package_pb_cloned = package_pb.clone();
         let client = s3_client.clone();
         async move {
-            package_pb_cloned.set_message("Initializing Python environment");
-            let env = init_venv(&args.project_dir).await?;
+            let env = init_venv(&args.project, args.uv.as_ref(), &package_pb_cloned).await?;
 
-            let project_file = RevertFile::save(pyproject_path(&args.project_dir))?;
+            let project_file = RevertFile::save(pyproject_path(&args.project))?;
             let mut new_project = project.clone();
             new_project.set_name(package_name);
             std::fs::write(&project_file, new_project.toml()?)?;
-            build_package(&env, &args.project_dir, tempdir.path(), &package_pb_cloned).await?;
+            build_package(&env, &args.project, tempdir.path(), &package_pb_cloned).await?;
             project_file.revert()?;
 
             package_pb_cloned.set_message("Uploading package");
@@ -434,7 +446,7 @@ pub async fn upload_submission(args: Upload, project: PyProject) -> Result<()> {
             "Please make sure you have permission to create temporary directories",
         )
     })?;
-    let pyproject_toml = std::fs::read_to_string(pyproject_path(&args.project_dir))?;
+    let pyproject_toml = std::fs::read_to_string(pyproject_path(&args.project))?;
     let config = project
         .aqora()
         .and_then(|aqora| aqora.as_submission())
@@ -445,7 +457,17 @@ pub async fn upload_submission(args: Upload, project: PyProject) -> Result<()> {
             )
         })?;
 
-    let competition_id = get_competition_id_by_slug(&client, &config.competition).await?;
+    let slug = args
+        .competition
+        .as_ref()
+        .or(config.competition.as_ref())
+        .ok_or_else(|| {
+            error::user(
+                "No competition provided",
+                "Please specify a competition in either the pyproject.toml or the command line",
+            )
+        })?;
+    let competition_id = get_competition_id_by_slug(&client, slug).await?;
     let entity_id = if let Some(username) = &config.entity {
         get_entity_id_by_username(&client, username).await?
     } else {
@@ -465,7 +487,7 @@ pub async fn upload_submission(args: Upload, project: PyProject) -> Result<()> {
     );
 
     let readme = read_readme(
-        &args.project_dir,
+        &args.project,
         project.project.as_ref().and_then(|p| p.readme.as_ref()),
     )
     .await
@@ -514,14 +536,14 @@ pub async fn upload_submission(args: Upload, project: PyProject) -> Result<()> {
     package_pb.enable_steady_tick(std::time::Duration::from_millis(100));
     package_pb = m.add(package_pb);
 
-    let env = init_venv(&args.project_dir).await?;
+    let env = init_venv(&args.project, args.uv.as_ref(), &package_pb).await?;
 
-    let project_file = RevertFile::save(pyproject_path(&args.project_dir))?;
+    let project_file = RevertFile::save(pyproject_path(&args.project))?;
     let mut new_project = project.clone();
     new_project.set_name(package_name);
     std::fs::write(&project_file, new_project.toml()?)?;
 
-    build_package(&env, &args.project_dir, tempdir.path(), &package_pb).await?;
+    build_package(&env, &args.project, tempdir.path(), &package_pb).await?;
     project_file.revert()?;
 
     package_pb.set_message("Uploading package");
@@ -546,7 +568,7 @@ pub async fn upload_submission(args: Upload, project: PyProject) -> Result<()> {
 }
 
 pub async fn upload(args: Upload) -> Result<()> {
-    let project = read_pyproject(&args.project_dir).await?;
+    let project = read_pyproject(&args.project).await?;
     let aqora = project.aqora().ok_or_else(|| {
         error::user(
             "No [tool.aqora] section found in pyproject.toml",
