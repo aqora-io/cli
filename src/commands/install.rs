@@ -36,6 +36,7 @@ pub struct Install {
     pub uv: Option<PathBuf>,
     #[arg(long)]
     pub upgrade: bool,
+    pub competition: Option<String>,
 }
 
 pub async fn install_submission(args: Install, project: PyProject) -> Result<()> {
@@ -67,15 +68,23 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
         )
     })?;
 
+    let slug = args
+        .competition
+        .as_ref()
+        .or(config.competition.as_ref())
+        .ok_or_else(|| {
+            error::user(
+                "No competition provided",
+                "Please specify a competition in either the pyproject.toml or the command line",
+            )
+        })?;
     let competition = client
-        .send::<GetCompetitionUseCase>(get_competition_use_case::Variables {
-            slug: config.competition.clone(),
-        })
+        .send::<GetCompetitionUseCase>(get_competition_use_case::Variables { slug: slug.clone() })
         .await?
         .competition_by_slug
         .ok_or_else(|| {
             error::user(
-                &format!("Competition '{}' not found", config.competition),
+                &format!("Competition '{slug}' not found"),
                 "Please make sure the competition exists",
             )
         })?;

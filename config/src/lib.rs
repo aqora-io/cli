@@ -84,7 +84,7 @@ impl AqoraConfig {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AqoraUseCaseConfig {
-    pub competition: String,
+    pub competition: Option<String>,
     pub data: PathBuf,
     pub template: Option<PathBuf>,
     pub generator: PathStr<'static>,
@@ -103,7 +103,7 @@ pub struct LayerConfig {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AqoraSubmissionConfig {
-    pub competition: String,
+    pub competition: Option<String>,
     pub entity: Option<String>,
     pub refs: HashMap<String, PathStr<'static>>,
 }

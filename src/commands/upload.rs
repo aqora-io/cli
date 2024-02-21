@@ -27,6 +27,7 @@ pub struct Upload {
     pub project: PathBuf,
     #[arg(long)]
     pub uv: Option<PathBuf>,
+    pub competition: Option<String>,
 }
 
 #[derive(GraphQLQuery)]
@@ -201,7 +202,17 @@ pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
             )
         })?;
 
-    let competition_id = get_competition_id_by_slug(&client, &config.competition).await?;
+    let slug = args
+        .competition
+        .as_ref()
+        .or(config.competition.as_ref())
+        .ok_or_else(|| {
+            error::user(
+                "No competition provided",
+                "Please specify a competition in either the pyproject.toml or the command line",
+            )
+        })?;
+    let competition_id = get_competition_id_by_slug(&client, slug).await?;
 
     let version = project.version().ok_or_else(|| {
         error::user(
@@ -446,7 +457,17 @@ pub async fn upload_submission(args: Upload, project: PyProject) -> Result<()> {
             )
         })?;
 
-    let competition_id = get_competition_id_by_slug(&client, &config.competition).await?;
+    let slug = args
+        .competition
+        .as_ref()
+        .or(config.competition.as_ref())
+        .ok_or_else(|| {
+            error::user(
+                "No competition provided",
+                "Please specify a competition in either the pyproject.toml or the command line",
+            )
+        })?;
+    let competition_id = get_competition_id_by_slug(&client, slug).await?;
     let entity_id = if let Some(username) = &config.entity {
         get_entity_id_by_username(&client, username).await?
     } else {
