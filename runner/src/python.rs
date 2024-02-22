@@ -21,6 +21,7 @@ pub struct PipOptions {
     pub editable: bool,
 }
 
+#[derive(Debug, Clone)]
 pub struct PyEnv {
     venv_path: PathBuf,
     cache_path: Option<PathBuf>,
