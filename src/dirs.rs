@@ -162,15 +162,17 @@ pub async fn init_venv(
     pb.set_message("Initializing the Python environment...");
     let uv_path = ensure_uv(uv_path, pb).await?;
     let venv_dir = project_venv_dir(&project_dir);
-    let env = PyEnv::init(uv_path, &venv_dir).await.map_err(|e| {
-        error::user(
-            &format!("Failed to setup virtualenv: {}", e),
-            &format!(
-                "Please make sure you have permissions to write to {}",
-                venv_dir.display()
-            ),
-        )
-    })?;
+    let env = PyEnv::init(uv_path, &venv_dir, None::<PathBuf>)
+        .await
+        .map_err(|e| {
+            error::user(
+                &format!("Failed to setup virtualenv: {}", e),
+                &format!(
+                    "Please make sure you have permissions to write to {}",
+                    venv_dir.display()
+                ),
+            )
+        })?;
     if let Err(err) = create_venv_symlink(&project_dir) {
         eprintln!("WARN: {err}");
     }

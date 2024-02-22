@@ -21,7 +21,10 @@ pub struct PipOptions {
     pub editable: bool,
 }
 
-pub struct PyEnv(PathBuf);
+pub struct PyEnv {
+    venv_path: PathBuf,
+    cache_path: Option<PathBuf>,
+}
 
 #[derive(Error, Debug)]
 pub enum EnvError {
@@ -37,13 +40,23 @@ impl PyEnv {
     pub async fn init(
         uv_path: impl AsRef<Path>,
         venv_path: impl AsRef<Path>,
+        cache_path: Option<impl AsRef<Path>>,
     ) -> Result<Self, EnvError> {
-        Self::ensure_venv(&uv_path, &venv_path).await?;
-        let path = venv_path.as_ref().canonicalize()?;
-        if INITIALIZED_ENVS.read().await.contains(&path) {
-            return Ok(Self(path));
+        let cache_path = if let Some(cache_path) = cache_path {
+            tokio::fs::create_dir_all(&cache_path).await?;
+            Some(cache_path.as_ref().canonicalize()?)
+        } else {
+            None
+        };
+        Self::ensure_venv(&uv_path, &venv_path, cache_path.as_ref()).await?;
+        let venv_path = venv_path.as_ref().canonicalize()?;
+        if INITIALIZED_ENVS.read().await.contains(&venv_path) {
+            return Ok(Self {
+                venv_path,
+                cache_path,
+            });
         }
-        let mut lib_dir_entries = tokio::fs::read_dir(path.join("lib")).await?;
+        let mut lib_dir_entries = tokio::fs::read_dir(venv_path.join("lib")).await?;
         while let Some(entry) = lib_dir_entries.next_entry().await? {
             if entry.file_type().await?.is_dir() {
                 let name = entry.file_name();
@@ -85,40 +98,48 @@ impl PyEnv {
                 }
             }
         }
-        INITIALIZED_ENVS.write().await.insert(path.clone());
-        Ok(Self(path))
+        INITIALIZED_ENVS.write().await.insert(venv_path.clone());
+        Ok(Self {
+            venv_path,
+            cache_path,
+        })
     }
 
     async fn ensure_venv(
         uv_path: impl AsRef<Path>,
         venv_path: impl AsRef<Path>,
+        cache_path: Option<impl AsRef<Path>>,
     ) -> Result<(), EnvError> {
         let path = venv_path.as_ref();
         if path.join("pyvenv.cfg").exists() {
             return Ok(());
         }
-        let output = Command::new(uv_path.as_ref())
-            .arg("venv")
+        let mut cmd = Command::new(uv_path.as_ref());
+        cmd.arg("venv")
             .arg("--python")
             .arg(PYTHON_VERSION.as_str())
-            .arg(venv_path.as_ref())
-            .output()
-            .await?;
+            .arg(venv_path.as_ref());
+        if let Some(cache_path) = cache_path.as_ref() {
+            cmd.arg("--cache-dir").arg(cache_path.as_ref());
+        }
+        let output = cmd.output().await?;
         if !output.status.success() {
             return Err(EnvError::VenvFailed(
                 String::from_utf8_lossy(&output.stderr).to_string(),
             ));
         }
-        let output = Command::new(uv_path.as_ref())
-            .env("VIRTUAL_ENV", venv_path.as_ref())
+        let mut cmd = Command::new(uv_path.as_ref());
+        cmd.env("VIRTUAL_ENV", venv_path.as_ref())
             .arg("pip")
             .arg("install")
             .arg("uv")
             .arg("setuptools")
             .arg("wheel")
-            .arg("build")
-            .output()
-            .await?;
+            .arg("build");
+        if let Some(cache_path) = cache_path.as_ref() {
+            cmd.arg("--cache-dir").arg(cache_path.as_ref());
+        }
+        let output = cmd.output().await?;
         if output.status.success() {
             Ok(())
         } else {
@@ -128,27 +149,38 @@ impl PyEnv {
         }
     }
 
+    pub fn venv_path(&self) -> &Path {
+        &self.venv_path
+    }
+
+    pub fn cache_path(&self) -> Option<&Path> {
+        self.cache_path.as_deref()
+    }
+
     pub fn python_path(&self) -> PathBuf {
-        self.0.join("bin").join("python")
+        self.venv_path.join("bin").join("python")
     }
 
     pub fn uv_path(&self) -> PathBuf {
-        self.0.join("bin").join("uv")
+        self.venv_path.join("bin").join("uv")
     }
 
     pub fn activate_path(&self) -> PathBuf {
-        self.0.join("bin").join("activate")
+        self.venv_path.join("bin").join("activate")
     }
 
     pub fn python_cmd(&self) -> Command {
         let mut cmd = Command::new(self.python_path().as_os_str());
-        cmd.env("VIRTUAL_ENV", self.0.as_os_str());
+        cmd.env("VIRTUAL_ENV", self.venv_path.as_os_str());
         cmd
     }
 
     pub fn uv_cmd(&self) -> Command {
         let mut cmd = Command::new(self.uv_path().as_os_str());
-        cmd.env("VIRTUAL_ENV", self.0.as_os_str());
+        cmd.env("VIRTUAL_ENV", self.venv_path.as_os_str());
+        if let Some(cache_path) = self.cache_path.as_ref() {
+            cmd.arg("--cache-dir").arg(cache_path.as_os_str());
+        }
         cmd
     }
 
