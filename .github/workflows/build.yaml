@@ -27,4 +27,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.target }}-dist
-          path: dist
+          path: dist/*.whl
+      - uses: actions/upload-artifact@v4
+        if: ${{ ! startsWith(inputs.target, 'ubuntu') }}
+        with:
+          name: ${{ inputs.target }}-dist
+          path: dist/*.tar.gz
