@@ -1,0 +1,22 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "aqora-cli"
+version = "0.1.0"
+description = "The aqora command line interface"
+authors = [{ name = "S.A.S Aqora Quantum", email = "hello@aqora.io" }]
+requires-python = ">=3.8"
+# keywords = []
+# classifiers = []
+
+[project.urls]
+Repository = "https://github.com/aqora-io/cli"
+Documentation = "https://github.com/aqora-io/cli"
+
+[tool.maturin]
+bindings = "bin"
+manifest-path = "Cargo.toml"
+module-name = "aqora"
+strip = true
