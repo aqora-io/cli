@@ -8,17 +8,17 @@ on:
 
 jobs:
   build_linux:
-    uses: ./.github/workflows/workflow-build-backend.yaml
+    uses: ./.github/workflows/build.yaml
     with:
       target: ubuntu-latest
 
   build_windows:
-    uses: ./.github/workflows/workflow-build-backend.yaml
+    uses: ./.github/workflows/build.yaml
     with:
       target: windows-latest
 
   build_macos:
-    uses: ./.github/workflows/workflow-build-backend.yaml
+    uses: ./.github/workflows/build.yaml
     with:
       target: macos-latest
 
