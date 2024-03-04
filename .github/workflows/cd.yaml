@@ -16,23 +16,65 @@ jobs:
     strategy:
       matrix:
         platform:
-          - release_for: linux-x86_64
+          # linux
+
+          - release_for: linux-x86_64-gnu
             os: ubuntu-20.04
             target: x86_64-unknown-linux-gnu
             bin: aqora
-            name: aqora-linux-x86_64.tar.gz
+            name: aqora-linux-x86_64-gnu.tar.gz
 
-          - release_for: windows-x86_64
+          - release_for: linux-x86_64-musl
+            os: ubuntu-20.04
+            target: x86_64-unknown-linux-musl
+            bin: aqora
+            name: aqora-linux-x86_64-musl.tar.gz
+
+          - release_for: linux-aarch64-gnu
+            os: ubuntu-20.04
+            target: aarch64-unknown-linux-gnu
+            bin: aqora
+            name: aqora-linux-aarch64-gnu.tar.gz
+
+          - release_for: linux-aarch64-musl
+            os: ubuntu-20.04
+            target: aarch64-unknown-linux-musl
+            bin: aqora
+            name: aqora-linux-aarch64-musl.tar.gz
+
+          # windows
+
+          - release_for: windows-x86_64-msvc
             os: windows-latest
             target: x86_64-pc-windows-msvc
             bin: aqora.exe
-            name: aqora-windows-x86_64.zip
+            name: aqora-windows-x86_64-msvc.zip
+
+          - release_for: windows-x86_64-gnu
+            os: windows-latest
+            target: x86_64-pc-windows-gnu
+            bin: aqora.exe
+            name: aqora-windows-x86_64-gnu.zip
+
+          - release_for: windows-aarch64-msvc
+            os: windows-latest
+            target: aarch64-pc-windows-msvc
+            bin: aqora.exe
+            name: aqora-windows-aarch64-msvc.zip
+
+          # macos
 
           - release_for: macos-x86_64
             os: macos-latest
             target: x86_64-apple-darwin
             bin: aqora
             name: aqora-darwin-x86_64.tar.gz
+
+          - release_for: macos-aarch64
+            os: macos-latest
+            target: aarch64-apple-darwin
+            bin: aqora
+            name: aqora-darwin-aarch64.tar.gz
 
     runs-on: ${{ matrix.platform.os }}
     steps:
@@ -44,6 +86,7 @@ jobs:
         with:
           target: ${{ matrix.platform.target }}
           args: "--release"
+          strip: true
       - name: Package as archive
         shell: bash
         run: |
