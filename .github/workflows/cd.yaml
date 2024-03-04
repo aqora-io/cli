@@ -38,12 +38,6 @@ jobs:
             bin: aqora.exe
             name: aqora-windows-x86_64-gnu.zip
 
-          - release_for: windows-aarch64-msvc
-            os: windows-latest
-            target: aarch64-pc-windows-msvc
-            bin: aqora.exe
-            name: aqora-windows-aarch64-msvc.zip
-
           # macos
 
           - release_for: macos-x86_64
