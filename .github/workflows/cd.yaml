@@ -79,7 +79,7 @@ jobs:
     runs-on: ${{ matrix.platform.os }}
     steps:
       - name: Add musl tools to Ubuntu
-        if: ${{ startsWith(matrix.platform.os, "ubuntu") }}
+        if: startsWith(matrix.platform.os, 'ubuntu')
         run: apt-get install -y musl-dev musl-tools
       - name: Checkout
         uses: actions/checkout@v3
