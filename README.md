@@ -1,9 +1,9 @@
 # Getting Started
 
-To install the CLI, make sure you have [rust](https://rustup.rs/) installed and then run the following:
+To install the CLI, you can run the following script:
 
 ```bash
-cargo install --git https://github.com/aqora-io/cli
+curl -LsSf https://raw.githubusercontent.com/aqora-io/cli/main/install.py | python
 ```
 
 To verify the installation, the following should output helpful information:
