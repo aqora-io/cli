@@ -20,6 +20,7 @@ jobs:
           profile: minimal
           toolchain: stable
           components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
       - run: cargo clippy -- -D warnings
       - run: cargo test
