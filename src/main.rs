@@ -13,6 +13,7 @@ mod revert_file;
 
 #[pyo3_asyncio::tokio::main]
 async fn main() -> pyo3::PyResult<()> {
+    pyo3::prepare_freethreaded_python();
     if let Err(e) = commands::Cli::run().await {
         eprintln!("{}", e);
         std::process::exit(1)

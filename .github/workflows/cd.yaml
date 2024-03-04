@@ -77,4 +77,4 @@ jobs:
         with:
           draft: true
           files: "aqora*"
-        if: startsWith( github.ref, 'refs/tags/v' )
+        # if: startsWith( github.ref, 'refs/tags/v' )
