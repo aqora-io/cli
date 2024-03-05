@@ -23,8 +23,13 @@ def is_rosetta_translated():
 
 
 def get_python_clib():
+    system = platform.system()
     for major, minor in [(3, 12), (3, 11), (3, 10), (3, 9), (3, 8)]:
-        lib = find_library(f"python{major}.{minor}")
+        if system == "Windows":
+            name = f"python{major}{minor}"
+        else:
+            name = f"python{major}.{minor}"
+        lib = find_library(name)
         if lib:
             return (major, minor)
     return None
