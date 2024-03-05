@@ -3,7 +3,7 @@
 To install the CLI, you can run the following script:
 
 ```bash
-curl -LsSf https://raw.githubusercontent.com/aqora-io/cli/main/install.py | python
+curl -LsSf https://raw.githubusercontent.com/aqora-io/cli/main/install.py | python3
 ```
 
 To verify the installation, the following should output helpful information:

@@ -24,27 +24,28 @@ def get_release_asset_name():
     machine = platform.machine()
     if sys.maxsize <= 2**32:
         raise Exception("32-bit not supported: " + machine)
+    py_version = f"py{sys.version_info.major}_{sys.version_info.minor}"
     system = platform.system()
     if system == "Windows":
         if machine != "x86_64":
             raise Exception("Unsupported processor: " + machine)
-        return "aqora-windows-x86_64-msvc.zip"
+        return f"aqora-windows-x86_64-msvc-{py_version}.zip"
     elif system == "Linux":
         if machine != "x86_64":
             raise Exception("Unsupported processor: " + machine)
         libc, _ = platform.libc_ver()
         if libc == "glibc":
-            return "aqora-linux-x86_64-gnu.tar.gz"
+            return f"aqora-linux-x86_64-gnu-{py_version}.tar.gz"
         else:
             raise Exception("Unsupported libc: " + libc)
     elif system == "Darwin":
         if machine == "arm64":
-            return "aqora-darwin-aarch64.tar.gz"
+            return f"aqora-darwin-aarch64-{py_version}.tar.gz"
         elif machine == "x86_64":
             if is_rosetta_translated():
-                return "aqora-darwin-aarch64.tar.gz"
+                return f"aqora-darwin-aarch64-{py_version}.tar.gz"
             else:
-                return "aqora-darwin-x86_64.tar.gz"
+                return f"aqora-darwin-x86_64-{py_version}.tar.gz"
         else:
             raise Exception("Unsupported processor: " + machine)
     else:
