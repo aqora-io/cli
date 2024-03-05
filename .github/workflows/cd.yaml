@@ -16,6 +16,8 @@ jobs:
       matrix:
         python_version:
           - major: 3
+            minor: 8
+          - major: 3
             minor: 9
           - major: 3
             minor: 10
@@ -60,6 +62,26 @@ jobs:
             target: aarch64-apple-darwin
             bin: aqora
             archive: tar.gz
+
+        exclude:
+          - platform:
+              name: darwin-aarch64
+              os: macos-14
+              target: aarch64-apple-darwin
+              bin: aqora
+              archive: tar.gz
+            python:
+              major: 3
+              minor: 8
+          - platform:
+              name: darwin-aarch64
+              os: macos-14
+              target: aarch64-apple-darwin
+              bin: aqora
+              archive: tar.gz
+            python:
+              major: 3
+              minor: 9
 
     runs-on: ${{ matrix.platform.os }}
     steps:
