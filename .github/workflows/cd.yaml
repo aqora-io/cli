@@ -14,6 +14,20 @@ jobs:
     name: Release - ${{ matrix.platform.release_for }}
     strategy:
       matrix:
+        python_version:
+          - major: 3
+            minor: 7
+          - major: 3
+            minor: 8
+          - major: 3
+            minor: 9
+          - major: 3
+            minor: 10
+          - major: 3
+            minor: 11
+          - major: 3
+            minor: 12
+
         platform:
           # linux
 
@@ -21,7 +35,8 @@ jobs:
             os: ubuntu-20.04
             target: x86_64-unknown-linux-gnu
             bin: aqora
-            name: aqora-linux-x86_64-gnu.tar.gz
+            archive: tar.gz
+            name: aqora-linux-x86_64-gnu
 
           # windows
 
@@ -29,13 +44,15 @@ jobs:
             os: windows-latest
             target: x86_64-pc-windows-msvc
             bin: aqora.exe
-            name: aqora-windows-x86_64-msvc.zip
+            archive: zip
+            name: aqora-windows-x86_64-msvc
 
           - release_for: windows-x86_64-gnu
             os: windows-latest
             target: x86_64-pc-windows-gnu
             bin: aqora.exe
-            name: aqora-windows-x86_64-gnu.zip
+            archive: zip
+            name: aqora-windows-x86_64-gnu
 
           # macos
 
@@ -43,18 +60,23 @@ jobs:
             os: macos-latest
             target: x86_64-apple-darwin
             bin: aqora
-            name: aqora-darwin-x86_64.tar.gz
+            archive: tar.gz
+            name: aqora-darwin-x86_64
 
           - release_for: macos-aarch64
             os: macos-latest
             target: aarch64-apple-darwin
             bin: aqora
-            name: aqora-darwin-aarch64.tar.gz
+            archive: tar.gz
+            name: aqora-darwin-aarch64
 
     runs-on: ${{ matrix.platform.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "${{ matrix.python_version.major }}.${{ matrix.python_version.minor }}"
       - uses: Swatinem/rust-cache@v2
       - name: Build binary
         uses: houseabsolute/actions-rust-cross@v0
@@ -66,15 +88,18 @@ jobs:
         shell: bash
         run: |
           cd target/${{ matrix.platform.target }}/release
-          if [[ "${{ matrix.platform.os }}" == "windows-latest" ]]; then
-            7z a ../../../${{ matrix.platform.name }} ${{ matrix.platform.bin }}
+          if [[ "${{ matrix.platform.archive }}" == "zip" ]]; then
+            7z a ../../../$ARCHIVE_NAME ${{ matrix.platform.bin }}
           else
-            tar czvf ../../../${{ matrix.platform.name }} ${{ matrix.platform.bin }}
+            tar czvf ../../../$ARCHIVE_NAME ${{ matrix.platform.bin }}
           fi
           cd -
+        env:
+          ARCHIVE_NAME: ${{ matrix.platform.name }}-py${{ matrix.python_version.major }}_${{ matrix.python_version.minor }}.${{ matrix.platform.archive }}
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v1
         with:
           draft: true
           files: "aqora*"
-        if: startsWith( github.ref, 'refs/tags/v' )
+        # TODO add me back
+        # if: startsWith( github.ref, 'refs/tags/v' )
