@@ -70,7 +70,7 @@ jobs:
               target: aarch64-apple-darwin
               bin: aqora
               archive: tar.gz
-            python:
+            python_version:
               major: 3
               minor: 8
           - platform:
@@ -79,7 +79,7 @@ jobs:
               target: aarch64-apple-darwin
               bin: aqora
               archive: tar.gz
-            python:
+            python_version:
               major: 3
               minor: 9
 
