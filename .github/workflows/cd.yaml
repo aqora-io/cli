@@ -16,8 +16,6 @@ jobs:
       matrix:
         python_version:
           - major: 3
-            minor: 7
-          - major: 3
             minor: 8
           - major: 3
             minor: 9
@@ -64,7 +62,7 @@ jobs:
             name: aqora-darwin-x86_64
 
           - release_for: macos-aarch64
-            os: macos-latest
+            os: macos-14
             target: aarch64-apple-darwin
             bin: aqora
             archive: tar.gz
