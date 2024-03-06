@@ -22,19 +22,6 @@ def is_rosetta_translated():
         return False
 
 
-def get_python_clib():
-    system = platform.system()
-    for major, minor in [(3, 12), (3, 11), (3, 10), (3, 9), (3, 8)]:
-        if system == "Windows":
-            name = f"python{major}{minor}"
-        else:
-            name = f"python{major}.{minor}"
-        lib = find_library(name)
-        if lib:
-            return (major, minor)
-    return None
-
-
 def get_release_asset_name():
     machine = platform.machine()
 
@@ -43,12 +30,12 @@ def get_release_asset_name():
         raise Exception("32-bit not supported: " + machine)
 
     # Get Python version
-    py_version = get_python_clib()
+    py_version = sys.version_info
     if py_version is None:
         raise Exception(
             "Python bindings not found. Make sure Python >= 3.8 shared library is installed."
         )
-    py_version = f"py{py_version[0]}_{py_version[1]}"
+    py_version = f"py{py_version.major}_{py_version.minor}"
 
     # Check system config
     system = platform.system()
@@ -168,13 +155,6 @@ def install(install_dir):
         print("Please try again or manually download the latest release from")
         print("https://github.com/aqora-io/cli/releases/latest")
         sys.exit(1)
-
-
-def help():
-    print("Usage: python install.py [options]")
-    print("Options:")
-    print("  --install-dir=DIR  Installation directory")
-    print("  --help             Show this message")
 
 
 def main():
