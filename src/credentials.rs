@@ -156,7 +156,9 @@ pub async fn get_access_token(url: Url) -> Result<Option<String>> {
                 Some(credentials) => credentials,
                 None => return Ok(None),
             };
-            if (credentials.expires_at - Duration::seconds(EXPIRATION_PADDING_SEC)) > Utc::now() {
+            if (credentials.expires_at - Duration::try_seconds(EXPIRATION_PADDING_SEC).unwrap())
+                > Utc::now()
+            {
                 return Ok(Some(credentials));
             }
             let client = reqwest::Client::new();
@@ -182,7 +184,7 @@ pub async fn get_access_token(url: Url) -> Result<Option<String>> {
                     client_id: credentials.client_id,
                     access_token: issued.access_token,
                     refresh_token: issued.refresh_token,
-                    expires_at: Utc::now() + Duration::seconds(issued.expires_in),
+                    expires_at: Utc::now() + Duration::try_seconds(issued.expires_in).unwrap(),
                 };
                 file.credentials.insert(url.clone(), credentials.clone());
                 credentials

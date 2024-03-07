@@ -14,11 +14,35 @@ lazy_static::lazy_static! {
     static ref INITIALIZED_ENVS: RwLock<HashSet<PathBuf>> = RwLock::new(HashSet::new());
 }
 
+#[derive(Copy, Clone)]
+pub enum ColorChoice {
+    Auto,
+    Always,
+    Never,
+}
+
+impl Default for ColorChoice {
+    fn default() -> Self {
+        Self::Auto
+    }
+}
+
+impl AsRef<OsStr> for ColorChoice {
+    fn as_ref(&self) -> &OsStr {
+        match self {
+            Self::Auto => OsStr::new("auto"),
+            Self::Always => OsStr::new("always"),
+            Self::Never => OsStr::new("never"),
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct PipOptions {
     pub upgrade: bool,
     pub no_deps: bool,
     pub editable: bool,
+    pub color: ColorChoice,
 }
 
 #[derive(Debug, Clone)]
@@ -31,7 +55,7 @@ pub struct PyEnv {
 pub enum EnvError {
     #[error(transparent)]
     Io(#[from] tokio::io::Error),
-    #[error(transparent)]
+    #[error("{}", format_err(_0))]
     Python(#[from] PyErr),
     #[error("Failed to setup virtualenv: {0}")]
     VenvFailed(String),
@@ -201,6 +225,7 @@ impl PyEnv {
         if opts.editable {
             cmd.arg("--editable");
         }
+        cmd.arg(opts.color);
         for module in modules {
             cmd.arg(module.as_ref());
         }
@@ -279,6 +304,99 @@ pub fn deepcopy(obj: &PyObject) -> PyResult<PyObject> {
         let copy = py.import("copy")?.getattr("deepcopy")?;
         Ok(copy.call1((obj,))?.into_py(py))
     })
+}
+
+pub mod serde_pickle {
+    use pyo3::prelude::*;
+
+    pub fn serialize<S, T>(value: T, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::ser::Serializer,
+        T: IntoPy<PyObject>,
+    {
+        Python::with_gil(|py| {
+            let out = py
+                .import("pickle")
+                .map_err(serde::ser::Error::custom)?
+                .getattr("dumps")
+                .map_err(serde::ser::Error::custom)?
+                .call1((value.into_py(py),))
+                .map_err(serde::ser::Error::custom)?;
+            let bytes = out.extract().map_err(serde::ser::Error::custom)?;
+            serializer.serialize_bytes(bytes)
+        })
+    }
+
+    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+        T: for<'a> FromPyObject<'a>,
+    {
+        use serde::de::Deserialize;
+        let bytes = <&[u8]>::deserialize(deserializer)?;
+        Python::with_gil(|py| {
+            let out = py.import("pickle")?.getattr("loads")?.call1((bytes,))?;
+            FromPyObject::extract(out)
+        })
+        .map_err(serde::de::Error::custom)
+    }
+
+    pub fn deserialize_pyerr<'de, D>(deserializer: D) -> Result<PyErr, D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+    {
+        use serde::de::Deserialize;
+        let bytes = <&[u8]>::deserialize(deserializer)?;
+        Python::with_gil(|py| {
+            let out = py.import("pickle")?.getattr("loads")?.call1((bytes,))?;
+            PyResult::Ok(PyErr::from_value(out))
+        })
+        .map_err(serde::de::Error::custom)
+    }
+}
+
+pub mod serde_pickle_opt {
+    use super::serde_pickle;
+    use pyo3::prelude::*;
+
+    pub fn serialize<'a, S, T>(value: &'a Option<T>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::ser::Serializer,
+        &'a T: IntoPy<PyObject>,
+    {
+        match value {
+            Some(value) => serde_pickle::serialize(value, serializer),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+        T: for<'a> FromPyObject<'a>,
+    {
+        use serde::de::Deserialize;
+        let bytes = <Option<&[u8]>>::deserialize(deserializer)?;
+        if let Some(bytes) = bytes {
+            Python::with_gil(|py| {
+                let out = py.import("pickle")?.getattr("loads")?.call1((bytes,))?;
+                FromPyObject::extract(out)
+            })
+            .map_err(serde::de::Error::custom)
+            .map(Some)
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+pub fn format_err(pyerr: &PyErr) -> String {
+    Python::with_gil(|py| {
+        let formatter = py.import("traceback")?.getattr("format_exc")?;
+        pyerr.clone_ref(py).restore(py);
+        formatter.call1((1,))?.extract()
+    })
+    .unwrap_or_else(|err| err.to_string())
 }
 
 type AsyncIteratorStream = futures::stream::BoxStream<'static, PyObject>;

@@ -1,3 +1,4 @@
+mod colors;
 mod commands;
 mod compress;
 mod credentials;

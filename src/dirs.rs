@@ -11,6 +11,7 @@ use thiserror::Error;
 const AQORA_DIRNAME: &str = ".aqora";
 const DATA_DIRNAME: &str = "data";
 const VENV_DIRNAME: &str = "venv";
+const LAST_RUN_DIRNAME: &str = "last_run";
 const PYPROJECT_FILENAME: &str = "pyproject.toml";
 const USE_CASE_FILENAME: &str = "use_case.toml";
 
@@ -41,6 +42,10 @@ pub fn project_config_dir(project_dir: impl AsRef<Path>) -> PathBuf {
 
 pub fn project_venv_dir(project_dir: impl AsRef<Path>) -> PathBuf {
     project_config_dir(project_dir).join(VENV_DIRNAME)
+}
+
+pub fn project_last_run_dir(project_dir: impl AsRef<Path>) -> PathBuf {
+    project_config_dir(project_dir).join(LAST_RUN_DIRNAME)
 }
 
 pub fn project_data_dir(project_dir: impl AsRef<Path>, kind: impl ToString) -> PathBuf {

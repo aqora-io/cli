@@ -1,4 +1,5 @@
 use crate::{
+    colors::ColorChoiceExt,
     dirs::{
         init_venv, project_config_dir, project_data_dir, project_use_case_toml_path, read_pyproject,
     },
@@ -10,6 +11,7 @@ use crate::{
 use aqora_config::PyProject;
 use aqora_runner::python::PipOptions;
 use clap::Args;
+use clap::ColorChoice;
 use futures::prelude::*;
 use graphql_client::GraphQLQuery;
 use indicatif::{MultiProgress, ProgressBar};
@@ -35,6 +37,8 @@ pub struct Install {
     pub uv: Option<PathBuf>,
     #[arg(long)]
     pub upgrade: bool,
+    #[arg(long)]
+    pub color: ColorChoice,
     pub competition: Option<String>,
 }
 
@@ -195,6 +199,7 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
         let cloned_pb = use_case_pb.clone();
         let options = PipOptions {
             upgrade: args.upgrade,
+            color: args.color.pip(),
             ..Default::default()
         };
         let install_fut = pip_install(
@@ -241,6 +246,7 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
             &PipOptions {
                 editable: true,
                 upgrade: args.upgrade,
+                color: args.color.pip(),
                 ..Default::default()
             },
             &local_pb,
@@ -256,6 +262,7 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
 }
 
 pub async fn install(args: Install) -> Result<()> {
+    args.color.set_override();
     let project = read_pyproject(&args.project).await?;
     let aqora = project.aqora().ok_or_else(|| {
         error::user(
