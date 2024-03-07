@@ -11,6 +11,12 @@ from urllib.request import urlretrieve
 from pathlib import Path
 from ctypes.util import find_library
 
+if platform.system() == "Darwin":
+    from ctypes.macholib.dyld import framework_find
+else:
+    def framework_find(*args, **kwargs):
+        raise NotImplemented
+
 
 def is_rosetta_translated():
     try:
@@ -111,7 +117,9 @@ def default_install_dir():
         paths.append(Path("/usr") / "local" / "bin")
         paths.append(Path("/usr") / "bin")
         paths.append(Path("/bin"))
-        paths.append(Path("/opt") / "homebrew" / "bin")
+        homebrew_prefix = os.getenv("HOMEBREW_PREFIX")
+        if homebrew_prefix:
+            paths.append(Path(homebrew_prefix) / "bin")
         paths.append(Path("/usr") / "local" / "opt")
         paths.append(Path("/opt") / "bin")
         paths.append(Path("/opt") / "local" / "bin")
@@ -123,6 +131,21 @@ def default_install_dir():
     return pick_install_dir(paths)
 
 
+def check_for_python_bindings():
+    cur_system = platform.system()
+    if cur_system == "Darwin":
+        try:
+            framework_find("Python")
+            return True
+        except ValueError:
+            return False
+    else:
+        ver = sys.version_info
+        lib_name = f"python{ver.major}{ver.minor}" if cur_system == "Windows" \
+                else f"python{ver.major}.{ver.minor}"
+        return find_library(lib_name) is not None
+
+
 def do_install(install_dir):
     if install_dir is None:
         raise Exception(
@@ -130,6 +153,8 @@ def do_install(install_dir):
         )
     if not install_dir.exists() or not os.access(install_dir, os.W_OK):
         raise Exception(f"Cannot write to installation directory: {install_dir}")
+    if not check_for_python_bindings():
+        raise Exception("No Python bindings were found, please install")
     asset_name = get_release_asset_name()
     url = f"https://github.com/aqora-io/cli/releases/latest/download/{asset_name}"
     with tempfile.TemporaryDirectory() as temp_dir:
