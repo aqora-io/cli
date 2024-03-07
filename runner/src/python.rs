@@ -1,8 +1,11 @@
 use futures::prelude::*;
 use pyo3::{prelude::*, pyclass::IterANextOutput, types::PyType};
 use std::collections::HashSet;
-use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
+use std::fmt;
+use std::{
+    ffi::{OsStr, OsString},
+    path::{Path, PathBuf},
+};
 use thiserror::Error;
 use tokio::{process::Command, sync::RwLock};
 
@@ -19,6 +22,12 @@ pub enum ColorChoice {
     Auto,
     Always,
     Never,
+}
+
+impl ColorChoice {
+    fn apply(&self, cmd: &mut Command) {
+        cmd.arg("--color").arg(self);
+    }
 }
 
 impl Default for ColorChoice {
@@ -41,8 +50,50 @@ impl AsRef<OsStr> for ColorChoice {
 pub struct PipOptions {
     pub upgrade: bool,
     pub no_deps: bool,
-    pub editable: bool,
     pub color: ColorChoice,
+}
+
+pub enum PipPackage {
+    Normal(OsString, OsString),
+    Editable(PathBuf),
+}
+
+impl fmt::Display for PipPackage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Normal(name, source) => write!(
+                f,
+                "{} @ {}",
+                name.to_string_lossy(),
+                source.to_string_lossy()
+            ),
+            Self::Editable(path) => write!(f, "--editable {}", path.display()),
+        }
+    }
+}
+
+impl PipPackage {
+    pub fn normal(name: impl Into<OsString>, version: impl Into<OsString>) -> Self {
+        Self::Normal(name.into(), version.into())
+    }
+
+    pub fn editable(path: impl Into<PathBuf>) -> Self {
+        Self::Editable(path.into())
+    }
+
+    fn apply(&self, cmd: &mut Command) {
+        match self {
+            Self::Normal(name, source) => {
+                let mut arg = OsString::from(name);
+                arg.push(" @ ");
+                arg.push(source);
+                cmd.arg(arg);
+            }
+            Self::Editable(path) => {
+                cmd.arg("--editable").arg(path);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -66,6 +117,7 @@ impl PyEnv {
         uv_path: impl AsRef<Path>,
         venv_path: impl AsRef<Path>,
         cache_path: Option<impl AsRef<Path>>,
+        color: ColorChoice,
     ) -> Result<Self, EnvError> {
         let cache_path = if let Some(cache_path) = cache_path {
             tokio::fs::create_dir_all(&cache_path).await?;
@@ -73,7 +125,7 @@ impl PyEnv {
         } else {
             None
         };
-        Self::ensure_venv(&uv_path, &venv_path, cache_path.as_ref()).await?;
+        Self::ensure_venv(&uv_path, &venv_path, cache_path.as_ref(), color).await?;
         let venv_path = venv_path.as_ref().canonicalize()?;
         if INITIALIZED_ENVS.read().await.contains(&venv_path) {
             return Ok(Self {
@@ -134,6 +186,7 @@ impl PyEnv {
         uv_path: impl AsRef<Path>,
         venv_path: impl AsRef<Path>,
         cache_path: Option<impl AsRef<Path>>,
+        color: ColorChoice,
     ) -> Result<(), EnvError> {
         let path = venv_path.as_ref();
         if path.join("pyvenv.cfg").exists() {
@@ -147,6 +200,7 @@ impl PyEnv {
         if let Some(cache_path) = cache_path.as_ref() {
             cmd.arg("--cache-dir").arg(cache_path.as_ref());
         }
+        color.apply(&mut cmd);
         let output = cmd.output().await?;
         if !output.status.success() {
             return Err(EnvError::VenvFailed(
@@ -164,6 +218,7 @@ impl PyEnv {
         if let Some(cache_path) = cache_path.as_ref() {
             cmd.arg("--cache-dir").arg(cache_path.as_ref());
         }
+        color.apply(&mut cmd);
         let output = cmd.output().await?;
         if output.status.success() {
             Ok(())
@@ -211,7 +266,7 @@ impl PyEnv {
 
     pub fn pip_install(
         &self,
-        modules: impl IntoIterator<Item = impl AsRef<OsStr>>,
+        modules: impl IntoIterator<Item = PipPackage>,
         opts: &PipOptions,
     ) -> Command {
         let mut cmd = self.uv_cmd();
@@ -222,12 +277,9 @@ impl PyEnv {
         if opts.no_deps {
             cmd.arg("--no-deps");
         }
-        if opts.editable {
-            cmd.arg("--editable");
-        }
-        cmd.arg(opts.color);
+        opts.color.apply(&mut cmd);
         for module in modules {
-            cmd.arg(module.as_ref());
+            module.apply(&mut cmd);
         }
         cmd
     }

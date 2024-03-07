@@ -1,5 +1,6 @@
 use crate::{
     colors::ColorChoiceExt,
+    commands::GlobalArgs,
     dirs::{
         init_venv, project_config_dir, project_data_dir, project_use_case_toml_path, read_pyproject,
     },
@@ -9,13 +10,11 @@ use crate::{
     python::pip_install,
 };
 use aqora_config::PyProject;
-use aqora_runner::python::PipOptions;
+use aqora_runner::python::{PipOptions, PipPackage};
 use clap::Args;
-use clap::ColorChoice;
 use futures::prelude::*;
 use graphql_client::GraphQLQuery;
 use indicatif::{MultiProgress, ProgressBar};
-use std::path::PathBuf;
 use url::Url;
 
 #[derive(GraphQLQuery)]
@@ -27,23 +26,18 @@ use url::Url;
 pub struct GetCompetitionUseCase;
 
 #[derive(Args, Debug)]
-#[command(author, version, about)]
 pub struct Install {
-    #[arg(short, long, default_value = "https://app.aqora.io")]
-    pub url: String,
-    #[arg(short, long, default_value = ".")]
-    pub project: PathBuf,
-    #[arg(long)]
-    pub uv: Option<PathBuf>,
-    #[arg(long)]
+    #[arg(long, short)]
     pub upgrade: bool,
-    #[arg(long)]
-    pub color: ColorChoice,
     pub competition: Option<String>,
 }
 
-pub async fn install_submission(args: Install, project: PyProject) -> Result<()> {
-    let client = GraphQLClient::new(args.url.parse()?).await?;
+pub async fn install_submission(
+    args: Install,
+    global: GlobalArgs,
+    project: PyProject,
+) -> Result<()> {
+    let client = GraphQLClient::new(global.url.parse()?).await?;
 
     let m = MultiProgress::new();
 
@@ -86,7 +80,7 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
             )
         })?;
 
-    let config_dir = project_config_dir(&args.project);
+    let config_dir = project_config_dir(&global.project);
     tokio::fs::create_dir_all(&config_dir).await.map_err(|e| {
         error::user(
             &format!("Failed to create data directory: {e}"),
@@ -97,7 +91,7 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
         )
     })?;
 
-    let use_case_toml_path = project_use_case_toml_path(&args.project);
+    let use_case_toml_path = project_use_case_toml_path(&global.project);
     let old_use_case = if use_case_toml_path.exists() {
         Some(PyProject::from_toml(
             tokio::fs::read_to_string(&use_case_toml_path).await?,
@@ -117,7 +111,7 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
         })
         .transpose()?;
 
-    let env = init_venv(&args.project, args.uv.as_ref(), &venv_pb).await?;
+    let env = init_venv(&global.project, global.uv.as_ref(), &venv_pb, global.color).await?;
 
     let use_case_package_name = competition.use_case.name.clone();
     let use_case_res = competition.use_case.latest.ok_or_else(|| {
@@ -181,7 +175,7 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
             .clone();
 
         let download_fut =
-            download_tar_gz(use_case_data_url, project_data_dir(&args.project, "data")).map(
+            download_tar_gz(use_case_data_url, project_data_dir(&global.project, "data")).map(
                 move |res| {
                     if res.is_ok() {
                         download_pb.finish_with_message("Use case data downloaded");
@@ -192,30 +186,30 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
                 },
             );
 
-        let mut use_case_pb = ProgressBar::new_spinner().with_message("Installing use case...");
+        let mut use_case_pb = ProgressBar::new_spinner().with_message("Installing packages...");
         use_case_pb.enable_steady_tick(std::time::Duration::from_millis(100));
         use_case_pb = m.insert_before(&venv_pb, use_case_pb);
 
         let cloned_pb = use_case_pb.clone();
         let options = PipOptions {
             upgrade: args.upgrade,
-            color: args.color.pip(),
+            color: global.color.pip(),
             ..Default::default()
         };
         let install_fut = pip_install(
             &env,
-            [format!(
-                "{} @ {}",
-                use_case_package_name, use_case_package_url
-            )],
+            [
+                PipPackage::normal(use_case_package_name, use_case_package_url.to_string()),
+                PipPackage::editable(&global.project),
+            ],
             &options,
             &use_case_pb,
         )
         .map(move |res| {
             if res.is_ok() {
-                cloned_pb.finish_with_message("Use case installed");
+                cloned_pb.finish_with_message("Packages installed");
             } else {
-                cloned_pb.finish_with_message("Failed to install use case");
+                cloned_pb.finish_with_message("Failed to install packages");
             }
             res
         });
@@ -235,35 +229,13 @@ pub async fn install_submission(args: Install, project: PyProject) -> Result<()>
             })?;
     }
 
-    if should_update {
-        let mut local_pb = ProgressBar::new_spinner().with_message("Installing local project...");
-        local_pb.enable_steady_tick(std::time::Duration::from_millis(100));
-        local_pb = m.insert_before(&venv_pb, local_pb);
-
-        pip_install(
-            &env,
-            [args.project.display()],
-            &PipOptions {
-                editable: true,
-                upgrade: args.upgrade,
-                color: args.color.pip(),
-                ..Default::default()
-            },
-            &local_pb,
-        )
-        .await?;
-
-        local_pb.finish_with_message("Local project installed");
-    }
-
     venv_pb.finish_with_message("Virtual environment setup");
 
     Ok(())
 }
 
-pub async fn install(args: Install) -> Result<()> {
-    args.color.set_override();
-    let project = read_pyproject(&args.project).await?;
+pub async fn install(args: Install, global: GlobalArgs) -> Result<()> {
+    let project = read_pyproject(&global.project).await?;
     let aqora = project.aqora().ok_or_else(|| {
         error::user(
             "No [tool.aqora] section found in pyproject.toml",
@@ -271,7 +243,7 @@ pub async fn install(args: Install) -> Result<()> {
         )
     })?;
     if aqora.is_submission() {
-        install_submission(args, project).await
+        install_submission(args, global, project).await
     } else {
         Err(error::user(
             "Use cases not supported",

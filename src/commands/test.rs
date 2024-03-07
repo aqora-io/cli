@@ -1,4 +1,5 @@
 use crate::{
+    commands::GlobalArgs,
     dirs::{
         init_venv, project_data_dir, project_last_run_dir, project_use_case_toml_path,
         read_pyproject,
@@ -19,19 +20,11 @@ use owo_colors::{OwoColorize, Stream as OwoStream, Style};
 use pyo3::prelude::*;
 use pyo3::{exceptions::PyException, Python};
 use serde::{Deserialize, Serialize};
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{path::Path, sync::Arc};
 
 #[derive(Args, Debug, Clone)]
 #[command(author, version, about)]
-pub struct Test {
-    #[arg(short, long, default_value = ".")]
-    pub project: PathBuf,
-    #[arg(long)]
-    pub uv: Option<PathBuf>,
-}
+pub struct Test;
 
 #[derive(Serialize, Deserialize)]
 struct LastRunItem {
@@ -139,7 +132,7 @@ fn evaluate(
         })
 }
 
-pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
+pub async fn test_submission(global: GlobalArgs, project: PyProject) -> Result<()> {
     let m = MultiProgress::new();
 
     let submission = project
@@ -147,8 +140,8 @@ pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
         .and_then(|aqora| aqora.as_submission())
         .ok_or_else(|| error::user("Submission config is not valid", ""))?;
 
-    let use_case_toml_path = project_use_case_toml_path(&args.project);
-    let data_path = project_data_dir(&args.project, "data");
+    let use_case_toml_path = project_use_case_toml_path(&global.project);
+    let data_path = project_data_dir(&global.project, "data");
     if !use_case_toml_path.exists() || !data_path.exists() {
         return Err(error::user(
             "Project not setup",
@@ -173,7 +166,7 @@ pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
             )
         })?;
 
-    let last_run_dir = project_last_run_dir(&args.project);
+    let last_run_dir = project_last_run_dir(&global.project);
     tokio::fs::create_dir_all(&last_run_dir)
         .await
         .map_err(|e| {
@@ -204,7 +197,13 @@ pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
     pipeline_pb.enable_steady_tick(std::time::Duration::from_millis(100));
     pipeline_pb = m.add(pipeline_pb);
 
-    let env = init_venv(&args.project, args.uv.as_ref(), &pipeline_pb).await?;
+    let env = init_venv(
+        &global.project,
+        global.uv.as_ref(),
+        &pipeline_pb,
+        global.color,
+    )
+    .await?;
 
     let config = PipelineConfig {
         data: data_path.canonicalize()?,
@@ -289,8 +288,8 @@ pub async fn test_submission(args: Test, project: PyProject) -> Result<()> {
     Ok(())
 }
 
-pub async fn test(args: Test) -> Result<()> {
-    let project = read_pyproject(&args.project).await?;
+pub async fn test(_: Test, global: GlobalArgs) -> Result<()> {
+    let project = read_pyproject(&global.project).await?;
     let aqora = project.aqora().ok_or_else(|| {
         error::user(
             "No [tool.aqora] section found in pyproject.toml",
@@ -298,7 +297,7 @@ pub async fn test(args: Test) -> Result<()> {
         )
     })?;
     if aqora.is_submission() {
-        test_submission(args, project).await
+        test_submission(global, project).await
     } else {
         Err(error::user(
             "Use cases not supported",

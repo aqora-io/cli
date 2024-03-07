@@ -1,4 +1,5 @@
 use crate::{
+    commands::GlobalArgs,
     compress::compress,
     dirs::{init_venv, pyproject_path, read_pyproject},
     error::{self, Result},
@@ -14,19 +15,13 @@ use futures::prelude::*;
 use graphql_client::GraphQLQuery;
 use indicatif::{MultiProgress, ProgressBar};
 use reqwest::header::{CONTENT_LENGTH, CONTENT_TYPE};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tempfile::tempdir;
 use url::Url;
 
 #[derive(Args, Debug)]
 #[command(author, version, about)]
 pub struct Upload {
-    #[arg(short, long, default_value = "https://app.aqora.io")]
-    pub url: String,
-    #[arg(short, long, default_value = ".")]
-    pub project: PathBuf,
-    #[arg(long)]
-    pub uv: Option<PathBuf>,
     pub competition: Option<String>,
 }
 
@@ -176,14 +171,14 @@ async fn upload_file(
     }
 }
 
-pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
+pub async fn upload_use_case(args: Upload, global: GlobalArgs, project: PyProject) -> Result<()> {
     let m = MultiProgress::new();
 
     let mut use_case_pb = ProgressBar::new_spinner().with_message("Updating version");
     use_case_pb.enable_steady_tick(std::time::Duration::from_millis(100));
     use_case_pb = m.add(use_case_pb);
 
-    let client = GraphQLClient::new(args.url.parse()?).await?;
+    let client = GraphQLClient::new(global.url.parse()?).await?;
 
     let tempdir = tempdir().map_err(|err| {
         error::user(
@@ -191,7 +186,7 @@ pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
             "Please make sure you have permission to create temporary directories",
         )
     })?;
-    let pyproject_toml = std::fs::read_to_string(pyproject_path(&args.project))?;
+    let pyproject_toml = std::fs::read_to_string(pyproject_path(&global.project))?;
     let config = project
         .aqora()
         .and_then(|aqora| aqora.as_use_case())
@@ -221,7 +216,7 @@ pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
         )
     })?;
     let package_name = format!("use-case-{}", competition_id.to_package_id());
-    let data_path = args.project.join(&config.data);
+    let data_path = global.project.join(&config.data);
     if !data_path.exists() {
         return Err(error::user(
             &format!("{} does not exist", data_path.display()),
@@ -231,10 +226,10 @@ pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
     let template_path = config
         .template
         .as_ref()
-        .map(|template| args.project.join(template));
+        .map(|template| global.project.join(template));
 
     let readme = read_readme(
-        &args.project,
+        &global.project,
         project.project.as_ref().and_then(|p| p.readme.as_ref()),
     )
     .await
@@ -391,13 +386,19 @@ pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
         let package_pb_cloned = package_pb.clone();
         let client = s3_client.clone();
         async move {
-            let env = init_venv(&args.project, args.uv.as_ref(), &package_pb_cloned).await?;
+            let env = init_venv(
+                &global.project,
+                global.uv.as_ref(),
+                &package_pb_cloned,
+                global.color,
+            )
+            .await?;
 
-            let project_file = RevertFile::save(pyproject_path(&args.project))?;
+            let project_file = RevertFile::save(pyproject_path(&global.project))?;
             let mut new_project = project.clone();
             new_project.set_name(package_name);
             std::fs::write(&project_file, new_project.toml()?)?;
-            build_package(&env, &args.project, tempdir.path(), &package_pb_cloned).await?;
+            build_package(&env, &global.project, tempdir.path(), &package_pb_cloned).await?;
             project_file.revert()?;
 
             package_pb_cloned.set_message("Uploading package");
@@ -431,14 +432,14 @@ pub async fn upload_use_case(args: Upload, project: PyProject) -> Result<()> {
     Ok(())
 }
 
-pub async fn upload_submission(args: Upload, project: PyProject) -> Result<()> {
+pub async fn upload_submission(args: Upload, global: GlobalArgs, project: PyProject) -> Result<()> {
     let m = MultiProgress::new();
 
     let mut use_case_pb = ProgressBar::new_spinner().with_message("Updating version");
     use_case_pb.enable_steady_tick(std::time::Duration::from_millis(100));
     use_case_pb = m.add(use_case_pb);
 
-    let client = GraphQLClient::new(args.url.parse()?).await?;
+    let client = GraphQLClient::new(global.url.parse()?).await?;
 
     let tempdir = tempdir().map_err(|err| {
         error::user(
@@ -446,7 +447,7 @@ pub async fn upload_submission(args: Upload, project: PyProject) -> Result<()> {
             "Please make sure you have permission to create temporary directories",
         )
     })?;
-    let pyproject_toml = std::fs::read_to_string(pyproject_path(&args.project))?;
+    let pyproject_toml = std::fs::read_to_string(pyproject_path(&global.project))?;
     let config = project
         .aqora()
         .and_then(|aqora| aqora.as_submission())
@@ -487,7 +488,7 @@ pub async fn upload_submission(args: Upload, project: PyProject) -> Result<()> {
     );
 
     let readme = read_readme(
-        &args.project,
+        &global.project,
         project.project.as_ref().and_then(|p| p.readme.as_ref()),
     )
     .await
@@ -536,14 +537,20 @@ pub async fn upload_submission(args: Upload, project: PyProject) -> Result<()> {
     package_pb.enable_steady_tick(std::time::Duration::from_millis(100));
     package_pb = m.add(package_pb);
 
-    let env = init_venv(&args.project, args.uv.as_ref(), &package_pb).await?;
+    let env = init_venv(
+        &global.project,
+        global.uv.as_ref(),
+        &package_pb,
+        global.color,
+    )
+    .await?;
 
-    let project_file = RevertFile::save(pyproject_path(&args.project))?;
+    let project_file = RevertFile::save(pyproject_path(&global.project))?;
     let mut new_project = project.clone();
     new_project.set_name(package_name);
     std::fs::write(&project_file, new_project.toml()?)?;
 
-    build_package(&env, &args.project, tempdir.path(), &package_pb).await?;
+    build_package(&env, &global.project, tempdir.path(), &package_pb).await?;
     project_file.revert()?;
 
     package_pb.set_message("Uploading package");
@@ -567,8 +574,8 @@ pub async fn upload_submission(args: Upload, project: PyProject) -> Result<()> {
     Ok(())
 }
 
-pub async fn upload(args: Upload) -> Result<()> {
-    let project = read_pyproject(&args.project).await?;
+pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
+    let project = read_pyproject(&global.project).await?;
     let aqora = project.aqora().ok_or_else(|| {
         error::user(
             "No [tool.aqora] section found in pyproject.toml",
@@ -576,9 +583,9 @@ pub async fn upload(args: Upload) -> Result<()> {
         )
     })?;
     if aqora.is_use_case() {
-        upload_use_case(args, project).await
+        upload_use_case(args, global, project).await
     } else if aqora.is_submission() {
-        upload_submission(args, project).await
+        upload_submission(args, global, project).await
     } else {
         Err(error::user(
             "Other project types not supported yet",
