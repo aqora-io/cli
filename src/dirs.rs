@@ -1,9 +1,11 @@
 use crate::{
+    colors::ColorChoiceExt,
     error::{self, Result},
     process::run_command,
 };
 use aqora_config::PyProject;
 use aqora_runner::python::PyEnv;
+use clap::ColorChoice;
 use indicatif::ProgressBar;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -163,11 +165,12 @@ pub async fn init_venv(
     project_dir: impl AsRef<Path>,
     uv_path: Option<impl AsRef<Path>>,
     pb: &ProgressBar,
+    color: ColorChoice,
 ) -> Result<PyEnv> {
     pb.set_message("Initializing the Python environment...");
     let uv_path = ensure_uv(uv_path, pb).await?;
     let venv_dir = project_venv_dir(&project_dir);
-    let env = PyEnv::init(uv_path, &venv_dir, None::<PathBuf>)
+    let env = PyEnv::init(uv_path, &venv_dir, None::<PathBuf>, color.pip())
         .await
         .map_err(|e| {
             error::user(

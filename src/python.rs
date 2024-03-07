@@ -2,7 +2,7 @@ use crate::{
     error::{self, Result},
     process::run_command,
 };
-use aqora_runner::python::{PipOptions, PyEnv};
+use aqora_runner::python::{PipOptions, PipPackage, PyEnv};
 use indicatif::ProgressBar;
 use std::path::Path;
 
@@ -21,15 +21,19 @@ pub async fn build_package(
 
 pub async fn pip_install(
     env: &PyEnv,
-    modules: impl IntoIterator<Item = impl ToString>,
+    modules: impl IntoIterator<Item = PipPackage>,
     options: &PipOptions,
     pb: &ProgressBar,
 ) -> Result<()> {
-    let modules = modules
-        .into_iter()
-        .map(|s| s.to_string())
-        .collect::<Vec<_>>();
-    pb.set_message(format!("pip install {}", modules.join(" ")));
+    let modules = modules.into_iter().collect::<Vec<_>>();
+    pb.set_message(format!(
+        "pip install {}",
+        modules
+            .iter()
+            .map(|module| module.to_string())
+            .collect::<Vec<_>>()
+            .join(" ")
+    ));
     let mut cmd = env.pip_install(modules, options);
     run_command(&mut cmd, pb, Some("pip install"))
         .await

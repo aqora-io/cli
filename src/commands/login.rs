@@ -1,7 +1,7 @@
 use crate::credentials::{with_locked_credentials, Credentials};
 use crate::{
+    commands::GlobalArgs,
     error::{self, Result},
-    graphql_client::graphql_url,
 };
 use axum::{
     extract::{Query, State},
@@ -28,10 +28,7 @@ const CLIENT_ID_PREFIX: &str = "localhost-";
 
 #[derive(Args, Debug)]
 #[command(author, version, about)]
-pub struct Login {
-    #[arg(short, long, default_value = "https://app.aqora.io")]
-    pub url: String,
-}
+pub struct Login;
 
 fn client_id() -> String {
     let hostname = hostname::get()
@@ -41,15 +38,7 @@ fn client_id() -> String {
     format!("{CLIENT_ID_PREFIX}{hostname}")
 }
 
-impl Login {
-    fn aqora_url(&self) -> Result<Url> {
-        Ok(Url::parse(&self.url)?)
-    }
-
-    fn graphql_url(&self) -> Result<Url> {
-        graphql_url(&self.aqora_url()?)
-    }
-
+impl GlobalArgs {
     fn authorize_url(&self, client_id: &str, redirect_uri: &Url, state: &str) -> Result<Url> {
         let mut url = self.aqora_url()?.join("/oauth2/authorize")?;
         url.query_pairs_mut()
@@ -134,7 +123,7 @@ async fn shutdown_signal() {
 }
 
 async fn get_oauth_code(
-    login: &Login,
+    global: &GlobalArgs,
     client_id: &str,
     progress: &ProgressBar,
 ) -> Result<Option<(Url, String)>> {
@@ -152,7 +141,7 @@ async fn get_oauth_code(
     let router = Router::<ServerState<LoginResponse>>::new()
         .route("/", get(login_callback))
         .with_state(state);
-    let authorize_url = login.authorize_url(client_id, &redirect_uri, &session)?;
+    let authorize_url = global.authorize_url(client_id, &redirect_uri, &session)?;
     let cloned_progress = progress.clone();
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
@@ -188,14 +177,14 @@ async fn get_oauth_code(
 )]
 pub struct Oauth2TokenMutation;
 
-pub async fn login(login: Login) -> Result<()> {
+pub async fn login(_: Login, global: GlobalArgs) -> Result<()> {
     with_locked_credentials(|file| {
         async move {
             let progress = ProgressBar::new_spinner().with_message("Logging in...");
             progress.enable_steady_tick(std::time::Duration::from_millis(100));
             let client_id = client_id();
             let (redirect_uri, code) =
-                if let Some(res) = get_oauth_code(&login, &client_id, &progress).await? {
+                if let Some(res) = get_oauth_code(&global, &client_id, &progress).await? {
                     res
                 } else {
                     // cancelled
@@ -204,7 +193,7 @@ pub async fn login(login: Login) -> Result<()> {
             let client = reqwest::Client::new();
             let result = graphql_client::reqwest::post_graphql::<Oauth2TokenMutation, _>(
                 &client,
-                login.graphql_url()?,
+                global.graphql_url()?,
                 oauth2_token_mutation::Variables {
                     client_id: client_id.clone(),
                     code,
@@ -227,7 +216,7 @@ pub async fn login(login: Login) -> Result<()> {
                     refresh_token: issued.refresh_token,
                     expires_at: Utc::now() + Duration::try_seconds(issued.expires_in).unwrap(),
                 };
-                file.credentials.insert(login.aqora_url()?, credentials);
+                file.credentials.insert(global.aqora_url()?, credentials);
             } else {
                 return Err(error::system(
                     "GraphQL response missing issued",

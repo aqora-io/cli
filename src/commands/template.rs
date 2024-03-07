@@ -1,4 +1,5 @@
 use crate::{
+    commands::GlobalArgs,
     download::download_tar_gz,
     error::{self, Result},
     graphql_client::GraphQLClient,
@@ -20,14 +21,12 @@ pub struct GetCompetitionTemplate;
 #[derive(Args, Debug)]
 #[command(author, version, about)]
 pub struct Template {
-    #[arg(short, long, default_value = "https://app.aqora.io")]
-    pub url: String,
     pub competition: String,
     pub destination: Option<PathBuf>,
 }
 
-pub async fn template(args: Template) -> Result<()> {
-    let client = GraphQLClient::new(args.url.parse()?).await?;
+pub async fn template(args: Template, global: GlobalArgs) -> Result<()> {
+    let client = GraphQLClient::new(global.url.parse()?).await?;
 
     let destination = args
         .destination
