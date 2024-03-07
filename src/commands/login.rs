@@ -225,7 +225,7 @@ pub async fn login(login: Login) -> Result<()> {
                     client_id,
                     access_token: issued.access_token,
                     refresh_token: issued.refresh_token,
-                    expires_at: Utc::now() + Duration::seconds(issued.expires_in),
+                    expires_at: Utc::now() + Duration::try_seconds(issued.expires_in).unwrap(),
                 };
                 file.credentials.insert(login.aqora_url()?, credentials);
             } else {

@@ -1,12 +1,12 @@
-use crate::python::{async_generator, async_python_run, deepcopy, AsyncIterator, PyEnv};
+use crate::python::{
+    async_generator, async_python_run, deepcopy, format_err, serde_pickle, AsyncIterator, PyEnv,
+};
 use aqora_config::{AqoraSubmissionConfig, AqoraUseCaseConfig, PathStr, PathStrReplaceError};
 use futures::prelude::*;
-use pyo3::{
-    prelude::*,
-    types::{PyDict, PyString},
-};
+use pyo3::{prelude::*, types::PyString};
+use serde::{Deserialize, Serialize};
 use split_stream_by::{Either, SplitStreamByMapExt};
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use thiserror::Error;
 
 #[derive(Debug, Clone)]
@@ -16,13 +16,21 @@ pub struct LayerFunction {
 }
 
 impl LayerFunction {
-    pub async fn call(&self, input: &PyObject, context: &PyObject) -> PyResult<PyObject> {
+    pub async fn call(
+        &self,
+        input: &PyObject,
+        context: &PyObject,
+    ) -> PyResult<LayerFunctionResult> {
         let input = deepcopy(input)?;
-        if self.context {
-            Ok(async_python_run!(|py| self.func.as_ref(py).call1((input, context)))?.await?)
+        let output = if self.context {
+            async_python_run!(|py| self.func.as_ref(py).call1((input, context)))?.await?
         } else {
-            Ok(async_python_run!(|py| self.func.as_ref(py).call1((input,)))?.await?)
-        }
+            async_python_run!(|py| self.func.as_ref(py).call1((input,)))?.await?
+        };
+        Ok(LayerFunctionResult {
+            output,
+            context: deepcopy(context)?,
+        })
     }
 }
 
@@ -34,28 +42,61 @@ pub struct Layer {
     branch: Option<LayerFunction>,
 }
 
-#[derive(Debug)]
-pub struct LayerEvaluation {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[pyclass]
+pub struct LayerFunctionResult {
+    #[serde(with = "serde_pickle")]
     output: PyObject,
-    metric: Option<PyObject>,
-    branch: Option<String>,
+    #[serde(with = "serde_pickle")]
+    context: PyObject,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[pyclass]
+pub struct LayerEvaluation {
+    output: LayerFunctionResult,
+    metric: Option<LayerFunctionResult>,
+    branch: Option<LayerFunctionResult>,
+}
+
+impl LayerEvaluation {
+    fn branch_str(&self) -> PyResult<Option<String>> {
+        self.branch
+            .as_ref()
+            .map(|branch| Python::with_gil(|py| branch.output.extract::<String>(py)))
+            .transpose()
+    }
+
+    fn next_input(&self) -> PyObject {
+        self.output.output.clone()
+    }
+}
+
+#[pymethods]
+impl LayerEvaluation {
+    fn __getitem__(&self, key: &str) -> Option<&PyObject> {
+        match key {
+            "output" => Some(&self.output.output),
+            "metric" => self.metric.as_ref().map(|metric| &metric.output),
+            "branch" => self.branch.as_ref().map(|branch| &branch.output),
+            _ => None,
+        }
+    }
+    #[getter]
+    fn output(&self) -> &PyObject {
+        &self.output.output
+    }
+    #[getter]
+    fn metric(&self) -> Option<&PyObject> {
+        self.metric.as_ref().map(|metric| &metric.output)
+    }
+    #[getter]
+    fn branch(&self) -> Option<&PyObject> {
+        self.metric.as_ref().map(|branch| &branch.output)
+    }
 }
 
 pub type EvaluationResult = HashMap<String, Vec<LayerEvaluation>>;
-
-impl ToPyObject for LayerEvaluation {
-    fn to_object(&self, py: Python) -> PyObject {
-        let dict = PyDict::new(py);
-        dict.set_item("output", self.output.clone()).unwrap();
-        if let Some(metric) = self.metric.as_ref() {
-            dict.set_item("metric", metric).unwrap();
-        }
-        if let Some(branch) = self.branch.as_ref() {
-            dict.set_item("branch", branch).unwrap();
-        }
-        dict.into()
-    }
-}
 
 impl Layer {
     pub async fn evaluate(
@@ -66,18 +107,20 @@ impl Layer {
         let output = if let Some(transform) = self.transform.as_ref() {
             transform.call(input, context).await?
         } else {
-            input.clone()
+            LayerFunctionResult {
+                output: input.clone(),
+                context: context.clone(),
+            }
         };
 
         let metric = if let Some(metric) = self.metric.as_ref() {
-            Some(metric.call(&output, context).await?)
+            Some(metric.call(&output.output, context).await?)
         } else {
             None
         };
 
         let branch = if let Some(branch) = self.branch.as_ref() {
-            let branch = branch.call(&output, context).await?;
-            Some(Python::with_gil(|py| branch.extract::<String>(py))?)
+            Some(branch.call(&output.output, context).await?)
         } else {
             None
         };
@@ -91,15 +134,28 @@ impl Layer {
 }
 
 #[derive(Clone, Debug)]
+#[pyclass]
 pub struct PipelineConfig {
     pub data: PathBuf,
 }
 
-impl ToPyObject for PipelineConfig {
-    fn to_object(&self, py: Python) -> PyObject {
-        let dict = PyDict::new(py);
-        dict.set_item("data", self.data.clone()).unwrap();
-        dict.into()
+impl PipelineConfig {
+    fn py_data<'py>(&self, py: Python<'py>) -> PyResult<&'py PyAny> {
+        py.import("pathlib")?.getattr("Path")?.call1((&self.data,))
+    }
+}
+
+#[pymethods]
+impl PipelineConfig {
+    fn __getitem__<'py>(&self, py: Python<'py>, key: &str) -> PyResult<Option<&'py PyAny>> {
+        match key {
+            "data" => self.py_data(py).map(Some),
+            _ => Ok(None),
+        }
+    }
+    #[getter]
+    fn data<'py>(&self, py: Python<'py>) -> PyResult<&'py PyAny> {
+        self.py_data(py)
     }
 }
 
@@ -110,44 +166,74 @@ pub struct Evaluator {
     layers: Vec<Layer>,
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Serialize, Deserialize)]
 pub enum EvaluationError {
-    #[error(transparent)]
-    Python(#[from] PyErr),
+    #[error("{}", format_err(_0))]
+    Python(
+        #[from]
+        #[serde(
+            serialize_with = "serde_pickle::serialize",
+            deserialize_with = "serde_pickle::deserialize_pyerr"
+        )]
+        PyErr,
+    ),
     #[error("Layer not found: {0}")]
     LayerNotFound(String),
 }
 
 impl Evaluator {
-    pub async fn evaluate(&self, input: PyObject) -> Result<EvaluationResult, EvaluationError> {
-        let mut input = input;
-        let context = if let Some(context) = self.context.as_ref() {
-            let context_input = deepcopy(&input)?;
-            async_python_run!(|py| context
-                .as_ref(py)
-                .call1((context_input, self.config.to_object(py))))?
-            .await?
-        } else {
-            deepcopy(&input)?
-        };
+    pub async fn evaluate(
+        &self,
+        mut input: PyObject,
+    ) -> Result<EvaluationResult, (EvaluationResult, EvaluationError)> {
         let mut out = EvaluationResult::new();
+        macro_rules! try_or_bail {
+            ($expression:expr) => {{
+                match $expression {
+                    Ok(out) => out,
+                    Err(err) => return Err((out, EvaluationError::from(err))),
+                }
+            }};
+        }
+        let context = if let Some(context) = self.context.as_ref() {
+            let context_input = try_or_bail!(deepcopy(&input));
+            try_or_bail!(
+                try_or_bail!(async_python_run!(|py| context
+                    .as_ref(py)
+                    .call1((context_input, self.config.clone().into_py(py)))))
+                .await
+            )
+        } else {
+            try_or_bail!(deepcopy(&input))
+        };
         let mut layer_index = 0;
         while layer_index < self.layers.len() {
             let layer = &self.layers[layer_index];
-            let result = layer.evaluate(&input, &context).await?;
-            input = result.output.clone();
-            if let Some(branch) = result.branch.as_ref() {
-                layer_index = self
+            let result = try_or_bail!(layer.evaluate(&input, &context).await);
+            if let Some(branch) = try_or_bail!(result.branch_str()) {
+                layer_index = try_or_bail!(self
                     .layers
                     .iter()
-                    .position(|layer| layer.name == *branch)
-                    .ok_or_else(|| EvaluationError::LayerNotFound(branch.clone()))?;
+                    .position(|layer| layer.name == branch)
+                    .ok_or_else(|| EvaluationError::LayerNotFound(branch)));
             } else {
                 layer_index += 1;
             }
+            input = result.next_input();
             out.entry(layer.name.clone()).or_default().push(result);
         }
         Ok(out)
+    }
+
+    pub fn evaluate_all(
+        self,
+        inputs: impl Stream<Item = PyResult<PyObject>>,
+    ) -> impl Stream<Item = Result<EvaluationResult, (EvaluationResult, EvaluationError)>> {
+        let this = Arc::new(self);
+        inputs
+            .map_err(|err| (EvaluationResult::new(), EvaluationError::Python(err)))
+            .map_ok(move |input| (input, this.clone()))
+            .and_then(|(input, evaluator)| async move { evaluator.evaluate(input).await })
     }
 }
 
@@ -161,7 +247,7 @@ pub struct Pipeline {
 
 #[derive(Error, Debug)]
 pub enum PipelineImportError {
-    #[error(transparent)]
+    #[error("{}", format_err(_0))]
     Python(#[from] PyErr),
     #[error(transparent)]
     PathStrReplace(#[from] PathStrReplaceError),
@@ -248,7 +334,7 @@ impl Pipeline {
             PyResult::Ok(
                 self.generator
                     .as_ref(py)
-                    .call1((self.config.to_object(py),))?
+                    .call1((self.config.clone().into_py(py),))?
                     .into_py(py),
             )
         })?;
@@ -263,24 +349,16 @@ impl Pipeline {
         }
     }
 
-    pub fn evaluate(
-        &self,
-        inputs: impl Stream<Item = PyResult<PyObject>>,
-        evaluator: Evaluator,
-    ) -> impl Stream<Item = Result<EvaluationResult, EvaluationError>> {
-        inputs
-            .map_err(EvaluationError::Python)
-            .map_ok(move |input| (input, evaluator.clone()))
-            .and_then(|(input, evaluator)| async move { evaluator.evaluate(input).await })
-    }
-
     pub async fn aggregate(
         &self,
-        results: impl Stream<Item = Result<EvaluationResult, EvaluationError>> + Send + Sync + 'static,
+        results: impl Stream<Item = Result<EvaluationResult, (EvaluationResult, EvaluationError)>>
+            + Send
+            + Sync
+            + 'static,
     ) -> Result<Option<PyObject>, EvaluationError> {
         let (errs, results) = results.boxed().split_by_map(move |result| match result {
-            Ok(result) => Python::with_gil(|py| Either::Right(result.to_object(py))),
-            Err(err) => Either::Left(Result::<PyObject, _>::Err(err)),
+            Ok(result) => Python::with_gil(|py| Either::Right(result.into_py(py))),
+            Err((_, err)) => Either::Left(Result::<PyObject, _>::Err(err)),
         });
         let iterator = AsyncIterator::new(results);
         let result = futures::stream::once(
