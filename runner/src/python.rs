@@ -360,6 +360,28 @@ pub fn deepcopy(obj: &PyObject) -> PyResult<PyObject> {
 
 pub mod serde_pickle {
     use pyo3::prelude::*;
+    use std::borrow::Cow;
+
+    struct BytesVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for BytesVisitor {
+        type Value = Cow<'de, [u8]>;
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("bytes")
+        }
+        fn visit_borrowed_bytes<E>(self, v: &'de [u8]) -> Result<Self::Value, E> {
+            Ok(Cow::Borrowed(v))
+        }
+        fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(Cow::Owned(v.to_vec()))
+        }
+        fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E> {
+            Ok(Cow::Owned(v))
+        }
+    }
 
     pub fn serialize<S, T>(value: T, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -384,8 +406,7 @@ pub mod serde_pickle {
         D: serde::de::Deserializer<'de>,
         T: for<'a> FromPyObject<'a>,
     {
-        use serde::de::Deserialize;
-        let bytes = <&[u8]>::deserialize(deserializer)?;
+        let bytes = deserializer.deserialize_any(BytesVisitor)?;
         Python::with_gil(|py| {
             let out = py.import("pickle")?.getattr("loads")?.call1((bytes,))?;
             FromPyObject::extract(out)
@@ -398,9 +419,12 @@ pub mod serde_pickle {
         D: serde::de::Deserializer<'de>,
     {
         use serde::de::Deserialize;
-        let bytes = <&[u8]>::deserialize(deserializer)?;
+        let bytes = <Box<[u8]>>::deserialize(deserializer)?;
         Python::with_gil(|py| {
-            let out = py.import("pickle")?.getattr("loads")?.call1((bytes,))?;
+            let out = py
+                .import("pickle")?
+                .getattr("loads")?
+                .call1((bytes.as_ref(),))?;
             PyResult::Ok(PyErr::from_value(out))
         })
         .map_err(serde::de::Error::custom)
@@ -410,6 +434,31 @@ pub mod serde_pickle {
 pub mod serde_pickle_opt {
     use super::serde_pickle;
     use pyo3::prelude::*;
+    use std::borrow::Cow;
+
+    struct MaybeBytesVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for MaybeBytesVisitor {
+        type Value = Option<Cow<'de, [u8]>>;
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("maybe bytes")
+        }
+        fn visit_borrowed_bytes<E>(self, v: &'de [u8]) -> Result<Self::Value, E> {
+            Ok(Some(Cow::Borrowed(v)))
+        }
+        fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(Some(Cow::Owned(v.to_vec())))
+        }
+        fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E> {
+            Ok(Some(Cow::Owned(v)))
+        }
+        fn visit_none<E>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+    }
 
     pub fn serialize<'a, S, T>(value: &'a Option<T>, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -427,11 +476,13 @@ pub mod serde_pickle_opt {
         D: serde::de::Deserializer<'de>,
         T: for<'a> FromPyObject<'a>,
     {
-        use serde::de::Deserialize;
-        let bytes = <Option<&[u8]>>::deserialize(deserializer)?;
+        let bytes = deserializer.deserialize_any(MaybeBytesVisitor)?;
         if let Some(bytes) = bytes {
             Python::with_gil(|py| {
-                let out = py.import("pickle")?.getattr("loads")?.call1((bytes,))?;
+                let out = py
+                    .import("pickle")?
+                    .getattr("loads")?
+                    .call1((bytes.as_ref(),))?;
                 FromPyObject::extract(out)
             })
             .map_err(serde::de::Error::custom)
