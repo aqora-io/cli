@@ -5,7 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-pep440_rs = "0.4"
+pep440_rs = { version = "0.4", features = ["serde"] }
 pyproject-toml = "0.9"
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0"

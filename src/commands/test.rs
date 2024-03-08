@@ -6,12 +6,10 @@ use crate::{
     },
     error::{self, Result},
 };
-use aqora_config::PyProject;
-use aqora_runner::{
-    pipeline::{
-        EvaluationError, EvaluationResult, Evaluator, Pipeline, PipelineConfig, PipelineImportError,
-    },
-    python::serde_pickle_opt,
+use aqora_config::{PyProject, Version};
+use aqora_runner::pipeline::{
+    EvaluateAllInfo, EvaluateInputInfo, EvaluationError, EvaluationResult, Evaluator, Pipeline,
+    PipelineConfig, PipelineImportError,
 };
 use clap::Args;
 use futures::prelude::*;
@@ -20,18 +18,21 @@ use owo_colors::{OwoColorize, Stream as OwoStream, Style};
 use pyo3::prelude::*;
 use pyo3::{exceptions::PyException, Python};
 use serde::{Deserialize, Serialize};
-use std::{path::Path, sync::Arc};
+use std::{
+    path::Path,
+    sync::{atomic::AtomicU32, Arc},
+};
 
 #[derive(Args, Debug, Clone)]
 #[command(author, version, about)]
 pub struct Test;
 
 #[derive(Serialize, Deserialize)]
-struct LastRunItem {
-    #[serde(with = "serde_pickle_opt")]
-    input: Option<PyObject>,
-    results: EvaluationResult,
-    error: Option<EvaluationError>,
+pub struct LastRunResult {
+    #[serde(flatten)]
+    pub info: EvaluateAllInfo,
+    pub use_case_version: Option<Version>,
+    pub submission_version: Option<Version>,
 }
 
 fn evaluate(
@@ -47,28 +48,28 @@ fn evaluate(
         .then(|(index, result)| async move {
             match result {
                 Ok((input, evaluator)) => match evaluator.evaluate(input.clone()).await {
-                    Ok(results) => (
+                    Ok(result) => (
                         index,
-                        LastRunItem {
+                        EvaluateInputInfo {
                             input: Some(input),
-                            results,
+                            result,
                             error: None,
                         },
                     ),
-                    Err((results, error)) => (
+                    Err((result, error)) => (
                         index,
-                        LastRunItem {
+                        EvaluateInputInfo {
                             input: Some(input),
-                            results,
+                            result,
                             error: Some(error),
                         },
                     ),
                 },
                 Err(err) => (
                     index,
-                    LastRunItem {
+                    EvaluateInputInfo {
                         input: None,
-                        results: EvaluationResult::new(),
+                        result: EvaluationResult::new(),
                         error: Some(EvaluationError::Python(err)),
                     },
                 ),
@@ -76,7 +77,7 @@ fn evaluate(
         })
         .map(move |(index, item)| (index, item, last_run_dir.as_ref().to_path_buf(), pb.clone()))
         .then(|(index, item, last_run_dir, pb)| async move {
-            let filename = last_run_dir.join(format!("{:016}.msgpack", index));
+            let filename = last_run_dir.join(format!("{index}.msgpack"));
             let err = match std::fs::File::create(&filename) {
                 Ok(mut file) => {
                     if let Err(err) = rmp_serde::encode::write(&mut file, &item) {
@@ -96,7 +97,7 @@ fn evaluate(
                     err = err
                 ));
                 return Err((
-                    item.results,
+                    item.result,
                     EvaluationError::Python(PyException::new_err(err)),
                 ));
             }
@@ -110,7 +111,7 @@ fn evaluate(
                 "Input generation error"
             };
             pb.println(format!(
-                "{}: {}",
+                "{} {}",
                 format!("[{index} {}]", if is_ok { "OK" } else { "FAIL" }).if_supports_color(
                     OwoStream::Stdout,
                     |text| {
@@ -125,9 +126,9 @@ fn evaluate(
             ));
 
             if let Some(error) = item.error {
-                Err((item.results, error))
+                Err((item.result, error))
             } else {
-                Ok(item.results)
+                Ok(item.result)
             }
         })
 }
@@ -178,9 +179,8 @@ pub async fn test_submission(global: GlobalArgs, project: PyProject) -> Result<(
                 ),
             )
         })?;
-    let run_success_file = last_run_dir.join("success");
-    if run_success_file.exists() {
-        tokio::fs::remove_file(&run_success_file)
+    if last_run_dir.exists() {
+        tokio::fs::remove_dir_all(&last_run_dir)
             .await
             .map_err(|e| {
                 error::user(
@@ -192,6 +192,17 @@ pub async fn test_submission(global: GlobalArgs, project: PyProject) -> Result<(
                 )
             })?;
     }
+    tokio::fs::create_dir_all(&last_run_dir)
+        .await
+        .map_err(|e| {
+            error::user(
+                &format!("Failed to write to {}: {}", last_run_dir.display(), e),
+                &format!(
+                    "Make sure you have permissions to write to {}",
+                    last_run_dir.display()
+                ),
+            )
+        })?;
 
     let mut pipeline_pb = ProgressBar::new_spinner().with_message("Running pipeline...");
     pipeline_pb.enable_steady_tick(std::time::Duration::from_millis(100));
@@ -226,11 +237,18 @@ pub async fn test_submission(global: GlobalArgs, project: PyProject) -> Result<(
             ));
         }
     };
+
+    let num_inputs = Arc::new(AtomicU32::new(0));
     let generator = match pipeline.generator() {
-        Ok(g) => g,
-        Err(e) => {
+        Ok(generator) => {
+            let num_inputs = num_inputs.clone();
+            generator.inspect(move |_| {
+                num_inputs.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            })
+        }
+        Err(error) => {
             pipeline_pb.finish_with_message("Failed to run pipeline");
-            Python::with_gil(|py| e.print_and_set_sys_last_vars(py));
+            Python::with_gil(|py| error.print_and_set_sys_last_vars(py));
             return Err(error::user(
                 "Unable to generate an inputs",
                 "Check the above error and try again",
@@ -238,7 +256,7 @@ pub async fn test_submission(global: GlobalArgs, project: PyProject) -> Result<(
         }
     };
 
-    let score = match pipeline
+    let result = match pipeline
         .aggregate(evaluate(
             pipeline.evaluator(),
             generator,
@@ -247,45 +265,73 @@ pub async fn test_submission(global: GlobalArgs, project: PyProject) -> Result<(
         ))
         .await
     {
-        Ok(Some(score)) => score,
+        Ok(Some(score)) => {
+            pipeline_pb.finish_with_message(format!("Done: {score}"));
+            Ok(score)
+        }
         Ok(None) => {
             pipeline_pb.finish_with_message("Failed to run pipeline");
-            return Err(error::system(
+            Err(error::system(
                 "No score returned. Use case may not have any inputs",
                 "",
-            ));
+            ))
         }
         Err(EvaluationError::Python(e)) => {
             pipeline_pb.finish_with_message("Failed to run pipeline");
             Python::with_gil(|py| e.print_and_set_sys_last_vars(py));
-            return Err(error::user(
+            Err(error::user(
                 "Failed to run pipeline",
                 "Check the above error and try again",
-            ));
+            ))
         }
         Err(e) => {
             pipeline_pb.finish_with_message("Failed to run pipeline");
-            return Err(error::user(
+            Err(error::user(
                 &format!("Failed to run pipeline: {e}"),
                 "Check the pipeline configuration and try again",
-            ));
+            ))
         }
     };
 
-    tokio::fs::File::create(run_success_file)
-        .await
-        .map_err(|e| {
-            error::user(
-                &format!("Failed to write to {}: {}", last_run_dir.display(), e),
-                &format!(
-                    "Make sure you have permissions to write to {}",
-                    last_run_dir.display()
-                ),
-            )
-        })?;
-    pipeline_pb.finish_with_message(format!("Done: {score}"));
+    let last_run_result_file = last_run_dir.join("result.msgpack");
+    let mut file = std::fs::File::create(&last_run_result_file).map_err(|e| {
+        error::user(
+            &format!(
+                "Failed to write to file {}: {}",
+                last_run_result_file.display(),
+                e
+            ),
+            &format!(
+                "Make sure you have permissions to write to {}",
+                last_run_result_file.display()
+            ),
+        )
+    })?;
+    if let Err(err) = rmp_serde::encode::write(
+        &mut file,
+        &LastRunResult {
+            info: EvaluateAllInfo {
+                score: result.as_ref().ok().cloned(),
+                num_inputs: num_inputs.load(std::sync::atomic::Ordering::Relaxed),
+            },
+            use_case_version: use_case_toml.version(),
+            submission_version: project.version(),
+        },
+    ) {
+        return Err(error::user(
+            &format!(
+                "Failed to write to file {}: {}",
+                last_run_result_file.display(),
+                err
+            ),
+            &format!(
+                "Make sure you have permissions to write to {}",
+                last_run_result_file.display()
+            ),
+        ));
+    }
 
-    Ok(())
+    result.map(|_| ())
 }
 
 pub async fn test(_: Test, global: GlobalArgs) -> Result<()> {

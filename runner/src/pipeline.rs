@@ -1,5 +1,6 @@
 use crate::python::{
-    async_generator, async_python_run, deepcopy, format_err, serde_pickle, AsyncIterator, PyEnv,
+    async_generator, async_python_run, deepcopy, format_err, serde_pickle, serde_pickle_opt,
+    AsyncIterator, PyEnv,
 };
 use aqora_config::{AqoraSubmissionConfig, AqoraUseCaseConfig, PathStr, PathStrReplaceError};
 use futures::prelude::*;
@@ -97,6 +98,21 @@ impl LayerEvaluation {
 }
 
 pub type EvaluationResult = HashMap<String, Vec<LayerEvaluation>>;
+
+#[derive(Serialize, Deserialize, Debug, Default)]
+pub struct EvaluateInputInfo {
+    #[serde(with = "serde_pickle_opt")]
+    pub input: Option<PyObject>,
+    pub result: EvaluationResult,
+    pub error: Option<EvaluationError>,
+}
+
+#[derive(Serialize, Deserialize, Default, Debug, Clone)]
+pub struct EvaluateAllInfo {
+    #[serde(with = "serde_pickle_opt")]
+    pub score: Option<PyObject>,
+    pub num_inputs: u32,
+}
 
 impl Layer {
     pub async fn evaluate(
