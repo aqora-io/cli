@@ -5,7 +5,12 @@ use url::Url;
 
 #[derive(Args, Debug)]
 pub struct GlobalArgs {
-    #[arg(short, long, default_value = "https://app.aqora.io", global = true)]
+    #[arg(
+        long,
+        default_value = "https://app.aqora.io",
+        global = true,
+        hide = true
+    )]
     pub url: String,
     #[arg(short, long, default_value = ".", global = true)]
     pub project: PathBuf,

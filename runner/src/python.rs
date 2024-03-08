@@ -362,7 +362,7 @@ pub mod serde_pickle {
     use pyo3::prelude::*;
     use std::borrow::Cow;
 
-    struct BytesVisitor;
+    pub(crate) struct BytesVisitor;
 
     impl<'de> serde::de::Visitor<'de> for BytesVisitor {
         type Value = Cow<'de, [u8]>;
@@ -418,8 +418,7 @@ pub mod serde_pickle {
     where
         D: serde::de::Deserializer<'de>,
     {
-        use serde::de::Deserialize;
-        let bytes = <Box<[u8]>>::deserialize(deserializer)?;
+        let bytes = deserializer.deserialize_any(BytesVisitor)?;
         Python::with_gil(|py| {
             let out = py
                 .import("pickle")?
@@ -443,20 +442,15 @@ pub mod serde_pickle_opt {
         fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
             formatter.write_str("maybe bytes")
         }
-        fn visit_borrowed_bytes<E>(self, v: &'de [u8]) -> Result<Self::Value, E> {
-            Ok(Some(Cow::Borrowed(v)))
-        }
-        fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            Ok(Some(Cow::Owned(v.to_vec())))
-        }
-        fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E> {
-            Ok(Some(Cow::Owned(v)))
-        }
         fn visit_none<E>(self) -> Result<Self::Value, E> {
             Ok(None)
+        }
+        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: serde::de::Deserializer<'de>,
+        {
+            let bytes = deserializer.deserialize_any(serde_pickle::BytesVisitor)?;
+            Ok(Some(bytes))
         }
     }
 
@@ -476,7 +470,7 @@ pub mod serde_pickle_opt {
         D: serde::de::Deserializer<'de>,
         T: for<'a> FromPyObject<'a>,
     {
-        let bytes = deserializer.deserialize_any(MaybeBytesVisitor)?;
+        let bytes = deserializer.deserialize_option(MaybeBytesVisitor)?;
         if let Some(bytes) = bytes {
             Python::with_gil(|py| {
                 let out = py
