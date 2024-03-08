@@ -81,6 +81,7 @@ fn evaluate(
         .map(move |(index, item)| (index, item, last_run_dir.as_ref().to_path_buf(), pb.clone()))
         .then(|(index, item, last_run_dir, pb)| async move {
             let filename = last_run_dir.join(format!("{index}.msgpack"));
+            let index = index + 1;
             let err = match std::fs::File::create(&filename) {
                 Ok(mut file) => {
                     if let Err(err) = rmp_serde::encode::write(&mut file, &item) {
@@ -141,12 +142,24 @@ fn last_run_items(
     tests: Vec<usize>,
 ) -> impl Stream<Item = Result<(usize, EvaluateInputInfo), (usize, std::io::Error)>> {
     futures::stream::iter(tests).map(move |index| {
-        match std::fs::File::open(last_run_dir.as_ref().join(format!("{index}.msgpack"))) {
+        if index == 0 {
+            return Err((
+                index,
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Could not load test {index}: Test index starts from 1"),
+                ),
+            ));
+        }
+        match std::fs::File::open(last_run_dir.as_ref().join(format!("{}.msgpack", index - 1))) {
             Ok(file) => match rmp_serde::from_read(file) {
-                Ok(item) => Ok((index, item)),
+                Ok(item) => Ok((index - 1, item)),
                 Err(err) => Err((
                     index,
-                    std::io::Error::new(std::io::ErrorKind::InvalidData, err),
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Could not load test {index}: {err}"),
+                    ),
                 )),
             },
             Err(err) => Err((index, err)),
