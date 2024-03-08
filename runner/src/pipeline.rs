@@ -52,15 +52,6 @@ pub struct LayerFunctionResult {
     context: PyObject,
 }
 
-impl LayerFunctionResult {
-    fn eq(&self, other: &Self) -> PyResult<bool> {
-        Python::with_gil(move |py| {
-            Ok(other.output.as_ref(py).eq(self.output.as_ref(py))?
-                && other.context.as_ref(py).eq(self.context.as_ref(py))?)
-        })
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[pyclass]
 pub struct LayerEvaluation {
@@ -166,18 +157,19 @@ impl Layer {
             None
         };
         match (new_metric, evaluation.metric.as_ref()) {
-            (Some(new_metric), Some(metric)) => {
-                if !metric.eq(&new_metric)? {
-                    return Err(PyAssertionError::new_err("Metric mismatch"));
+            (Some(new_metric), Some(metric)) => Python::with_gil(move |py| {
+                if metric.output.as_ref(py).ne(new_metric.output.as_ref(py))? {
+                    Err(PyAssertionError::new_err("Metric mismatch"))
+                } else {
+                    Ok(())
                 }
-            }
-            (None, None) => {}
+            }),
+            (None, None) => Ok(()),
             _ => {
                 eprintln!("this happens");
-                return Err(PyAssertionError::new_err("Metric mismatch"));
+                Err(PyAssertionError::new_err("Metric mismatch"))
             }
         }
-        Ok(())
     }
 }
 
