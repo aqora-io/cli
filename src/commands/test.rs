@@ -20,12 +20,16 @@ use pyo3::{exceptions::PyException, Python};
 use serde::{Deserialize, Serialize};
 use std::{
     path::Path,
+    pin::Pin,
     sync::{atomic::AtomicU32, Arc},
 };
 
 #[derive(Args, Debug, Clone)]
 #[command(author, version, about)]
-pub struct Test;
+pub struct Test {
+    #[arg(short, long)]
+    pub test: Vec<usize>,
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct LastRunResult {
@@ -37,17 +41,16 @@ pub struct LastRunResult {
 
 fn evaluate(
     evaluator: Evaluator,
-    inputs: impl Stream<Item = PyResult<PyObject>>,
+    inputs: impl Stream<Item = (usize, PyResult<PyObject>)>,
     last_run_dir: impl AsRef<Path>,
     pb: ProgressBar,
 ) -> impl Stream<Item = Result<EvaluationResult, (EvaluationResult, EvaluationError)>> {
     let evaluator = Arc::new(evaluator);
     inputs
-        .map_ok(move |input| (input, evaluator.clone()))
-        .enumerate()
-        .then(|(index, result)| async move {
+        .map(move |input| (input, evaluator.clone()))
+        .then(|((index, result), evaluator)| async move {
             match result {
-                Ok((input, evaluator)) => match evaluator.evaluate(input.clone()).await {
+                Ok(input) => match evaluator.evaluate(input.clone()).await {
                     Ok(result) => (
                         index,
                         EvaluateInputInfo {
@@ -133,7 +136,25 @@ fn evaluate(
         })
 }
 
-pub async fn test_submission(global: GlobalArgs, project: PyProject) -> Result<()> {
+fn last_run_items(
+    last_run_dir: impl AsRef<Path>,
+    tests: Vec<usize>,
+) -> impl Stream<Item = Result<(usize, EvaluateInputInfo), (usize, std::io::Error)>> {
+    futures::stream::iter(tests).map(move |index| {
+        match std::fs::File::open(last_run_dir.as_ref().join(format!("{index}.msgpack"))) {
+            Ok(file) => match rmp_serde::from_read(file) {
+                Ok(item) => Ok((index, item)),
+                Err(err) => Err((
+                    index,
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, err),
+                )),
+            },
+            Err(err) => Err((index, err)),
+        }
+    })
+}
+
+pub async fn test_submission(args: Test, global: GlobalArgs, project: PyProject) -> Result<()> {
     let m = MultiProgress::new();
 
     let submission = project
@@ -168,19 +189,23 @@ pub async fn test_submission(global: GlobalArgs, project: PyProject) -> Result<(
         })?;
 
     let last_run_dir = project_last_run_dir(&global.project);
-    tokio::fs::create_dir_all(&last_run_dir)
-        .await
-        .map_err(|e| {
-            error::user(
-                &format!("Failed to create last run directory: {e}"),
-                &format!(
-                    "Make sure you have permissions to write to {}",
-                    last_run_dir.display()
-                ),
-            )
-        })?;
-    if last_run_dir.exists() {
-        tokio::fs::remove_dir_all(&last_run_dir)
+    let last_run_result_file = last_run_dir.join("result.msgpack");
+    if args.test.is_empty() {
+        if last_run_dir.exists() {
+            tokio::fs::remove_dir_all(&last_run_dir)
+                .await
+                .map_err(|e| {
+                    error::user(
+                        &format!("Failed to write to {}: {}", last_run_dir.display(), e),
+                        &format!(
+                            "Make sure you have permissions to write to {}",
+                            last_run_dir.display()
+                        ),
+                    )
+                })?;
+        }
+    } else if last_run_result_file.exists() {
+        tokio::fs::remove_file(&last_run_result_file)
             .await
             .map_err(|e| {
                 error::user(
@@ -238,22 +263,55 @@ pub async fn test_submission(global: GlobalArgs, project: PyProject) -> Result<(
         }
     };
 
-    let num_inputs = Arc::new(AtomicU32::new(0));
-    let generator = match pipeline.generator() {
-        Ok(generator) => {
-            let num_inputs = num_inputs.clone();
-            generator.inspect(move |_| {
-                num_inputs.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let (num_inputs, generator) = if args.test.is_empty() {
+        match pipeline.generator() {
+            Ok(generator) => {
+                let num_inputs = Arc::new(AtomicU32::new(0));
+                let inputs_cloned = num_inputs.clone();
+                (
+                    num_inputs,
+                    Box::pin(
+                        generator
+                            .inspect(move |_| {
+                                inputs_cloned.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            })
+                            .enumerate(),
+                    )
+                        as Pin<Box<dyn Stream<Item = (usize, PyResult<PyObject>)> + Send + Sync>>,
+                )
+            }
+            Err(error) => {
+                pipeline_pb.finish_with_message("Failed to run pipeline");
+                Python::with_gil(|py| error.print_and_set_sys_last_vars(py));
+                return Err(error::user(
+                    "Unable to generate an inputs",
+                    "Check the above error and try again",
+                ));
+            }
+        }
+    } else {
+        let inputs = last_run_items(&last_run_dir, args.test.clone())
+            .map_ok(move |(index, item)| {
+                if let Some(input) = item.input {
+                    (index, Ok(input))
+                } else if let Some(EvaluationError::Python(error)) = item.error {
+                    (index, Err(error))
+                } else {
+                    (index, Err(PyException::new_err("No input or error")))
+                }
             })
-        }
-        Err(error) => {
-            pipeline_pb.finish_with_message("Failed to run pipeline");
-            Python::with_gil(|py| error.print_and_set_sys_last_vars(py));
-            return Err(error::user(
-                "Unable to generate an inputs",
-                "Check the above error and try again",
-            ));
-        }
+            .map_err(|(index, err)| {
+                error::user(
+                    &format!("Failed to read last run data for {index}: {err}"),
+                    "Check the above error and try again",
+                )
+            })
+            .try_collect::<Vec<_>>()
+            .await?;
+        (
+            Arc::new(AtomicU32::new(inputs.len() as u32)),
+            Box::pin(futures::stream::iter(inputs)) as _,
+        )
     };
 
     let result = match pipeline
@@ -293,7 +351,6 @@ pub async fn test_submission(global: GlobalArgs, project: PyProject) -> Result<(
         }
     };
 
-    let last_run_result_file = last_run_dir.join("result.msgpack");
     let mut file = std::fs::File::create(&last_run_result_file).map_err(|e| {
         error::user(
             &format!(
@@ -311,7 +368,11 @@ pub async fn test_submission(global: GlobalArgs, project: PyProject) -> Result<(
         &mut file,
         &LastRunResult {
             info: EvaluateAllInfo {
-                score: result.as_ref().ok().cloned(),
+                score: if args.test.is_empty() {
+                    result.as_ref().ok().cloned()
+                } else {
+                    None
+                },
                 num_inputs: num_inputs.load(std::sync::atomic::Ordering::Relaxed),
             },
             use_case_version: use_case_toml.version(),
@@ -334,7 +395,7 @@ pub async fn test_submission(global: GlobalArgs, project: PyProject) -> Result<(
     result.map(|_| ())
 }
 
-pub async fn test(_: Test, global: GlobalArgs) -> Result<()> {
+pub async fn test(args: Test, global: GlobalArgs) -> Result<()> {
     let project = read_pyproject(&global.project).await?;
     let aqora = project.aqora().ok_or_else(|| {
         error::user(
@@ -343,7 +404,7 @@ pub async fn test(_: Test, global: GlobalArgs) -> Result<()> {
         )
     })?;
     if aqora.is_submission() {
-        test_submission(global, project).await
+        test_submission(args, global, project).await
     } else {
         Err(error::user(
             "Use cases not supported",
