@@ -4,7 +4,7 @@ use crate::python::{
 };
 use aqora_config::{AqoraSubmissionConfig, AqoraUseCaseConfig, PathStr, PathStrReplaceError};
 use futures::prelude::*;
-use pyo3::{prelude::*, types::PyString};
+use pyo3::{exceptions::PyAssertionError, prelude::*, types::PyString};
 use serde::{Deserialize, Serialize};
 use split_stream_by::{Either, SplitStreamByMapExt};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
@@ -50,6 +50,15 @@ pub struct LayerFunctionResult {
     output: PyObject,
     #[serde(with = "serde_pickle")]
     context: PyObject,
+}
+
+impl LayerFunctionResult {
+    fn eq(&self, other: &Self) -> PyResult<bool> {
+        Python::with_gil(move |py| {
+            Ok(other.output.as_ref(py).eq(self.output.as_ref(py))?
+                && other.context.as_ref(py).eq(self.context.as_ref(py))?)
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -147,6 +156,29 @@ impl Layer {
             branch,
         })
     }
+
+    pub async fn assert_metric(&self, evaluation: &LayerEvaluation) -> PyResult<()> {
+        let new_metric = if let Some(metric) = self.metric.as_ref() {
+            let input = &evaluation.output.output;
+            let context = &evaluation.output.context;
+            Some(metric.call(input, context).await?)
+        } else {
+            None
+        };
+        match (new_metric, evaluation.metric.as_ref()) {
+            (Some(new_metric), Some(metric)) => {
+                if !metric.eq(&new_metric)? {
+                    return Err(PyAssertionError::new_err("Metric mismatch"));
+                }
+            }
+            (None, None) => {}
+            _ => {
+                eprintln!("this happens");
+                return Err(PyAssertionError::new_err("Metric mismatch"));
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -239,6 +271,33 @@ impl Evaluator {
             out.entry(layer.name.clone()).or_default().push(result);
         }
         Ok(out)
+    }
+
+    pub async fn assert_metric(&self, results: &EvaluationResult) -> Result<(), EvaluationError> {
+        let mut result_indexes = HashMap::<String, usize>::new();
+        let mut layer_index = 0;
+        while layer_index < self.layers.len() {
+            let layer = &self.layers[layer_index];
+            let layer_name = &layer.name;
+            let result_index = *result_indexes.entry(layer_name.clone()).or_insert(0);
+            let result = results
+                .get(layer_name)
+                .ok_or_else(|| EvaluationError::LayerNotFound(layer_name.clone()))?
+                .get(result_index)
+                .ok_or_else(|| EvaluationError::LayerNotFound(layer_name.clone()))?;
+            layer.assert_metric(result).await?;
+            result_indexes.insert(layer_name.clone(), result_index + 1);
+            if let Some(branch) = result.branch_str()? {
+                layer_index = self
+                    .layers
+                    .iter()
+                    .position(|layer| layer.name == branch)
+                    .ok_or_else(|| EvaluationError::LayerNotFound(branch))?;
+            } else {
+                layer_index += 1;
+            }
+        }
+        Ok(())
     }
 
     pub fn evaluate_all(
