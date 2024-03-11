@@ -89,7 +89,6 @@ pub struct AqoraUseCaseConfig {
     pub template: Option<PathBuf>,
     pub generator: PathStr<'static>,
     pub aggregator: PathStr<'static>,
-    pub context: Option<PathStr<'static>>,
     pub layers: Vec<LayerConfig>,
 }
 
@@ -97,8 +96,61 @@ pub struct AqoraUseCaseConfig {
 pub struct LayerConfig {
     pub name: String,
     pub transform: Option<FunctionDef>,
+    pub context: Option<FunctionDef>,
     pub metric: Option<FunctionDef>,
     pub branch: Option<FunctionDef>,
+}
+
+impl AqoraUseCaseConfig {
+    pub fn replace_refs(
+        &mut self,
+        refs: &HashMap<String, PathStr<'_>>,
+    ) -> Result<(), PathStrReplaceError> {
+        self.generator = self.generator.replace_refs(refs)?;
+        self.aggregator = self.aggregator.replace_refs(refs)?;
+        for layer in self.layers.iter_mut() {
+            if let Some(transform) = layer.transform.as_mut() {
+                transform.path = transform.path.replace_refs(refs)?;
+            }
+            if let Some(context) = layer.context.as_mut() {
+                context.path = context.path.replace_refs(refs)?;
+            }
+            if let Some(metric) = layer.metric.as_mut() {
+                metric.path = metric.path.replace_refs(refs)?;
+            }
+            if let Some(branch) = layer.branch.as_mut() {
+                branch.path = branch.path.replace_refs(refs)?;
+            }
+        }
+        Ok(())
+    }
+    pub fn ignore_refs(&mut self) -> Result<(), PathStrReplaceError> {
+        self.generator = self.generator.replace_refs(&HashMap::new())?;
+        self.aggregator = self.aggregator.replace_refs(&HashMap::new())?;
+        for layer in self.layers.iter_mut() {
+            if let Some(transform) = layer.transform.as_mut() {
+                if transform.path.has_ref() {
+                    layer.transform = None;
+                }
+            }
+            if let Some(context) = layer.context.as_mut() {
+                if context.path.has_ref() {
+                    layer.context = None;
+                }
+            }
+            if let Some(metric) = layer.metric.as_mut() {
+                if metric.path.has_ref() {
+                    layer.metric = None;
+                }
+            }
+            if let Some(branch) = layer.branch.as_mut() {
+                if branch.path.has_ref() {
+                    layer.branch = None;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -111,7 +163,6 @@ pub struct AqoraSubmissionConfig {
 #[derive(Clone, Serialize, Debug)]
 pub struct FunctionDef {
     pub path: PathStr<'static>,
-    pub context: bool,
 }
 
 impl<'de> Deserialize<'de> for FunctionDef {
@@ -134,7 +185,6 @@ impl<'de> Deserialize<'de> for FunctionDef {
             {
                 Ok(FunctionDef {
                     path: value.parse().map_err(de::Error::custom)?,
-                    context: false,
                 })
             }
 
@@ -143,7 +193,6 @@ impl<'de> Deserialize<'de> for FunctionDef {
                 A: de::MapAccess<'de>,
             {
                 let mut path = None;
-                let mut context = None;
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
                         "path" => {
@@ -152,25 +201,13 @@ impl<'de> Deserialize<'de> for FunctionDef {
                             }
                             path = Some(map.next_value()?);
                         }
-                        "context" => {
-                            if context.is_some() {
-                                return Err(de::Error::duplicate_field("context"));
-                            }
-                            context = Some(map.next_value()?);
-                        }
                         _ => {
-                            return Err(de::Error::unknown_field(
-                                key.as_str(),
-                                &["path", "context"],
-                            ));
+                            return Err(de::Error::unknown_field(key.as_str(), &["path"]));
                         }
                     }
                 }
                 let path = path.ok_or_else(|| de::Error::missing_field("path"))?;
-                Ok(FunctionDef {
-                    path,
-                    context: context.unwrap_or(false),
-                })
+                Ok(FunctionDef { path })
             }
         }
 
@@ -211,6 +248,9 @@ impl<'a> PathStr<'a> {
             }
         }
         Ok(PathStr(Cow::Owned(out)))
+    }
+    pub fn has_ref(&self) -> bool {
+        self.0.iter().any(|part| part.starts_with('$'))
     }
 }
 
