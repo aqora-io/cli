@@ -1,0 +1,17 @@
+query SubmissionUploadInfo($slug: String!, $username: String!, $use_username: Boolean!) {
+  competitionBySlug(slug: $slug) {
+    id
+    useCase {
+      latest {
+        version
+      }
+    }
+  }
+  viewer @skip(if: $use_username) {
+    id
+  }
+  entityByUsername(username: $username) @include(if: $use_username) {
+    id
+    __typename
+  }
+}

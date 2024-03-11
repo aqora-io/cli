@@ -1,15 +1,17 @@
 use crate::{
     commands::GlobalArgs,
     compress::compress,
-    dirs::{init_venv, pyproject_path, read_pyproject},
+    dirs::{
+        init_venv, project_last_run_dir, project_last_run_result, pyproject_path, read_pyproject,
+    },
     error::{self, Result},
-    graphql_client::GraphQLClient,
+    graphql_client::{custom_scalars::*, GraphQLClient},
     id::Id,
-    python::build_package,
+    python::{build_package, LastRunResult},
     readme::read_readme,
     revert_file::RevertFile,
 };
-use aqora_config::PyProject;
+use aqora_config::{PyProject, Version};
 use clap::Args;
 use futures::prelude::*;
 use graphql_client::GraphQLQuery;
@@ -58,55 +60,84 @@ pub async fn get_competition_id_by_slug(
 
 #[derive(GraphQLQuery)]
 #[graphql(
-    query_path = "src/graphql/get_viewer_id.graphql",
+    query_path = "src/graphql/submission_upload_info.graphql",
     schema_path = "src/graphql/schema.graphql",
     response_derives = "Debug"
 )]
-pub struct GetViewerId;
+pub struct SubmissionUploadInfo;
 
-pub async fn get_viewer_id(client: &GraphQLClient) -> Result<Id> {
-    let viewer = client
-        .send::<GetViewerId>(get_viewer_id::Variables {})
-        .await?
-        .viewer;
-    Id::parse_node_id(viewer.id).map_err(|err| {
-        error::system(
-            &format!("Could not parse viewer ID: {}", err),
-            "This is a bug, please report it",
-        )
-    })
+pub struct SubmissionUploadInfoResponse {
+    competition_id: Id,
+    use_case_version: Version,
+    entity_id: Id,
 }
 
-#[derive(GraphQLQuery)]
-#[graphql(
-    query_path = "src/graphql/get_entity_id_by_username.graphql",
-    schema_path = "src/graphql/schema.graphql",
-    response_derives = "Debug"
-)]
-pub struct GetEntityIdByUsername;
-
-pub async fn get_entity_id_by_username(
+pub async fn get_submission_upload_info(
     client: &GraphQLClient,
-    username: impl Into<String>,
-) -> Result<Id> {
-    let username = username.into();
-    let entity = client
-        .send::<GetEntityIdByUsername>(get_entity_id_by_username::Variables {
-            username: username.clone(),
+    slug: impl Into<String>,
+    username: Option<impl Into<String>>,
+) -> Result<SubmissionUploadInfoResponse> {
+    let slug = slug.into();
+    let username = username.map(|u| u.into());
+    let response = client
+        .send::<SubmissionUploadInfo>(submission_upload_info::Variables {
+            slug: slug.clone(),
+            username: username.clone().unwrap_or_default(),
+            use_username: username.is_some(),
         })
-        .await?
-        .entity_by_username
+        .await?;
+    let competition = response.competition_by_slug.ok_or_else(|| {
+        error::user(
+            &format!("Competition '{}' not found", slug),
+            "Please make sure the competition is correct",
+        )
+    })?;
+    let competition_id = Id::parse_node_id(competition.id).map_err(|err| {
+        error::system(
+            &format!("Could not parse competition ID: {}", err),
+            "This is a bug, please report it",
+        )
+    })?;
+    let use_case_version = competition
+        .use_case
+        .latest
         .ok_or_else(|| {
-            error::user(
-                &format!("User '{}' not found", username),
-                "Please make sure the username is correct",
+            error::system(
+                "No use case version found",
+                "Please contact the competition organizer",
+            )
+        })?
+        .version
+        .parse()
+        .map_err(|err| {
+            error::system(
+                &format!("Invalid use case version found: {err}"),
+                "Please contact the competition organizer",
             )
         })?;
-    Id::parse_node_id(entity.id).map_err(|err| {
+    let entity_id = if let Some(username) = username {
+        response
+            .entity_by_username
+            .ok_or_else(|| {
+                error::user(
+                    &format!("User '{}' not found", username),
+                    "Please make sure the username is correct",
+                )
+            })?
+            .id
+    } else {
+        response.viewer.id
+    };
+    let entity_id = Id::parse_node_id(entity_id).map_err(|err| {
         error::system(
             &format!("Could not parse entity ID: {}", err),
             "This is a bug, please report it",
         )
+    })?;
+    Ok(SubmissionUploadInfoResponse {
+        competition_id,
+        use_case_version,
+        entity_id,
     })
 }
 
@@ -458,35 +489,6 @@ pub async fn upload_submission(args: Upload, global: GlobalArgs, project: PyProj
             )
         })?;
 
-    let slug = args
-        .competition
-        .as_ref()
-        .or(config.competition.as_ref())
-        .ok_or_else(|| {
-            error::user(
-                "No competition provided",
-                "Please specify a competition in either the pyproject.toml or the command line",
-            )
-        })?;
-    let competition_id = get_competition_id_by_slug(&client, slug).await?;
-    let entity_id = if let Some(username) = &config.entity {
-        get_entity_id_by_username(&client, username).await?
-    } else {
-        get_viewer_id(&client).await?
-    };
-
-    let version = project.version().ok_or_else(|| {
-        error::user(
-            "Could not get project version",
-            "Please make sure the project is valid",
-        )
-    })?;
-    let package_name = format!(
-        "submission-{}-{}",
-        competition_id.to_package_id(),
-        entity_id.to_package_id()
-    );
-
     let readme = read_readme(
         &global.project,
         project.project.as_ref().and_then(|p| p.readme.as_ref()),
@@ -498,6 +500,68 @@ pub async fn upload_submission(args: Upload, global: GlobalArgs, project: PyProj
             "Please make sure the readme is valid",
         )
     })?;
+
+    let version = project.version().ok_or_else(|| {
+        error::user(
+            "Could not get project version",
+            "Please make sure the project is valid",
+        )
+    })?;
+
+    let evaluation_path = project_last_run_dir(&global.project);
+    if !evaluation_path.exists() {
+        return Err(error::user(
+            "No last run result found",
+            "Please make sure you have run `aqora test`",
+        ));
+    }
+    let last_run_result: LastRunResult =
+        std::fs::File::open(project_last_run_result(&global.project))
+            .map_err(rmp_serde::decode::Error::InvalidDataRead)
+            .and_then(rmp_serde::from_read)
+            .map_err(|err| {
+                error::user(
+                    &format!("Could not read last run result: {}", err),
+                    "Please make sure your last call to `aqora test` was successful",
+                )
+            })?;
+
+    if last_run_result.submission_version.as_ref() != Some(&version) {
+        return Err(error::user(
+            "Submission version does not match last run result",
+            "Please re-run `aqora test`",
+        ));
+    }
+
+    let slug = args
+        .competition
+        .as_ref()
+        .or(config.competition.as_ref())
+        .ok_or_else(|| {
+            error::user(
+                "No competition provided",
+                "Please specify a competition in either the pyproject.toml or the command line",
+            )
+        })?;
+
+    let SubmissionUploadInfoResponse {
+        entity_id,
+        competition_id,
+        use_case_version,
+    } = get_submission_upload_info(&client, slug, config.entity.as_ref()).await?;
+    let package_name = format!(
+        "submission-{}-{}",
+        competition_id.to_package_id(),
+        entity_id.to_package_id()
+    );
+
+    if last_run_result.use_case_version.as_ref() != Some(&use_case_version) {
+        return Err(error::user(
+            "Use case version does not match last run result",
+            "Please install the latest version with `aqora install --upgrade` and re-run `aqora test`",
+        ));
+    }
+
     let project_version = client
         .send::<UpdateSubmissionMutation>(update_submission_mutation::Variables {
             competition_id: competition_id.to_node_id(),
@@ -512,52 +576,116 @@ pub async fn upload_submission(args: Upload, global: GlobalArgs, project: PyProj
 
     let s3_client = reqwest::Client::new();
 
-    let upload_url = if let Some(url) = project_version
-        .files
-        .iter()
-        .find(|f| {
-            matches!(
-                f.kind,
-                update_submission_mutation::ProjectVersionFileKind::PACKAGE
-            )
+    let evaluation_fut = {
+        let upload_url = if let Some(url) = project_version
+            .files
+            .iter()
+            .find(|f| {
+                matches!(
+                    f.kind,
+                    update_submission_mutation::ProjectVersionFileKind::SUBMISSION_EVALUATION
+                )
+            })
+            .and_then(|f| f.upload_url.as_ref())
+        {
+            url
+        } else {
+            return Err(error::system(
+                "No upload URL found",
+                "This is a bug, please report it",
+            ));
+        };
+        let evaluation_tar_file = tempdir
+            .path()
+            .join(format!("{package_name}-{version}.evaluation.tar.gz"));
+        let mut evaluation_pb = ProgressBar::new_spinner().with_message("Compressing evaluation");
+        evaluation_pb.enable_steady_tick(std::time::Duration::from_millis(100));
+        evaluation_pb = m.add(evaluation_pb);
+
+        let evaluation_pb_cloned = evaluation_pb.clone();
+        let client = s3_client.clone();
+        async move {
+            compress(evaluation_path, &evaluation_tar_file)
+                .await
+                .map_err(|err| {
+                    error::system(
+                        &format!("Could not compress evaluation: {}", err),
+                        "Please make sure the evaluation directory is valid",
+                    )
+                })?;
+            evaluation_pb_cloned.set_message("Uploading evaluation");
+            upload_file(&client, evaluation_tar_file, upload_url, "application/gzip").await
+        }
+        .map(move |res| {
+            if res.is_ok() {
+                evaluation_pb.finish_with_message("Evaluation uploaded");
+            } else {
+                evaluation_pb.finish_with_message("An error occurred while processing evaluation");
+            }
+            res
         })
-        .and_then(|f| f.upload_url.as_ref())
-    {
-        url
-    } else {
-        return Err(error::system(
-            "No upload URL found",
-            "This is a bug, please report it",
-        ));
+        .boxed()
     };
-    let package_tar_file = tempdir
-        .path()
-        .join(format!("{package_name}-{version}.tar.gz"));
-    let mut package_pb = ProgressBar::new_spinner().with_message("Initializing Python environment");
-    package_pb.enable_steady_tick(std::time::Duration::from_millis(100));
-    package_pb = m.add(package_pb);
 
-    let env = init_venv(
-        &global.project,
-        global.uv.as_ref(),
-        &package_pb,
-        global.color,
-    )
-    .await?;
+    let package_fut = {
+        let upload_url = if let Some(url) = project_version
+            .files
+            .iter()
+            .find(|f| {
+                matches!(
+                    f.kind,
+                    update_submission_mutation::ProjectVersionFileKind::PACKAGE
+                )
+            })
+            .and_then(|f| f.upload_url.as_ref())
+        {
+            url
+        } else {
+            return Err(error::system(
+                "No upload URL found",
+                "This is a bug, please report it",
+            ));
+        };
+        let package_tar_file = tempdir
+            .path()
+            .join(format!("{package_name}-{version}.tar.gz"));
+        let mut package_pb = ProgressBar::new_spinner().with_message("Building package");
+        package_pb.enable_steady_tick(std::time::Duration::from_millis(100));
+        package_pb = m.add(package_pb);
 
-    let project_file = RevertFile::save(pyproject_path(&global.project))?;
-    let mut new_project = project.clone();
-    new_project.set_name(package_name);
-    std::fs::write(&project_file, new_project.toml()?)?;
+        let package_pb_cloned = package_pb.clone();
+        let client = s3_client.clone();
+        async move {
+            let env = init_venv(
+                &global.project,
+                global.uv.as_ref(),
+                &package_pb_cloned,
+                global.color,
+            )
+            .await?;
 
-    build_package(&env, &global.project, tempdir.path(), &package_pb).await?;
-    project_file.revert()?;
+            let project_file = RevertFile::save(pyproject_path(&global.project))?;
+            let mut new_project = project.clone();
+            new_project.set_name(package_name);
+            std::fs::write(&project_file, new_project.toml()?)?;
+            build_package(&env, &global.project, tempdir.path(), &package_pb_cloned).await?;
+            project_file.revert()?;
 
-    package_pb.set_message("Uploading package");
+            package_pb_cloned.set_message("Uploading package");
+            upload_file(&client, package_tar_file, upload_url, "application/gzip").await
+        }
+        .map(move |res| {
+            if res.is_ok() {
+                package_pb.finish_with_message("Package uploaded");
+            } else {
+                package_pb.finish_with_message("An error occurred while processing package");
+            }
+            res
+        })
+        .boxed()
+    };
 
-    upload_file(&s3_client, package_tar_file, upload_url, "application/gzip").await?;
-
-    package_pb.finish_with_message("Package uploaded");
+    futures::future::try_join_all([evaluation_fut, package_fut]).await?;
 
     let mut validate_pb = ProgressBar::new_spinner().with_message("Validating submission");
     validate_pb.enable_steady_tick(std::time::Duration::from_millis(100));
