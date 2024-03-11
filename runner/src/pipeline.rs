@@ -2,9 +2,13 @@ use crate::python::{
     async_generator, async_python_run, deepcopy, format_err, serde_pickle, serde_pickle_opt,
     AsyncIterator, PyEnv,
 };
-use aqora_config::{AqoraSubmissionConfig, AqoraUseCaseConfig, PathStr, PathStrReplaceError};
+use aqora_config::AqoraUseCaseConfig;
 use futures::prelude::*;
-use pyo3::{exceptions::PyAssertionError, prelude::*, types::PyString};
+use pyo3::{
+    intern,
+    prelude::*,
+    types::{PyDict, PyIterator, PyNone, PyTuple},
+};
 use serde::{Deserialize, Serialize};
 use split_stream_by::{Either, SplitStreamByMapExt};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
@@ -13,25 +17,85 @@ use thiserror::Error;
 #[derive(Debug, Clone)]
 pub struct LayerFunction {
     func: PyObject,
-    context: bool,
+    takes_input_arg: bool,
+    takes_original_input_kwarg: bool,
+    takes_context_kwarg: bool,
 }
 
 impl LayerFunction {
+    pub fn new<'py>(py: Python<'py>, func: &'py PyAny) -> PyResult<Self> {
+        let inspect = py.import(intern!(py, "inspect"))?;
+        let parameter_cls = inspect.getattr(intern!(py, "Parameter"))?;
+        let positional_only = parameter_cls.getattr(intern!(py, "POSITIONAL_ONLY"))?;
+        let positional_or_keyword = parameter_cls.getattr(intern!(py, "POSITIONAL_OR_KEYWORD"))?;
+        let var_positional = parameter_cls.getattr(intern!(py, "VAR_POSITIONAL"))?;
+        let var_keyword = parameter_cls.getattr(intern!(py, "VAR_KEYWORD"))?;
+
+        let mut takes_input_arg = false;
+        let mut takes_original_input_kwarg = false;
+        let mut takes_context_kwarg = false;
+        let parameters = PyIterator::from_object(
+            inspect
+                .getattr(intern!(py, "signature"))?
+                .call1((func,))?
+                .call_method0(intern!(py, "values"))?,
+        )?;
+        for parameter in parameters {
+            let parameter = parameter?;
+            let kind = parameter.getattr(intern!(py, "kind"))?;
+            if kind.eq(positional_only)? || kind.eq(var_positional)? {
+                takes_input_arg = true;
+                continue;
+            }
+            if kind.eq(var_keyword)? {
+                takes_original_input_kwarg = true;
+                takes_context_kwarg = true;
+                continue;
+            }
+            if kind.eq(positional_or_keyword)? && !takes_input_arg {
+                takes_input_arg = true;
+                continue;
+            }
+            let name = parameter.getattr(intern!(py, "name"))?;
+            if name.eq(intern!(py, "original_input"))? {
+                takes_original_input_kwarg = true;
+            } else if name.eq(intern!(py, "context"))? {
+                takes_context_kwarg = true;
+            }
+        }
+        Ok(Self {
+            func: func.to_object(py),
+            takes_input_arg,
+            takes_original_input_kwarg,
+            takes_context_kwarg,
+        })
+    }
+
     pub async fn call(
         &self,
         input: &PyObject,
+        original_input: &PyObject,
         context: &PyObject,
-    ) -> PyResult<LayerFunctionResult> {
-        let input = deepcopy(input)?;
-        let output = if self.context {
-            async_python_run!(|py| self.func.as_ref(py).call1((input, context)))?.await?
-        } else {
-            async_python_run!(|py| self.func.as_ref(py).call1((input,)))?.await?
-        };
-        Ok(LayerFunctionResult {
-            output,
-            context: deepcopy(context)?,
-        })
+    ) -> PyResult<PyObject> {
+        async_python_run!(|py| {
+            let args = if self.takes_input_arg {
+                PyTuple::new(py, [deepcopy(py, input.as_ref(py))?])
+            } else {
+                PyTuple::empty(py)
+            };
+            let kwargs = PyDict::new(py);
+            if self.takes_original_input_kwarg {
+                kwargs.set_item(
+                    intern!(py, "original_input"),
+                    deepcopy(py, original_input.as_ref(py))?,
+                )?;
+            }
+            if self.takes_context_kwarg {
+                kwargs.set_item(intern!(py, "context"), deepcopy(py, context.as_ref(py))?)?;
+            }
+            self.func.as_ref(py).call(args, Some(kwargs))
+        })?
+        .await
     }
 }
 
@@ -39,37 +103,30 @@ impl LayerFunction {
 pub struct Layer {
     name: String,
     transform: Option<LayerFunction>,
+    context: Option<LayerFunction>,
     metric: Option<LayerFunction>,
     branch: Option<LayerFunction>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[pyclass]
-pub struct LayerFunctionResult {
+pub struct LayerEvaluation {
     #[serde(with = "serde_pickle")]
-    output: PyObject,
+    transform: PyObject,
     #[serde(with = "serde_pickle")]
     context: PyObject,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[pyclass]
-pub struct LayerEvaluation {
-    output: LayerFunctionResult,
-    metric: Option<LayerFunctionResult>,
-    branch: Option<LayerFunctionResult>,
+    #[serde(with = "serde_pickle_opt")]
+    metric: Option<PyObject>,
+    #[serde(with = "serde_pickle_opt")]
+    branch: Option<PyObject>,
 }
 
 impl LayerEvaluation {
     fn branch_str(&self) -> PyResult<Option<String>> {
         self.branch
             .as_ref()
-            .map(|branch| Python::with_gil(|py| branch.output.extract::<String>(py)))
+            .map(|branch| Python::with_gil(|py| branch.extract::<String>(py)))
             .transpose()
-    }
-
-    fn next_input(&self) -> PyObject {
-        self.output.output.clone()
     }
 }
 
@@ -77,23 +134,28 @@ impl LayerEvaluation {
 impl LayerEvaluation {
     fn __getitem__(&self, key: &str) -> Option<&PyObject> {
         match key {
-            "output" => Some(&self.output.output),
-            "metric" => self.metric.as_ref().map(|metric| &metric.output),
-            "branch" => self.branch.as_ref().map(|branch| &branch.output),
+            "output" => Some(&self.transform),
+            "context" => Some(&self.context),
+            "metric" => self.metric.as_ref(),
+            "branch" => self.branch.as_ref(),
             _ => None,
         }
     }
     #[getter]
     fn output(&self) -> &PyObject {
-        &self.output.output
+        &self.transform
+    }
+    #[getter]
+    fn context(&self) -> &PyObject {
+        &self.context
     }
     #[getter]
     fn metric(&self) -> Option<&PyObject> {
-        self.metric.as_ref().map(|metric| &metric.output)
+        self.metric.as_ref()
     }
     #[getter]
     fn branch(&self) -> Option<&PyObject> {
-        self.metric.as_ref().map(|branch| &branch.output)
+        self.branch.as_ref()
     }
 }
 
@@ -118,58 +180,43 @@ impl Layer {
     pub async fn evaluate(
         &self,
         input: &PyObject,
+        original_input: &PyObject,
         context: &PyObject,
     ) -> PyResult<LayerEvaluation> {
-        let output = if let Some(transform) = self.transform.as_ref() {
-            transform.call(input, context).await?
+        let context = if let Some(context_transform) = self.context.as_ref() {
+            context_transform
+                .call(input, original_input, context)
+                .await?
         } else {
-            LayerFunctionResult {
-                output: input.clone(),
-                context: context.clone(),
-            }
+            input.clone()
         };
-
+        let transform = if let Some(transform) = self.transform.as_ref() {
+            transform.call(input, original_input, &context).await?
+        } else {
+            input.clone()
+        };
         let metric = if let Some(metric) = self.metric.as_ref() {
-            Some(metric.call(&output.output, context).await?)
+            Some(metric.call(&transform, original_input, &context).await?)
         } else {
             None
         };
 
         let branch = if let Some(branch) = self.branch.as_ref() {
-            Some(branch.call(&output.output, context).await?)
+            Some(branch.call(&transform, original_input, &context).await?)
         } else {
             None
         };
 
         Ok(LayerEvaluation {
-            output,
+            transform,
+            context,
             metric,
             branch,
         })
     }
 
     pub async fn assert_metric(&self, evaluation: &LayerEvaluation) -> PyResult<()> {
-        let new_metric = if let Some(metric) = self.metric.as_ref() {
-            let input = &evaluation.output.output;
-            let context = &evaluation.output.context;
-            Some(metric.call(input, context).await?)
-        } else {
-            None
-        };
-        match (new_metric, evaluation.metric.as_ref()) {
-            (Some(new_metric), Some(metric)) => Python::with_gil(move |py| {
-                if metric.output.as_ref(py).ne(new_metric.output.as_ref(py))? {
-                    Err(PyAssertionError::new_err("Metric mismatch"))
-                } else {
-                    Ok(())
-                }
-            }),
-            (None, None) => Ok(()),
-            _ => {
-                eprintln!("this happens");
-                Err(PyAssertionError::new_err("Metric mismatch"))
-            }
-        }
+        todo!()
     }
 }
 
@@ -202,7 +249,6 @@ impl PipelineConfig {
 #[derive(Clone, Debug)]
 pub struct Evaluator {
     config: PipelineConfig,
-    context: Option<PyObject>,
     layers: Vec<Layer>,
 }
 
@@ -235,21 +281,12 @@ impl Evaluator {
                 }
             }};
         }
-        let context = if let Some(context) = self.context.as_ref() {
-            let context_input = try_or_bail!(deepcopy(&input));
-            try_or_bail!(
-                try_or_bail!(async_python_run!(|py| context
-                    .as_ref(py)
-                    .call1((context_input, self.config.clone().into_py(py)))))
-                .await
-            )
-        } else {
-            try_or_bail!(deepcopy(&input))
-        };
+        let original_input = input.clone();
+        let mut context = Python::with_gil(|py| PyNone::get(py).into_py(py));
         let mut layer_index = 0;
         while layer_index < self.layers.len() {
             let layer = &self.layers[layer_index];
-            let result = try_or_bail!(layer.evaluate(&input, &context).await);
+            let result = try_or_bail!(layer.evaluate(&input, &original_input, &context).await);
             if let Some(branch) = try_or_bail!(result.branch_str()) {
                 layer_index = try_or_bail!(self
                     .layers
@@ -259,7 +296,8 @@ impl Evaluator {
             } else {
                 layer_index += 1;
             }
-            input = result.next_input();
+            input = result.transform.clone();
+            context = result.context.clone();
             out.entry(layer.name.clone()).or_default().push(result);
         }
         Ok(out)
@@ -307,40 +345,19 @@ impl Evaluator {
 pub struct Pipeline {
     generator: PyObject,
     aggregator: PyObject,
-    context: Option<PyObject>,
     layers: Vec<Layer>,
     config: PipelineConfig,
 }
 
-#[derive(Error, Debug)]
-pub enum PipelineImportError {
-    #[error("{}", format_err(_0))]
-    Python(#[from] PyErr),
-    #[error(transparent)]
-    PathStrReplace(#[from] PathStrReplaceError),
-}
-
 impl Pipeline {
     pub fn import(
-        _: &PyEnv,
+        env: &PyEnv,
         use_case: &AqoraUseCaseConfig,
-        submission: &AqoraSubmissionConfig,
         config: PipelineConfig,
-    ) -> Result<Self, PipelineImportError> {
+    ) -> PyResult<Self> {
         Python::with_gil(|py| {
-            let generator =
-                Self::import_path(py, &use_case.generator, &submission.refs)?.into_py(py);
-            let aggregator =
-                Self::import_path(py, &use_case.aggregator, &submission.refs)?.into_py(py);
-            let context = use_case
-                .context
-                .as_ref()
-                .map(|path| {
-                    Result::<_, PipelineImportError>::Ok(
-                        Self::import_path(py, path, &submission.refs)?.into_py(py),
-                    )
-                })
-                .transpose()?;
+            let generator = env.import_path(py, &use_case.generator)?.into_py(py);
+            let aggregator = env.import_path(py, &use_case.aggregator)?.into_py(py);
             let layers = use_case
                 .layers
                 .iter()
@@ -348,48 +365,35 @@ impl Pipeline {
                     let transform = layer
                         .transform
                         .as_ref()
-                        .map(|def| {
-                            Result::<_, PipelineImportError>::Ok(LayerFunction {
-                                func: Self::import_path(py, &def.path, &submission.refs)?
-                                    .into_py(py),
-                                context: def.context,
-                            })
-                        })
+                        .map(|def| LayerFunction::new(py, env.import_path(py, &def.path)?))
+                        .transpose()?;
+                    let context = layer
+                        .context
+                        .as_ref()
+                        .map(|def| LayerFunction::new(py, env.import_path(py, &def.path)?))
                         .transpose()?;
                     let metric = layer
                         .metric
                         .as_ref()
-                        .map(|def| {
-                            Result::<_, PipelineImportError>::Ok(LayerFunction {
-                                func: Self::import_path(py, &def.path, &submission.refs)?
-                                    .into_py(py),
-                                context: def.context,
-                            })
-                        })
+                        .map(|def| LayerFunction::new(py, env.import_path(py, &def.path)?))
                         .transpose()?;
                     let branch = layer
                         .branch
                         .as_ref()
-                        .map(|def| {
-                            Result::<_, PipelineImportError>::Ok(LayerFunction {
-                                func: Self::import_path(py, &def.path, &submission.refs)?
-                                    .into_py(py),
-                                context: def.context,
-                            })
-                        })
+                        .map(|def| LayerFunction::new(py, env.import_path(py, &def.path)?))
                         .transpose()?;
                     Ok(Layer {
                         name: layer.name.clone(),
                         transform,
+                        context,
                         metric,
                         branch,
                     })
                 })
-                .collect::<Result<Vec<_>, PipelineImportError>>()?;
+                .collect::<PyResult<Vec<_>>>()?;
             Ok(Self {
                 generator,
                 aggregator,
-                context,
                 layers,
                 config,
             })
@@ -410,7 +414,6 @@ impl Pipeline {
 
     pub fn evaluator(&self) -> Evaluator {
         Evaluator {
-            context: self.context.clone(),
             layers: self.layers.clone(),
             config: self.config.clone(),
         }
@@ -435,15 +438,5 @@ impl Pipeline {
         .boxed();
         let mut out_stream = futures::stream::select(result, errs);
         out_stream.next().await.transpose()
-    }
-
-    fn import_path<'py>(
-        py: Python<'py>,
-        path: &PathStr,
-        refs: &HashMap<String, PathStr>,
-    ) -> Result<&'py PyAny, PipelineImportError> {
-        let path = path.replace_refs(refs)?;
-        let module = PyModule::import(py, PyString::new(py, &path.module().to_string()))?;
-        Ok(module.getattr(PyString::new(py, path.name()))?)
     }
 }

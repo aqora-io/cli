@@ -1,5 +1,11 @@
+use aqora_config::PathStr;
 use futures::prelude::*;
-use pyo3::{prelude::*, pyclass::IterANextOutput, types::PyType};
+use pyo3::{
+    intern,
+    prelude::*,
+    pyclass::IterANextOutput,
+    types::{PyString, PyType},
+};
 use std::collections::HashSet;
 use std::fmt;
 use std::{
@@ -294,6 +300,11 @@ impl PyEnv {
             .arg(input.as_ref().as_os_str());
         cmd
     }
+
+    pub fn import_path<'py>(&self, py: Python<'py>, path: &PathStr) -> PyResult<&'py PyAny> {
+        let module = PyModule::import(py, PyString::new(py, &path.module().to_string()))?;
+        module.getattr(PyString::new(py, path.name()))
+    }
 }
 
 macro_rules! async_python_run {
@@ -351,11 +362,11 @@ pub fn async_generator(generator: PyObject) -> PyResult<impl Stream<Item = PyRes
     )
 }
 
-pub fn deepcopy(obj: &PyObject) -> PyResult<PyObject> {
-    Python::with_gil(|py| {
-        let copy = py.import("copy")?.getattr("deepcopy")?;
-        Ok(copy.call1((obj,))?.into_py(py))
-    })
+pub fn deepcopy<'py>(py: Python<'py>, obj: &'py PyAny) -> PyResult<&'py PyAny> {
+    let copy = py
+        .import(intern!(py, "copy"))?
+        .getattr(intern!(py, "deepcopy"))?;
+    copy.call1((obj,))
 }
 
 pub mod serde_pickle {

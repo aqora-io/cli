@@ -9,7 +9,7 @@ use crate::{
 use aqora_config::{PyProject, Version};
 use aqora_runner::pipeline::{
     EvaluateAllInfo, EvaluateInputInfo, EvaluationError, EvaluationResult, Evaluator, Pipeline,
-    PipelineConfig, PipelineImportError,
+    PipelineConfig,
 };
 use clap::Args;
 use futures::prelude::*;
@@ -242,6 +242,20 @@ pub async fn test_submission(args: Test, global: GlobalArgs, project: PyProject)
             )
         })?;
 
+    let modified_use_case = {
+        let mut use_case = use_case.clone();
+        if let Err(err) = use_case.replace_refs(&submission.refs) {
+            return Err(error::system(
+                &format!("Failed to import pipeline: {err}"),
+                "Check the pipeline configuration and try again",
+            ));
+        }
+        use_case
+    };
+    let config = PipelineConfig {
+        data: data_path.canonicalize()?,
+    };
+
     let mut pipeline_pb = ProgressBar::new_spinner().with_message("Running pipeline...");
     pipeline_pb.enable_steady_tick(std::time::Duration::from_millis(100));
     pipeline_pb = m.add(pipeline_pb);
@@ -254,24 +268,14 @@ pub async fn test_submission(args: Test, global: GlobalArgs, project: PyProject)
     )
     .await?;
 
-    let config = PipelineConfig {
-        data: data_path.canonicalize()?,
-    };
-    let pipeline = match Pipeline::import(&env, use_case, submission, config) {
+    let pipeline = match Pipeline::import(&env, &modified_use_case, config) {
         Ok(pipeline) => pipeline,
-        Err(PipelineImportError::Python(e)) => {
+        Err(err) => {
             pipeline_pb.finish_with_message("Failed to import pipeline");
-            Python::with_gil(|py| e.print_and_set_sys_last_vars(py));
+            Python::with_gil(|py| err.print_and_set_sys_last_vars(py));
             return Err(error::user(
                 "Failed to import pipeline",
                 "Check the above error and try again",
-            ));
-        }
-        Err(e) => {
-            pipeline_pb.finish_with_message("Failed to import pipeline");
-            return Err(error::system(
-                &format!("Failed to import pipeline: {e}"),
-                "Check the pipeline configuration and try again",
             ));
         }
     };
