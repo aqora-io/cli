@@ -164,6 +164,7 @@ interface Entity {
 	bio: String
 	createdAt: DateTime!
 	viewerCan(action: Action!, asOrganization: ID): Boolean!
+	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID): SubmissionConnection!
 }
 
 type EntityConnection {
@@ -294,6 +295,7 @@ type Organization implements Entity & Node {
 	image: Url
 	imageThumbnail: Url
 	users(after: String, before: String, first: Int, last: Int): OrganizationMembershipConnection!
+	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID): SubmissionConnection!
 	viewerCan(action: Action!, asOrganization: ID): Boolean!
 }
 
@@ -418,6 +420,7 @@ type ProjectVersionEvaluation implements Node {
 	score: Float
 	error: String
 	latest: Boolean!
+	max: Boolean!
 	finalizedAt: DateTime
 	createdAt: DateTime!
 	id: ID!
@@ -468,6 +471,7 @@ enum ProjectVersionFileKind {
 	DATA
 	PACKAGE
 	TEMPLATE
+	SUBMISSION_EVALUATION
 }
 
 type Query {
@@ -667,6 +671,8 @@ type User implements Entity & Node {
 	can(action: Action!, on: ID, asOrganization: ID): Boolean!
 	organizations(after: String, before: String, first: Int, last: Int): OrganizationMembershipConnection!
 	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID): SubmissionConnection!
+	topics(after: String, before: String, first: Int, last: Int): TopicConnection!
+	comments(after: String, before: String, first: Int, last: Int): CommentConnection!
 	viewerCan(action: Action!, asOrganization: ID): Boolean!
 }
 

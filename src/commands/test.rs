@@ -1,12 +1,13 @@
 use crate::{
     commands::GlobalArgs,
     dirs::{
-        init_venv, project_data_dir, project_last_run_dir, project_use_case_toml_path,
-        read_pyproject,
+        init_venv, project_data_dir, project_last_run_dir, project_last_run_result,
+        project_use_case_toml_path, read_pyproject,
     },
     error::{self, Result},
+    python::LastRunResult,
 };
-use aqora_config::{PyProject, Version};
+use aqora_config::PyProject;
 use aqora_runner::pipeline::{
     EvaluateAllInfo, EvaluateInputInfo, EvaluationError, EvaluationResult, Evaluator, Pipeline,
     PipelineConfig,
@@ -17,7 +18,6 @@ use indicatif::{MultiProgress, ProgressBar};
 use owo_colors::{OwoColorize, Stream as OwoStream, Style};
 use pyo3::prelude::*;
 use pyo3::{exceptions::PyException, Python};
-use serde::{Deserialize, Serialize};
 use std::{
     path::Path,
     pin::Pin,
@@ -31,14 +31,6 @@ pub struct Test {
     pub test: Vec<usize>,
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct LastRunResult {
-    #[serde(flatten)]
-    pub info: EvaluateAllInfo,
-    pub use_case_version: Option<Version>,
-    pub submission_version: Option<Version>,
-}
-
 fn evaluate(
     evaluator: Evaluator,
     inputs: impl Stream<Item = (usize, PyResult<PyObject>)>,
@@ -50,7 +42,7 @@ fn evaluate(
         .map(move |input| (input, evaluator.clone()))
         .then(|((index, result), evaluator)| async move {
             match result {
-                Ok(input) => match evaluator.evaluate(input.clone()).await {
+                Ok(input) => match evaluator.evaluate(input.clone(), None).await {
                     Ok(result) => (
                         index,
                         EvaluateInputInfo {
@@ -100,10 +92,7 @@ fn evaluate(
                         .if_supports_color(OwoStream::Stdout, |text| text.red()),
                     err = err
                 ));
-                return Err((
-                    item.result,
-                    EvaluationError::Python(PyException::new_err(err)),
-                ));
+                return Err((item.result, EvaluationError::custom(err)));
             }
 
             let is_ok = item.error.is_none();
@@ -202,7 +191,7 @@ pub async fn test_submission(args: Test, global: GlobalArgs, project: PyProject)
         })?;
 
     let last_run_dir = project_last_run_dir(&global.project);
-    let last_run_result_file = last_run_dir.join("result.msgpack");
+    let last_run_result_file = project_last_run_result(&global.project);
     if args.test.is_empty() {
         if last_run_dir.exists() {
             tokio::fs::remove_dir_all(&last_run_dir)

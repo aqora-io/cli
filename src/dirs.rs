@@ -50,6 +50,10 @@ pub fn project_last_run_dir(project_dir: impl AsRef<Path>) -> PathBuf {
     project_config_dir(project_dir).join(LAST_RUN_DIRNAME)
 }
 
+pub fn project_last_run_result(project_dir: impl AsRef<Path>) -> PathBuf {
+    project_last_run_dir(project_dir).join("result.msgpack")
+}
+
 pub fn project_data_dir(project_dir: impl AsRef<Path>, kind: impl ToString) -> PathBuf {
     project_config_dir(project_dir)
         .join(DATA_DIRNAME)

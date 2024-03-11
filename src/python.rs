@@ -2,9 +2,22 @@ use crate::{
     error::{self, Result},
     process::run_command,
 };
-use aqora_runner::python::{PipOptions, PipPackage, PyEnv};
+use aqora_config::Version;
+use aqora_runner::{
+    pipeline::EvaluateAllInfo,
+    python::{PipOptions, PipPackage, PyEnv},
+};
 use indicatif::ProgressBar;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct LastRunResult {
+    #[serde(flatten)]
+    pub info: EvaluateAllInfo,
+    pub use_case_version: Option<Version>,
+    pub submission_version: Option<Version>,
+}
 
 pub async fn build_package(
     env: &PyEnv,

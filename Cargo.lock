@@ -91,7 +91,7 @@ dependencies = [
 
 [[package]]
 name = "aqora"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "aqora-config",
  "aqora-runner",
@@ -135,7 +135,7 @@ dependencies = [
 
 [[package]]
 name = "aqora-config"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "pep440_rs",
  "pyproject-toml",
@@ -146,7 +146,7 @@ dependencies = [
 
 [[package]]
 name = "aqora-runner"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aqora-config",
  "futures",

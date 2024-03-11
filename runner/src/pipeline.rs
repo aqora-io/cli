@@ -11,7 +11,7 @@ use pyo3::{
 };
 use serde::{Deserialize, Serialize};
 use split_stream_by::{Either, SplitStreamByMapExt};
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, path::PathBuf};
 use thiserror::Error;
 
 #[derive(Debug, Clone)]
@@ -38,6 +38,7 @@ impl LayerFunction {
             inspect
                 .getattr(intern!(py, "signature"))?
                 .call1((func,))?
+                .getattr(intern!(py, "parameters"))?
                 .call_method0(intern!(py, "values"))?,
         )?;
         for parameter in parameters {
@@ -63,6 +64,7 @@ impl LayerFunction {
                 takes_context_kwarg = true;
             }
         }
+
         Ok(Self {
             func: func.to_object(py),
             takes_input_arg,
@@ -182,29 +184,36 @@ impl Layer {
         input: &PyObject,
         original_input: &PyObject,
         context: &PyObject,
+        default: Option<&LayerEvaluation>,
     ) -> PyResult<LayerEvaluation> {
         let context = if let Some(context_transform) = self.context.as_ref() {
             context_transform
                 .call(input, original_input, context)
                 .await?
+        } else if let Some(default) = default.as_ref().map(|default| &default.context) {
+            default.clone()
         } else {
-            input.clone()
+            context.clone()
         };
+
         let transform = if let Some(transform) = self.transform.as_ref() {
             transform.call(input, original_input, &context).await?
+        } else if let Some(default) = default.as_ref().map(|default| &default.transform) {
+            default.clone()
         } else {
             input.clone()
         };
+
         let metric = if let Some(metric) = self.metric.as_ref() {
             Some(metric.call(&transform, original_input, &context).await?)
         } else {
-            None
+            default.as_ref().and_then(|default| default.metric.clone())
         };
 
         let branch = if let Some(branch) = self.branch.as_ref() {
             Some(branch.call(&transform, original_input, &context).await?)
         } else {
-            None
+            default.as_ref().and_then(|default| default.branch.clone())
         };
 
         Ok(LayerEvaluation {
@@ -213,10 +222,6 @@ impl Layer {
             metric,
             branch,
         })
-    }
-
-    pub async fn assert_metric(&self, evaluation: &LayerEvaluation) -> PyResult<()> {
-        todo!()
     }
 }
 
@@ -248,7 +253,6 @@ impl PipelineConfig {
 
 #[derive(Clone, Debug)]
 pub struct Evaluator {
-    config: PipelineConfig,
     layers: Vec<Layer>,
 }
 
@@ -265,12 +269,21 @@ pub enum EvaluationError {
     ),
     #[error("Layer not found: {0}")]
     LayerNotFound(String),
+    #[error("{0}")]
+    Custom(String),
+}
+
+impl EvaluationError {
+    pub fn custom(err: impl ToString) -> Self {
+        Self::Custom(err.to_string())
+    }
 }
 
 impl Evaluator {
     pub async fn evaluate(
         &self,
         mut input: PyObject,
+        defaults: Option<&EvaluationResult>,
     ) -> Result<EvaluationResult, (EvaluationResult, EvaluationError)> {
         let mut out = EvaluationResult::new();
         macro_rules! try_or_bail {
@@ -286,7 +299,14 @@ impl Evaluator {
         let mut layer_index = 0;
         while layer_index < self.layers.len() {
             let layer = &self.layers[layer_index];
-            let result = try_or_bail!(layer.evaluate(&input, &original_input, &context).await);
+            let default = defaults
+                .and_then(|defaults| defaults.get(&layer.name))
+                .and_then(|defaults| defaults.get(out.get(&layer.name).map_or(0, |v| v.len())));
+            let result = try_or_bail!(
+                layer
+                    .evaluate(&input, &original_input, &context, default)
+                    .await
+            );
             if let Some(branch) = try_or_bail!(result.branch_str()) {
                 layer_index = try_or_bail!(self
                     .layers
@@ -301,44 +321,6 @@ impl Evaluator {
             out.entry(layer.name.clone()).or_default().push(result);
         }
         Ok(out)
-    }
-
-    pub async fn assert_metric(&self, results: &EvaluationResult) -> Result<(), EvaluationError> {
-        let mut result_indexes = HashMap::<String, usize>::new();
-        let mut layer_index = 0;
-        while layer_index < self.layers.len() {
-            let layer = &self.layers[layer_index];
-            let layer_name = &layer.name;
-            let result_index = *result_indexes.entry(layer_name.clone()).or_insert(0);
-            let result = results
-                .get(layer_name)
-                .ok_or_else(|| EvaluationError::LayerNotFound(layer_name.clone()))?
-                .get(result_index)
-                .ok_or_else(|| EvaluationError::LayerNotFound(layer_name.clone()))?;
-            layer.assert_metric(result).await?;
-            result_indexes.insert(layer_name.clone(), result_index + 1);
-            if let Some(branch) = result.branch_str()? {
-                layer_index = self
-                    .layers
-                    .iter()
-                    .position(|layer| layer.name == branch)
-                    .ok_or_else(|| EvaluationError::LayerNotFound(branch))?;
-            } else {
-                layer_index += 1;
-            }
-        }
-        Ok(())
-    }
-
-    pub fn evaluate_all(
-        self,
-        inputs: impl Stream<Item = PyResult<PyObject>>,
-    ) -> impl Stream<Item = Result<EvaluationResult, (EvaluationResult, EvaluationError)>> {
-        let this = Arc::new(self);
-        inputs
-            .map_err(|err| (EvaluationResult::new(), EvaluationError::Python(err)))
-            .map_ok(move |input| (input, this.clone()))
-            .and_then(|(input, evaluator)| async move { evaluator.evaluate(input).await })
     }
 }
 
@@ -415,7 +397,6 @@ impl Pipeline {
     pub fn evaluator(&self) -> Evaluator {
         Evaluator {
             layers: self.layers.clone(),
-            config: self.config.clone(),
         }
     }
 
