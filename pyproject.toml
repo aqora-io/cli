@@ -21,4 +21,3 @@ aqora = "aqora_cli.aqora_cli:main"
 [tool.maturin]
 module-name = "aqora_cli.aqora_cli"
 features = ["extension-module"]
-python-source = "python"

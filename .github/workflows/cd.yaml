@@ -4,114 +4,109 @@ on:
   push:
     branches:
       - main
-    tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  release:
-    name: Release - ${{ matrix.platform.name }} py${{ matrix.python_version.major}}.${{ matrix.python_version.minor }}
+  linux:
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        python_version:
-          - major: 3
-            minor: 8
-          - major: 3
-            minor: 9
-          - major: 3
-            minor: 10
-          - major: 3
-            minor: 11
-          - major: 3
-            minor: 12
-
-        platform:
-          # linux
-
-          - name: linux-x86_64-gnu
-            os: ubuntu-20.04
-            target: x86_64-unknown-linux-gnu
-            bin: aqora
-            archive: tar.gz
-
-          # windows
-
-          - name: windows-x86_64-msvc
-            os: windows-latest
-            target: x86_64-pc-windows-msvc
-            bin: aqora.exe
-            archive: zip
-
-          - name: windows-x86_64-gnu
-            os: windows-latest
-            target: x86_64-pc-windows-gnu
-            bin: aqora.exe
-            archive: zip
-
-          # macos
-
-          - name: darwin-x86_64
-            os: macos-latest
-            target: x86_64-apple-darwin
-            bin: aqora
-            archive: tar.gz
-
-          - name: darwin-aarch64
-            os: macos-14
-            target: aarch64-apple-darwin
-            bin: aqora
-            archive: tar.gz
-
-        exclude:
-          - platform:
-              name: darwin-aarch64
-              os: macos-14
-              target: aarch64-apple-darwin
-              bin: aqora
-              archive: tar.gz
-            python_version:
-              major: 3
-              minor: 8
-          - platform:
-              name: darwin-aarch64
-              os: macos-14
-              target: aarch64-apple-darwin
-              bin: aqora
-              archive: tar.gz
-            python_version:
-              major: 3
-              minor: 9
-
-    runs-on: ${{ matrix.platform.os }}
+        target: [x86_64, x86, aarch64, armv7, s390x, ppc64le]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
         with:
-          python-version: "${{ matrix.python_version.major }}.${{ matrix.python_version.minor }}"
-      - uses: Swatinem/rust-cache@v2
-      - name: Build binary
-        uses: houseabsolute/actions-rust-cross@v0
+          python-version: '3.10'
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
         with:
-          target: ${{ matrix.platform.target }}
-          args: "--release"
-          strip: true
-      - name: Package as archive
-        shell: bash
-        run: |
-          cd target/${{ matrix.platform.target }}/release
-          if [[ "${{ matrix.platform.archive }}" == "zip" ]]; then
-            7z a ../../../$ARCHIVE_NAME ${{ matrix.platform.bin }}
-          else
-            tar czvf ../../../$ARCHIVE_NAME ${{ matrix.platform.bin }}
-          fi
-          cd -
+          target: ${{ matrix.target }}
+          args: --release --out dist
+          sccache: 'true'
+          manylinux: auto
+      - name: Upload wheels
+        uses: actions/upload-artifact@v3
+        with:
+          name: wheels
+          path: dist
+
+  windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        target: [x64, x86]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          architecture: ${{ matrix.target }}
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist
+          sccache: 'true'
+      - name: Upload wheels
+        uses: actions/upload-artifact@v3
+        with:
+          name: wheels
+          path: dist
+
+  macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        target: [x86_64, aarch64]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist
+          sccache: 'true'
+      - name: Upload wheels
+        uses: actions/upload-artifact@v3
+        with:
+          name: wheels
+          path: dist
+
+  sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+      - name: Upload sdist
+        uses: actions/upload-artifact@v3
+        with:
+          name: wheels
+          path: dist
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    if: "startsWith(github.ref, 'refs/tags/')"
+    needs: [linux, windows, macos, sdist]
+    steps:
+      - uses: actions/download-artifact@v3
+        with:
+          name: wheels
+      - name: Publish to PyPI
+        uses: PyO3/maturin-action@v1
         env:
-          ARCHIVE_NAME: aqora-${{ matrix.platform.name }}-py${{ matrix.python_version.major }}_${{ matrix.python_version.minor }}.${{ matrix.platform.archive }}
-      - name: Publish GitHub release
-        uses: softprops/action-gh-release@v1
-        if: startsWith( github.ref, 'refs/tags/v' )
+          MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         with:
-          draft: true
-          files: "aqora*"
+          command: upload
+          args: --non-interactive --skip-existing *
