@@ -42,15 +42,14 @@ pub enum Commands {
 }
 
 impl Cli {
-    pub async fn run() -> crate::error::Result<()> {
-        let parsed = Self::parse();
-        let global = parsed.global;
+    pub async fn run(self) -> crate::error::Result<()> {
+        let global = self.global;
         if let Err(err) = global.validate() {
             let mut cmd = Self::command();
             cmd.error(clap::error::ErrorKind::InvalidValue, err).exit();
         }
         global.color.set_override();
-        match parsed.commands {
+        match self.commands {
             Commands::Install(args) => install(args, global).await,
             Commands::Login(args) => login(args, global).await,
             Commands::Python(args) => python(args, global).await,

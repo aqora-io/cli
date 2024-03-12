@@ -1,20 +1,11 @@
-mod colors;
-mod commands;
-mod compress;
-mod credentials;
-mod dirs;
-mod download;
-mod error;
-mod graphql_client;
-mod id;
-mod process;
-mod python;
-mod readme;
-mod revert_file;
+use aqora::Cli;
+use clap::Parser;
 
 #[pyo3_asyncio::tokio::main]
 async fn main() -> pyo3::PyResult<()> {
-    if let Err(e) = commands::Cli::run().await {
+    let cli = Cli::parse();
+    pyo3::prepare_freethreaded_python();
+    if let Err(e) = cli.run().await {
         eprintln!("{}", e);
         std::process::exit(1)
     }
