@@ -205,12 +205,6 @@ async fn upload_file(
 pub async fn upload_use_case(args: Upload, global: GlobalArgs, project: PyProject) -> Result<()> {
     let m = MultiProgress::new();
 
-    let mut use_case_pb = ProgressBar::new_spinner().with_message("Updating version");
-    use_case_pb.enable_steady_tick(std::time::Duration::from_millis(100));
-    use_case_pb = m.add(use_case_pb);
-
-    let client = GraphQLClient::new(global.url.parse()?).await?;
-
     let tempdir = tempdir().map_err(|err| {
         error::user(
             &format!("could not create temporary directory: {}", err),
@@ -238,6 +232,18 @@ pub async fn upload_use_case(args: Upload, global: GlobalArgs, project: PyProjec
                 "Please specify a competition in either the pyproject.toml or the command line",
             )
         })?;
+    if config.generator.has_ref() || config.aggregator.has_ref() {
+        return Err(error::user(
+            "Generator and aggregator cannot include references to the submission",
+            "Please remove any `$` from the generator and aggregator paths in your pyproject.toml",
+        ));
+    }
+
+    let mut use_case_pb = ProgressBar::new_spinner().with_message("Updating version");
+    use_case_pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    use_case_pb = m.add(use_case_pb);
+
+    let client = GraphQLClient::new(global.url.parse()?).await?;
     let competition_id = get_competition_id_by_slug(&client, slug).await?;
 
     let version = project.version().ok_or_else(|| {
