@@ -20,7 +20,7 @@ name = "aqora_cli"
 crate-type = ["cdylib", "rlib"]
 
 [features]
-default = ["extension-module"]
+default = []
 extension-module = ["pyo3/extension-module", "pyo3/abi3", "pyo3/abi3-py37", "aqora-runner/extension-module"]
 
 [dependencies]

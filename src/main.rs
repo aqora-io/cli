@@ -1,4 +1,4 @@
-use aqora::Cli;
+use aqora_cli::Cli;
 use clap::Parser;
 
 #[pyo3_asyncio::tokio::main]
