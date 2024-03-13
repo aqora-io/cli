@@ -12,6 +12,17 @@ edition = "2021"
 default-run = "aqora"
 publish = false
 
+[lib]
+name = "aqora_cli"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "aqora"
+
+[features]
+default = []
+extension-module = ["pyo3/extension-module", "pyo3/abi3-py39", "pyo3/abi3"]
+
 [dependencies]
 aqora-config = { path = "config" }
 aqora-runner = { path = "runner" }
@@ -34,7 +45,7 @@ lazy_static = "1.4.0"
 mime = "0.3.17"
 open = "5.0"
 owo-colors = { version = "4.0", features = ["supports-colors"] }
-pyo3 = { version = "0.20", features = ["auto-initialize", "serde"] }
+pyo3 = { version = "0.20", features = ["serde"] }
 pyo3-asyncio = { version = "0.20", features = ["attributes", "tokio-runtime"] }
 rand = "0.8"
 reqwest = { version = "0.11", default-features = false, features = ["stream", "rustls-tls"] }
