@@ -15,8 +15,10 @@ requires-python = ">=3.8"
 Repository = "https://github.com/aqora-io/cli"
 Documentation = "https://github.com/aqora-io/cli"
 
+[project.scripts]
+aqora = "aqora_cli:main"
+
 [tool.maturin]
-bindings = "bin"
-manifest-path = "Cargo.toml"
-module-name = "aqora"
+module-name = "aqora_cli"
 strip = true
+features = ["extension-module"]

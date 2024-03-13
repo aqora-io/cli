@@ -4,11 +4,15 @@ version = "0.1.1"
 edition = "2021"
 publish = false
 
+[features]
+default = []
+extension-module = ["pyo3/extension-module", "pyo3/abi3-py39"]
+
 [dependencies]
 aqora-config = { path = "../config" }
 futures = "0.3"
 lazy_static = "1.4"
-pyo3 = { version = "0.20", features = ["auto-initialize", "serde"] }
+pyo3 = { version = "0.20", features = ["serde"] }
 pyo3-asyncio = { version = "0.20", features = ["attributes", "tokio-runtime"] }
 thiserror = "1.0"
 tokio = { version = "1", features = ["sync", "signal", "process", "fs"] }
