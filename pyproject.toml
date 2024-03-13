@@ -11,6 +11,12 @@ requires-python = ">=3.8"
 # keywords = []
 # classifiers = []
 
+dependencies = [
+    "uv >=0.1.18, <0.2.0",
+    "build >=1.1.1, <2.0.0",
+    "setuptools >=61.0",
+]
+
 [project.urls]
 Repository = "https://github.com/aqora-io/cli"
 Documentation = "https://github.com/aqora-io/cli"
