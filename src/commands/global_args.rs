@@ -8,6 +8,7 @@ pub struct GlobalArgs {
     #[arg(
         long,
         default_value = "https://app.aqora.io",
+        env = "AQORA_URL",
         global = true,
         hide = true
     )]
