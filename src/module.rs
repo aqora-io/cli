@@ -1,4 +1,5 @@
 use crate::commands::Cli;
+use aqora_runner::pipeline::{LayerEvaluation, PipelineConfig};
 use clap::Parser;
 use pyo3::prelude::*;
 
@@ -18,5 +19,7 @@ pub fn main(py: Python<'_>) -> PyResult<()> {
 #[pymodule]
 pub fn aqora_cli(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(main, m)?)?;
+    m.add_class::<PipelineConfig>()?;
+    m.add_class::<LayerEvaluation>()?;
     Ok(())
 }
