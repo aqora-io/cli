@@ -1,9 +1,15 @@
 # Getting Started
 
-To install the CLI, you can run the following script:
+To install the CLI, you can use pip:
 
 ```bash
-curl -LsSf https://raw.githubusercontent.com/aqora-io/cli/main/install.py | python3
+pip install aqora-cli
+```
+
+Or pipx
+
+```bash
+pipx install aqora-cli
 ```
 
 To verify the installation, the following should output helpful information:
