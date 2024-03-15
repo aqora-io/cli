@@ -82,6 +82,8 @@ impl AqoraConfig {
     }
 }
 
+pub type RefMap<'a> = HashMap<String, PathStr<'a>>;
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AqoraUseCaseConfig {
     pub competition: Option<String>,
@@ -89,7 +91,10 @@ pub struct AqoraUseCaseConfig {
     pub template: Option<PathBuf>,
     pub generator: PathStr<'static>,
     pub aggregator: PathStr<'static>,
+    #[serde(default)]
     pub layers: Vec<LayerConfig>,
+    #[serde(default)]
+    pub tests: HashMap<String, TestConfig>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -101,11 +106,38 @@ pub struct LayerConfig {
     pub branch: Option<FunctionDef>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LayerOverride {
+    pub transform: Option<FunctionDef>,
+    pub context: Option<FunctionDef>,
+    pub metric: Option<FunctionDef>,
+    pub branch: Option<FunctionDef>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TestConfig {
+    #[serde(default)]
+    pub refs: RefMap<'static>,
+    pub data: Option<PathBuf>,
+    pub generator: Option<PathStr<'static>>,
+    pub aggregator: Option<PathStr<'static>>,
+    #[serde(default)]
+    pub overrides: HashMap<String, LayerOverride>,
+    pub expected: Option<toml::Value>,
+}
+
+#[derive(Error, Debug)]
+pub enum TestConfigError {
+    #[error("Test not found: {0}")]
+    TestNotFound(String),
+    #[error("Layer not found: {0}")]
+    LayerNotFound(String),
+    #[error(transparent)]
+    PathStrReplaceError(#[from] PathStrReplaceError),
+}
+
 impl AqoraUseCaseConfig {
-    pub fn replace_refs(
-        &mut self,
-        refs: &HashMap<String, PathStr<'_>>,
-    ) -> Result<(), PathStrReplaceError> {
+    pub fn replace_refs(&mut self, refs: &RefMap) -> Result<(), PathStrReplaceError> {
         self.generator = self.generator.replace_refs(refs)?;
         self.aggregator = self.aggregator.replace_refs(refs)?;
         for layer in self.layers.iter_mut() {
@@ -124,6 +156,48 @@ impl AqoraUseCaseConfig {
         }
         Ok(())
     }
+
+    pub fn for_test(&self, test_name: &str) -> Result<AqoraUseCaseConfig, TestConfigError> {
+        let mut out = self.clone();
+        let test = self
+            .tests
+            .get(test_name)
+            .ok_or_else(|| TestConfigError::TestNotFound(test_name.to_string()))?;
+        if let Some(data) = test.data.as_ref() {
+            out.data = data.clone();
+        }
+        if let Some(generator) = test.generator.as_ref() {
+            out.generator = generator.clone();
+        }
+        if let Some(aggregator) = test.aggregator.as_ref() {
+            out.aggregator = aggregator.clone();
+        }
+        for (layer_name, override_) in test.overrides.iter() {
+            if let Some(layer) = out
+                .layers
+                .iter_mut()
+                .find(|layer| layer.name == *layer_name)
+            {
+                if let Some(transform) = override_.transform.as_ref() {
+                    layer.transform = Some(transform.clone());
+                }
+                if let Some(context) = override_.context.as_ref() {
+                    layer.context = Some(context.clone());
+                }
+                if let Some(metric) = override_.metric.as_ref() {
+                    layer.metric = Some(metric.clone());
+                }
+                if let Some(branch) = override_.branch.as_ref() {
+                    layer.branch = Some(branch.clone());
+                }
+            } else {
+                return Err(TestConfigError::LayerNotFound(layer_name.to_string()));
+            }
+        }
+        out.replace_refs(&test.refs)?;
+        Ok(out)
+    }
+
     pub fn ignore_refs(&mut self) -> Result<(), PathStrReplaceError> {
         self.generator = self.generator.replace_refs(&HashMap::new())?;
         self.aggregator = self.aggregator.replace_refs(&HashMap::new())?;
@@ -157,7 +231,8 @@ impl AqoraUseCaseConfig {
 pub struct AqoraSubmissionConfig {
     pub competition: Option<String>,
     pub entity: Option<String>,
-    pub refs: HashMap<String, PathStr<'static>>,
+    #[serde(default)]
+    pub refs: RefMap<'static>,
 }
 
 #[derive(Clone, Serialize, Debug)]

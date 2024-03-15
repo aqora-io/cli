@@ -5,6 +5,7 @@ mod credentials;
 mod dirs;
 mod download;
 mod error;
+mod evaluate;
 mod graphql_client;
 mod id;
 #[cfg(feature = "extension-module")]
