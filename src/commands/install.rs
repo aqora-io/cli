@@ -234,6 +234,32 @@ pub async fn install_submission(
     Ok(())
 }
 
+pub async fn install_use_case(args: Install, global: GlobalArgs) -> Result<()> {
+    let m = MultiProgress::new();
+
+    let mut pb = ProgressBar::new_spinner().with_message("Setting up virtual environment");
+    pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    pb = m.add(pb);
+
+    let env = init_venv(&global.project, global.uv.as_ref(), &pb, global.color).await?;
+
+    pip_install(
+        &env,
+        [PipPackage::editable(&global.project)],
+        &PipOptions {
+            upgrade: args.upgrade,
+            color: global.color.pip(),
+            ..Default::default()
+        },
+        &pb,
+    )
+    .await?;
+
+    pb.finish_with_message("Virtual environment setup");
+
+    Ok(())
+}
+
 pub async fn install(args: Install, global: GlobalArgs) -> Result<()> {
     let project = read_pyproject(&global.project).await?;
     let aqora = project.aqora().ok_or_else(|| {
@@ -245,9 +271,6 @@ pub async fn install(args: Install, global: GlobalArgs) -> Result<()> {
     if aqora.is_submission() {
         install_submission(args, global, project).await
     } else {
-        Err(error::user(
-            "Use cases not supported",
-            "Run install on a submission instead",
-        ))
+        install_use_case(args, global).await
     }
 }
