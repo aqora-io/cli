@@ -2,9 +2,10 @@ use crate::python::{
     async_generator, async_python_run, deepcopy, format_err, serde_pickle, serde_pickle_opt,
     AsyncIterator, PyEnv,
 };
-use aqora_config::AqoraUseCaseConfig;
+use aqora_config::{AqoraUseCaseConfig, FunctionDef};
 use futures::prelude::*;
 use pyo3::{
+    exceptions::PyValueError,
     intern,
     prelude::*,
     types::{PyDict, PyIterator, PyNone, PyTuple},
@@ -102,25 +103,32 @@ impl LayerFunction {
 }
 
 #[derive(Debug, Clone)]
+pub enum LayerFunctionDef {
+    None,
+    Some(LayerFunction),
+    Ignored,
+}
+
+#[derive(Debug, Clone)]
 pub struct Layer {
     name: String,
-    transform: Option<LayerFunction>,
-    context: Option<LayerFunction>,
-    metric: Option<LayerFunction>,
-    branch: Option<LayerFunction>,
+    transform: LayerFunctionDef,
+    context: LayerFunctionDef,
+    metric: LayerFunctionDef,
+    branch: LayerFunctionDef,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[pyclass]
 pub struct LayerEvaluation {
     #[serde(with = "serde_pickle")]
-    transform: PyObject,
+    pub transform: PyObject,
     #[serde(with = "serde_pickle")]
-    context: PyObject,
+    pub context: PyObject,
     #[serde(with = "serde_pickle_opt")]
-    metric: Option<PyObject>,
+    pub metric: Option<PyObject>,
     #[serde(with = "serde_pickle_opt")]
-    branch: Option<PyObject>,
+    pub branch: Option<PyObject>,
 }
 
 impl LayerEvaluation {
@@ -186,34 +194,62 @@ impl Layer {
         context: &PyObject,
         default: Option<&LayerEvaluation>,
     ) -> PyResult<LayerEvaluation> {
-        let context = if let Some(context_transform) = self.context.as_ref() {
-            context_transform
-                .call(input, original_input, context)
-                .await?
-        } else if let Some(default) = default.as_ref().map(|default| &default.context) {
-            default.clone()
-        } else {
-            context.clone()
+        let context = match &self.context {
+            LayerFunctionDef::Some(func) => func.call(input, original_input, context).await?,
+            LayerFunctionDef::Ignored => {
+                if let Some(default) = default {
+                    default.context.clone()
+                } else {
+                    return Err(PyErr::new::<PyValueError, _>(
+                        "Context function is ignored but no default is provided",
+                    ));
+                }
+            }
+            LayerFunctionDef::None => context.clone(),
+        };
+        let transform = match &self.transform {
+            LayerFunctionDef::Some(func) => func.call(input, original_input, &context).await?,
+            LayerFunctionDef::Ignored => {
+                if let Some(default) = default {
+                    default.transform.clone()
+                } else {
+                    return Err(PyErr::new::<PyValueError, _>(
+                        "Transform function is ignored but no default is provided",
+                    ));
+                }
+            }
+            LayerFunctionDef::None => input.clone(),
+        };
+        let metric = match &self.metric {
+            LayerFunctionDef::Some(func) => {
+                Some(func.call(&transform, original_input, &context).await?)
+            }
+            LayerFunctionDef::Ignored => {
+                if let Some(metric) = default.as_ref().and_then(|default| default.metric.as_ref()) {
+                    Some(metric.clone())
+                } else {
+                    return Err(PyErr::new::<PyValueError, _>(
+                        "Metric function is ignored but no default is provided",
+                    ));
+                }
+            }
+            LayerFunctionDef::None => None,
         };
 
-        let transform = if let Some(transform) = self.transform.as_ref() {
-            transform.call(input, original_input, &context).await?
-        } else if let Some(default) = default.as_ref().map(|default| &default.transform) {
-            default.clone()
-        } else {
-            input.clone()
-        };
-
-        let metric = if let Some(metric) = self.metric.as_ref() {
-            Some(metric.call(&transform, original_input, &context).await?)
-        } else {
-            default.as_ref().and_then(|default| default.metric.clone())
-        };
-
-        let branch = if let Some(branch) = self.branch.as_ref() {
-            Some(branch.call(&transform, original_input, &context).await?)
-        } else {
-            default.as_ref().and_then(|default| default.branch.clone())
+        let branch = match &self.branch {
+            LayerFunctionDef::Some(func) => {
+                Some(func.call(&transform, original_input, &context).await?)
+            }
+            LayerFunctionDef::Ignored => {
+                if let Some(branch) = default.as_ref().and_then(|default| default.branch.as_ref()) {
+                    Some(branch.clone())
+                } else {
+                    return Err(PyErr::new::<PyValueError, _>(
+                        "Branch function is ignored but no default is provided",
+                    ));
+                }
+            }
+            LayerFunctionDef::None => None,
         };
 
         Ok(LayerEvaluation {
@@ -344,32 +380,12 @@ impl Pipeline {
                 .layers
                 .iter()
                 .map(|layer| {
-                    let transform = layer
-                        .transform
-                        .as_ref()
-                        .map(|def| LayerFunction::new(py, env.import_path(py, &def.path)?))
-                        .transpose()?;
-                    let context = layer
-                        .context
-                        .as_ref()
-                        .map(|def| LayerFunction::new(py, env.import_path(py, &def.path)?))
-                        .transpose()?;
-                    let metric = layer
-                        .metric
-                        .as_ref()
-                        .map(|def| LayerFunction::new(py, env.import_path(py, &def.path)?))
-                        .transpose()?;
-                    let branch = layer
-                        .branch
-                        .as_ref()
-                        .map(|def| LayerFunction::new(py, env.import_path(py, &def.path)?))
-                        .transpose()?;
                     Ok(Layer {
                         name: layer.name.clone(),
-                        transform,
-                        context,
-                        metric,
-                        branch,
+                        transform: Self::import_function_def(py, env, layer.transform.as_ref())?,
+                        context: Self::import_function_def(py, env, layer.context.as_ref())?,
+                        metric: Self::import_function_def(py, env, layer.metric.as_ref())?,
+                        branch: Self::import_function_def(py, env, layer.branch.as_ref())?,
                     })
                 })
                 .collect::<PyResult<Vec<_>>>()?;
@@ -379,6 +395,23 @@ impl Pipeline {
                 layers,
                 config,
             })
+        })
+    }
+
+    fn import_function_def(
+        py: Python,
+        env: &PyEnv,
+        def: Option<&FunctionDef>,
+    ) -> PyResult<LayerFunctionDef> {
+        Ok(match def {
+            Some(FunctionDef { path }) => {
+                if path.is_ignored() {
+                    LayerFunctionDef::Ignored
+                } else {
+                    LayerFunctionDef::Some(LayerFunction::new(py, env.import_path(py, path)?)?)
+                }
+            }
+            None => LayerFunctionDef::None,
         })
     }
 
