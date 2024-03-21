@@ -460,7 +460,7 @@ async fn test_use_case_test(
                 })?;
 
             let score_json: serde_json::Value = Python::with_gil(|py| {
-                py.import("json")?
+                py.import("ujson")?
                     .getattr("dumps")?
                     .call1((result.clone(),))?
                     .extract::<String>()
