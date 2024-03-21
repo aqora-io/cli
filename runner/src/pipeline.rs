@@ -403,16 +403,18 @@ impl Pipeline {
         env: &PyEnv,
         def: Option<&FunctionDef>,
     ) -> PyResult<LayerFunctionDef> {
-        Ok(match def {
-            Some(FunctionDef { path }) => {
-                if path.has_ref() {
-                    LayerFunctionDef::UseDefault
-                } else {
-                    LayerFunctionDef::Some(LayerFunction::new(py, env.import_path(py, path)?)?)
-                }
+        if let Some(FunctionDef { path }) = def {
+            if path.has_ref() {
+                Ok(LayerFunctionDef::UseDefault)
+            } else {
+                Ok(LayerFunctionDef::Some(LayerFunction::new(
+                    py,
+                    env.import_path(py, path)?,
+                )?))
             }
-            None => LayerFunctionDef::None,
-        })
+        } else {
+            Ok(LayerFunctionDef::None)
+        }
     }
 
     pub fn generator(&self) -> PyResult<impl Stream<Item = PyResult<PyObject>>> {

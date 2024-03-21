@@ -373,3 +373,35 @@ impl<'de> de::Deserialize<'de> for PathStr<'static> {
         deserializer.deserialize_str(PathStrVisitor)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_path_str_no_ref() {
+        let path_str: PathStr = "foo.bar.baz".parse().unwrap();
+        assert_eq!(path_str.module().to_string(), "foo.bar");
+        assert_eq!(path_str.name(), "baz");
+        assert_eq!(path_str.to_string(), "foo.bar.baz");
+        assert!(!path_str.has_ref());
+    }
+
+    #[test]
+    fn test_path_str_with_ref() {
+        let path_str: PathStr = "foo.$bar.baz".parse().unwrap();
+        assert_eq!(path_str.module().to_string(), "foo.$bar");
+        assert_eq!(path_str.name(), "baz");
+        assert_eq!(path_str.to_string(), "foo.$bar.baz");
+        assert!(path_str.has_ref());
+
+        let refs: RefMap = vec![("bar".to_string(), "qux.quux".parse().unwrap())]
+            .into_iter()
+            .collect();
+        let replaced = path_str.replace_refs(&refs).unwrap();
+        assert_eq!(replaced.module().to_string(), "foo.qux.quux");
+        assert_eq!(replaced.name(), "baz");
+        assert_eq!(replaced.to_string(), "foo.qux.quux.baz");
+        assert!(!replaced.has_ref());
+    }
+}
