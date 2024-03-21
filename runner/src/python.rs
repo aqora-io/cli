@@ -60,14 +60,16 @@ pub struct PipOptions {
 }
 
 pub enum PipPackage {
-    Normal(OsString, OsString),
+    Pypi(OsString),
+    Tar(OsString, OsString),
     Editable(PathBuf),
 }
 
 impl fmt::Display for PipPackage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Normal(name, source) => write!(
+            Self::Pypi(name) => write!(f, "{}", name.to_string_lossy()),
+            Self::Tar(name, source) => write!(
                 f,
                 "{} @ {}",
                 name.to_string_lossy(),
@@ -79,8 +81,12 @@ impl fmt::Display for PipPackage {
 }
 
 impl PipPackage {
-    pub fn normal(name: impl Into<OsString>, version: impl Into<OsString>) -> Self {
-        Self::Normal(name.into(), version.into())
+    pub fn pypi(name: impl Into<OsString>) -> Self {
+        Self::Pypi(name.into())
+    }
+
+    pub fn tar(name: impl Into<OsString>, version: impl Into<OsString>) -> Self {
+        Self::Tar(name.into(), version.into())
     }
 
     pub fn editable(path: impl Into<PathBuf>) -> Self {
@@ -89,7 +95,10 @@ impl PipPackage {
 
     fn apply(&self, cmd: &mut Command) {
         match self {
-            Self::Normal(name, source) => {
+            Self::Pypi(name) => {
+                cmd.arg(name);
+            }
+            Self::Tar(name, source) => {
                 let mut arg = OsString::from(name);
                 arg.push(" @ ");
                 arg.push(source);

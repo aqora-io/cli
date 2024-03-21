@@ -199,7 +199,7 @@ pub async fn install_submission(
         let install_fut = pip_install(
             &env,
             [
-                PipPackage::normal(use_case_package_name, use_case_package_url.to_string()),
+                PipPackage::tar(use_case_package_name, use_case_package_url.to_string()),
                 PipPackage::editable(&global.project),
             ],
             &options,
