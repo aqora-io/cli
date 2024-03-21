@@ -136,6 +136,14 @@ pub enum TestConfigError {
     PathStrReplaceError(#[from] PathStrReplaceError),
 }
 
+#[derive(Error, Debug)]
+pub enum UseCaseConfigValidationError {
+    #[error("Generator contains a reference")]
+    GeneratorContainsRef,
+    #[error("Aggregator contains a reference")]
+    AggregatorContainsRef,
+}
+
 impl AqoraUseCaseConfig {
     pub fn replace_refs(&mut self, refs: &RefMap) -> Result<(), PathStrReplaceError> {
         self.generator = self.generator.replace_refs(refs)?;
@@ -198,30 +206,12 @@ impl AqoraUseCaseConfig {
         Ok(out)
     }
 
-    pub fn ignore_refs(&mut self) -> Result<(), PathStrReplaceError> {
-        self.generator = self.generator.replace_refs(&HashMap::new())?;
-        self.aggregator = self.aggregator.replace_refs(&HashMap::new())?;
-        for layer in self.layers.iter_mut() {
-            if let Some(transform) = layer.transform.as_mut() {
-                if transform.path.has_ref() {
-                    layer.transform = Some(FunctionDef::ignored());
-                }
-            }
-            if let Some(context) = layer.context.as_mut() {
-                if context.path.has_ref() {
-                    layer.context = Some(FunctionDef::ignored());
-                }
-            }
-            if let Some(metric) = layer.metric.as_mut() {
-                if metric.path.has_ref() {
-                    layer.metric = Some(FunctionDef::ignored());
-                }
-            }
-            if let Some(branch) = layer.branch.as_mut() {
-                if branch.path.has_ref() {
-                    layer.branch = Some(FunctionDef::ignored());
-                }
-            }
+    pub fn validate(&self) -> Result<(), UseCaseConfigValidationError> {
+        if self.generator.has_ref() {
+            return Err(UseCaseConfigValidationError::GeneratorContainsRef);
+        }
+        if self.aggregator.has_ref() {
+            return Err(UseCaseConfigValidationError::AggregatorContainsRef);
         }
         Ok(())
     }
@@ -238,14 +228,6 @@ pub struct AqoraSubmissionConfig {
 #[derive(Clone, Serialize, Debug)]
 pub struct FunctionDef {
     pub path: PathStr<'static>,
-}
-
-impl FunctionDef {
-    pub fn ignored() -> Self {
-        Self {
-            path: PathStr::ignored(),
-        }
-    }
 }
 
 impl<'de> Deserialize<'de> for FunctionDef {
@@ -301,20 +283,10 @@ impl<'de> Deserialize<'de> for FunctionDef {
 #[derive(Clone)]
 pub struct PathStr<'a>(Cow<'a, [String]>);
 
-const IGNORED_PATH: &[&str] = &["$$"];
-
 #[derive(Error, Debug)]
 pub enum PathStrReplaceError {
     #[error("Ref not found: {0}")]
     RefNotFound(String),
-}
-
-impl PathStr<'static> {
-    pub fn ignored() -> Self {
-        Self(Cow::Owned(
-            IGNORED_PATH.iter().map(|s| s.to_string()).collect(),
-        ))
-    }
 }
 
 impl<'a> PathStr<'a> {
@@ -344,9 +316,6 @@ impl<'a> PathStr<'a> {
     }
     pub fn has_ref(&self) -> bool {
         self.0.iter().any(|part| part.starts_with('$'))
-    }
-    pub fn is_ignored(&self) -> bool {
-        self.0 == IGNORED_PATH
     }
 }
 

@@ -106,7 +106,7 @@ impl LayerFunction {
 pub enum LayerFunctionDef {
     None,
     Some(LayerFunction),
-    Ignored,
+    UseDefault,
 }
 
 #[derive(Debug, Clone)]
@@ -196,7 +196,7 @@ impl Layer {
     ) -> PyResult<LayerEvaluation> {
         let context = match &self.context {
             LayerFunctionDef::Some(func) => func.call(input, original_input, context).await?,
-            LayerFunctionDef::Ignored => {
+            LayerFunctionDef::UseDefault => {
                 if let Some(default) = default {
                     default.context.clone()
                 } else {
@@ -209,7 +209,7 @@ impl Layer {
         };
         let transform = match &self.transform {
             LayerFunctionDef::Some(func) => func.call(input, original_input, &context).await?,
-            LayerFunctionDef::Ignored => {
+            LayerFunctionDef::UseDefault => {
                 if let Some(default) = default {
                     default.transform.clone()
                 } else {
@@ -224,7 +224,7 @@ impl Layer {
             LayerFunctionDef::Some(func) => {
                 Some(func.call(&transform, original_input, &context).await?)
             }
-            LayerFunctionDef::Ignored => {
+            LayerFunctionDef::UseDefault => {
                 if let Some(metric) = default.as_ref().and_then(|default| default.metric.as_ref()) {
                     Some(metric.clone())
                 } else {
@@ -240,7 +240,7 @@ impl Layer {
             LayerFunctionDef::Some(func) => {
                 Some(func.call(&transform, original_input, &context).await?)
             }
-            LayerFunctionDef::Ignored => {
+            LayerFunctionDef::UseDefault => {
                 if let Some(branch) = default.as_ref().and_then(|default| default.branch.as_ref()) {
                     Some(branch.clone())
                 } else {
@@ -405,8 +405,8 @@ impl Pipeline {
     ) -> PyResult<LayerFunctionDef> {
         Ok(match def {
             Some(FunctionDef { path }) => {
-                if path.is_ignored() {
-                    LayerFunctionDef::Ignored
+                if path.has_ref() {
+                    LayerFunctionDef::UseDefault
                 } else {
                     LayerFunctionDef::Some(LayerFunction::new(py, env.import_path(py, path)?)?)
                 }

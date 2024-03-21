@@ -232,10 +232,10 @@ pub async fn upload_use_case(args: Upload, global: GlobalArgs, project: PyProjec
                 "Please specify a competition in either the pyproject.toml or the command line",
             )
         })?;
-    if config.generator.has_ref() || config.aggregator.has_ref() {
+    if let Err(err) = config.validate() {
         return Err(error::user(
-            "Generator and aggregator cannot include references to the submission",
-            "Please remove any `$` from the generator and aggregator paths in your pyproject.toml",
+            &format!("Invalid use case: {err}"),
+            "Please make sure the use case is valid",
         ));
     }
 
