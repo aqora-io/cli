@@ -10,11 +10,10 @@ use clap::ColorChoice;
 use indicatif::ProgressBar;
 use pyo3::Python;
 use std::path::{Path, PathBuf};
-use thiserror::Error;
 
 const AQORA_DIRNAME: &str = ".aqora";
 const DATA_DIRNAME: &str = "data";
-const VENV_DIRNAME: &str = "venv";
+const VENV_DIRNAME: &str = ".venv";
 const LAST_RUN_DIRNAME: &str = "last_run";
 const PYPROJECT_FILENAME: &str = "pyproject.toml";
 const USE_CASE_FILENAME: &str = "use_case.toml";
@@ -45,7 +44,7 @@ pub fn project_config_dir(project_dir: impl AsRef<Path>) -> PathBuf {
 }
 
 pub fn project_venv_dir(project_dir: impl AsRef<Path>) -> PathBuf {
-    project_config_dir(project_dir).join(VENV_DIRNAME)
+    project_dir.as_ref().join(VENV_DIRNAME)
 }
 
 pub fn project_last_run_dir(project_dir: impl AsRef<Path>) -> PathBuf {
@@ -90,34 +89,6 @@ pub async fn read_pyproject(project_dir: impl AsRef<Path>) -> Result<PyProject> 
             "Please make sure the file is valid toml",
         )
     })
-}
-
-#[derive(Debug, Error)]
-enum SymlinkError {
-    #[error("Failed to create symlink from {0} to {1}: {2}")]
-    CreateSymlink(PathBuf, PathBuf, std::io::Error),
-    #[error("{0} directory already exists. Symlink to {1} could not be created.")]
-    VenvDirExists(PathBuf, PathBuf),
-}
-
-fn create_venv_symlink(project_dir: impl AsRef<Path>) -> Result<(), SymlinkError> {
-    let symlink_dir = project_dir.as_ref().join(".venv");
-    let venv_dir = [AQORA_DIRNAME, VENV_DIRNAME].iter().collect::<PathBuf>();
-
-    if symlink_dir.exists() {
-        if symlink_dir.read_link().ok().as_ref() != Some(&venv_dir) {
-            return Err(SymlinkError::VenvDirExists(symlink_dir, venv_dir));
-        }
-        return Ok(());
-    }
-
-    #[cfg(unix)]
-    use std::os::unix::fs::symlink;
-    #[cfg(windows)]
-    use std::os::windows::fs::symlink_dir as symlink;
-
-    symlink(&venv_dir, &symlink_dir)
-        .map_err(|err| SymlinkError::CreateSymlink(symlink_dir, venv_dir, err))
 }
 
 pub fn locate_uv(uv_path: Option<impl AsRef<Path>>) -> Option<PathBuf> {
@@ -222,8 +193,5 @@ pub async fn init_venv(
                 ),
             )
         })?;
-    if let Err(err) = create_venv_symlink(&project_dir) {
-        eprintln!("WARN: {err}");
-    }
     Ok(env)
 }
