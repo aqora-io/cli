@@ -1,6 +1,6 @@
 use crate::{
     commands::{version::version, GlobalArgs},
-    dirs::config_dir,
+    dirs::{config_dir, locate_uv},
     error::Result,
     graphql_client::GraphQLClient,
 };
@@ -36,24 +36,26 @@ pub async fn info(_: Info, global: GlobalArgs) -> Result<()> {
             .map(|c| c.display().to_string())
             .unwrap_or(command)
     };
-    let uv_path = {
-        let uv = global
-            .uv
-            .as_ref()
-            .map(|uv| uv.display().to_string())
-            .unwrap_or("uv".to_string());
-        which(&uv).map(|c| c.display().to_string()).unwrap_or(uv)
-    };
+    let uv_path = { locate_uv(global.uv.as_ref()) };
     let uv_version = {
-        let mut cmd = std::process::Command::new(&uv_path);
-        cmd.arg("--version");
-        cmd.output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        if let Some(uv_path) = uv_path.as_ref() {
+            let mut cmd = std::process::Command::new(uv_path);
+            cmd.arg("--version");
+            cmd.output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        } else {
+            Ok("[not found]".to_string())
+        }
     };
     let viewer = get_viewer_info(&global).await;
     println!("Command {}", command);
     println!("Version {}", version());
-    println!("UV Path {}", uv_path);
+    println!(
+        "UV Path {}",
+        uv_path
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "[not found]".to_string())
+    );
     println!(
         "UV Version {}",
         uv_version.unwrap_or_else(|err| format!("[error: {err}]"))

@@ -7,6 +7,7 @@ use aqora_config::PyProject;
 use aqora_runner::python::PyEnv;
 use clap::ColorChoice;
 use indicatif::ProgressBar;
+use pyo3::Python;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -118,10 +119,45 @@ fn create_venv_symlink(project_dir: impl AsRef<Path>) -> Result<(), SymlinkError
         .map_err(|err| SymlinkError::CreateSymlink(symlink_dir, venv_dir, err))
 }
 
+pub fn locate_uv(uv_path: Option<impl AsRef<Path>>) -> Option<PathBuf> {
+    if let Some(uv_path) = uv_path.as_ref().map(|p| p.as_ref()).filter(|p| p.exists()) {
+        Some(PathBuf::from(uv_path))
+    } else if let Ok(path) = which::which("uv") {
+        Some(path)
+    } else {
+        let mut pipx_home_dirs = vec![];
+        if let Some(home) = std::env::var_os("HOME") {
+            pipx_home_dirs.push(PathBuf::from(home).join(".local").join("pipx"));
+        }
+        if let Some(pipx_home) = std::env::var_os("PIPX_HOME") {
+            pipx_home_dirs.push(PathBuf::from(pipx_home));
+        }
+        if let Ok(data_dir) = Python::with_gil(|py| {
+            py.import(pyo3::intern!(py, "platformdirs"))?
+                .call_method0(pyo3::intern!(py, "user_data_dir"))?
+                .extract::<String>()
+        }) {
+            pipx_home_dirs.push(PathBuf::from(data_dir).join("pipx"));
+        }
+        for pipx_home in pipx_home_dirs {
+            let uv_path = pipx_home
+                .join("venvs")
+                .join("aqora-cli")
+                .join("bin")
+                .join("uv");
+            if uv_path.exists() {
+                return Some(uv_path);
+            }
+        }
+        None
+    }
+}
+
 async fn ensure_uv(uv_path: Option<impl AsRef<Path>>, pb: &ProgressBar) -> Result<PathBuf> {
     if let Some(uv_path) = uv_path
+        .as_ref()
         .map(|p| PathBuf::from(p.as_ref()))
-        .or_else(|| which::which("uv").ok())
+        .or_else(|| locate_uv(uv_path))
     {
         return if uv_path.exists() {
             Ok(uv_path)
