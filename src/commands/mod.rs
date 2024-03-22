@@ -1,3 +1,4 @@
+mod clean;
 mod global_args;
 mod info;
 mod install;
@@ -11,6 +12,7 @@ mod version;
 
 pub use global_args::GlobalArgs;
 
+use clean::{clean, Clean};
 use info::{info, Info};
 use install::{install, Install};
 use login::{login, Login};
@@ -41,6 +43,7 @@ pub enum Commands {
     Test(Test),
     Upload(Upload),
     Template(Template),
+    Clean(Clean),
     #[command(hide = true)]
     Info(Info),
 }
@@ -62,6 +65,7 @@ impl Cli {
                 Commands::Test(args) => test(args, global).await,
                 Commands::Upload(args) => upload(args, global).await,
                 Commands::Template(args) => template(args, global).await,
+                Commands::Clean(args) => clean(args, global).await,
                 Commands::Info(args) => info(args, global).await,
             }
         };
