@@ -14,6 +14,7 @@ mod process;
 mod python;
 mod readme;
 mod revert_file;
+mod shutdown;
 
 pub use commands::Cli;
 

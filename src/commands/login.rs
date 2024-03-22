@@ -2,6 +2,7 @@ use crate::credentials::{with_locked_credentials, Credentials};
 use crate::{
     commands::GlobalArgs,
     error::{self, Result},
+    shutdown::shutdown_signal,
 };
 use axum::{
     extract::{Query, State},
@@ -19,7 +20,6 @@ use serde::Deserialize;
 use std::{future::IntoFuture, sync::Arc};
 use tokio::{
     net::TcpListener,
-    signal,
     sync::{oneshot, Mutex},
 };
 use url::Url;
@@ -95,30 +95,6 @@ where
                 }
             });
         }
-    }
-}
-
-async fn shutdown_signal() {
-    let ctrl_c = async {
-        signal::ctrl_c()
-            .await
-            .expect("failed to install Ctrl+C handler");
-    };
-
-    #[cfg(unix)]
-    let terminate = async {
-        signal::unix::signal(signal::unix::SignalKind::terminate())
-            .expect("failed to install signal handler")
-            .recv()
-            .await;
-    };
-
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
-
-    tokio::select! {
-        _ = ctrl_c => {},
-        _ = terminate => {},
     }
 }
 

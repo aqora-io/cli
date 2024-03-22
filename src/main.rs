@@ -1,13 +1,11 @@
 use aqora_cli::Cli;
 use clap::Parser;
 
-#[pyo3_asyncio::tokio::main]
-async fn main() -> pyo3::PyResult<()> {
-    let cli = Cli::parse();
+fn main() -> pyo3::PyResult<()> {
     pyo3::prepare_freethreaded_python();
-    if let Err(e) = cli.run().await {
-        eprintln!("{}", e);
-        std::process::exit(1)
-    }
-    Ok(())
+    let cli = Cli::parse();
+    let mut builder = pyo3_asyncio::tokio::re_exports::runtime::Builder::new_multi_thread();
+    builder.enable_all();
+    pyo3_asyncio::tokio::init(builder);
+    pyo3::Python::with_gil(|py| cli.run(py))
 }
