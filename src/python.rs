@@ -15,8 +15,8 @@ use std::path::Path;
 pub struct LastRunResult {
     #[serde(flatten)]
     pub info: EvaluateAllInfo,
+    pub time: chrono::DateTime<chrono::Utc>,
     pub use_case_version: Option<Version>,
-    pub submission_version: Option<Version>,
 }
 
 pub async fn build_package(

@@ -2,7 +2,8 @@ use crate::{
     commands::GlobalArgs,
     compress::compress,
     dirs::{
-        init_venv, project_last_run_dir, project_last_run_result, pyproject_path, read_pyproject,
+        init_venv, project_last_run_dir, project_last_run_result, project_use_case_toml_path,
+        pyproject_path, read_pyproject,
     },
     error::{self, Result},
     graphql_client::{custom_scalars::*, GraphQLClient},
@@ -20,6 +21,8 @@ use reqwest::header::{CONTENT_LENGTH, CONTENT_TYPE};
 use std::path::Path;
 use tempfile::tempdir;
 use url::Url;
+
+use super::test::run_submission_tests;
 
 #[derive(Args, Debug)]
 #[command(author, version, about)]
@@ -524,30 +527,15 @@ pub async fn upload_submission(args: Upload, global: GlobalArgs, project: PyProj
         )
     })?;
 
-    let evaluation_path = project_last_run_dir(&global.project);
-    if !evaluation_path.exists() {
-        return Err(error::user(
-            "No last run result found",
-            "Please make sure you have run `aqora test`",
-        ));
-    }
-    let last_run_result: LastRunResult =
-        std::fs::File::open(project_last_run_result(&global.project))
-            .map_err(rmp_serde::decode::Error::InvalidDataRead)
-            .and_then(rmp_serde::from_read)
-            .map_err(|err| {
-                error::user(
-                    &format!("Could not read last run result: {}", err),
-                    "Please make sure your last call to `aqora test` was successful",
-                )
-            })?;
-
-    if last_run_result.submission_version.as_ref() != Some(&version) {
-        return Err(error::user(
-            "Submission version does not match last run result",
-            "Please re-run `aqora test`",
-        ));
-    }
+    let use_case_toml = PyProject::from_toml(
+        tokio::fs::read_to_string(project_use_case_toml_path(&global.project)).await?,
+    )
+    .map_err(|e| {
+        error::system(
+            &format!("Failed to read use case: {e}"),
+            "Try running `aqora install` again",
+        )
+    })?;
 
     let slug = args
         .competition
@@ -571,11 +559,102 @@ pub async fn upload_submission(args: Upload, global: GlobalArgs, project: PyProj
         entity_id.to_package_id()
     );
 
-    if last_run_result.use_case_version.as_ref() != Some(&use_case_version) {
+    if use_case_toml.version().as_ref() != Some(&use_case_version) {
         return Err(error::user(
-            "Use case version does not match last run result",
-            "Please install the latest version with `aqora install --upgrade` and re-run `aqora test`",
+            "Use case is not updated to the latest version",
+            "Please install the latest version with `aqora install`",
         ));
+    }
+
+    let evaluation_path = project_last_run_dir(&global.project);
+    if !evaluation_path.exists() {
+        return Err(error::user(
+            "No last run result found",
+            "Please make sure you have run `aqora test`",
+        ));
+    }
+
+    let last_run_result: Result<LastRunResult> =
+        std::fs::File::open(project_last_run_result(&global.project))
+            .map_err(rmp_serde::decode::Error::InvalidDataRead)
+            .and_then(rmp_serde::from_read)
+            .map_err(|err| {
+                error::user(
+                    &format!("Could not read last run result: {}", err),
+                    "Please make sure your last call to `aqora test` was successful",
+                )
+            });
+
+    if let Ok(last_run_result) = last_run_result.as_ref() {
+        if last_run_result.use_case_version.as_ref() != Some(&use_case_version) {
+            let confirmation = m.suspend(|| {
+                dialoguer::Confirm::new()
+                    .with_prompt(
+                        r#"It seems the use case version has changed since the last test run.
+It is required to run the tests again.
+Do you want to run the tests now?"#,
+                    )
+                    .interact()
+            })?;
+            if confirmation {
+                run_submission_tests(&m, &global, &project, Default::default()).await?;
+            } else {
+                return Err(error::user(
+                    "Use case version does not match last run result",
+                    "Please re-run `aqora test`",
+                ));
+            }
+        } else {
+            let time = last_run_result.time;
+            let mut should_run_tests = false;
+            for entry in ignore::WalkBuilder::new(&global.project)
+                .hidden(false)
+                .build()
+                .skip(1)
+                .flatten()
+            {
+                if let Some(modified) = entry.metadata().ok().and_then(|meta| meta.modified().ok())
+                {
+                    if chrono::DateTime::<chrono::Utc>::from(modified) > time {
+                        println!("{:?}", entry.path());
+                        should_run_tests = true;
+                        break;
+                    }
+                }
+            }
+            if should_run_tests {
+                let confirmation = m.suspend(|| {
+                    dialoguer::Confirm::new()
+                        .with_prompt(
+                            r#"It seems you have made some changes since since the last test run.
+Those changes may not be reflected in the submission unless you re-run the tests.
+Do you want to re-run the tests now?"#,
+                        )
+                        .interact()
+                })?;
+                if confirmation {
+                    run_submission_tests(&m, &global, &project, Default::default()).await?;
+                }
+            }
+        }
+    } else {
+        let confirmation = m.suspend(|| {
+            dialoguer::Confirm::new()
+                .with_prompt(
+                    r#"It seems the last test run result is corrupted or missing.
+It is required to run the tests again.
+Do you want to run the tests now?"#,
+                )
+                .interact()
+        })?;
+        if confirmation {
+            run_submission_tests(&m, &global, &project, Default::default()).await?;
+        } else {
+            return Err(error::user(
+                "Last test run result is corrupted or missing",
+                "Please re-run `aqora test`",
+            ));
+        }
     }
 
     let project_version = client
