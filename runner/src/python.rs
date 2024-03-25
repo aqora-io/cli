@@ -125,11 +125,11 @@ impl PipPackage {
 const LIB_PATH: &str = "lib";
 #[cfg(target_os = "windows")]
 const LIB_PATH: &str = "Lib";
-
 #[cfg(not(target_os = "windows"))]
 const BIN_PATH: &str = "bin";
 #[cfg(target_os = "windows")]
 const BIN_PATH: &str = "Scripts";
+const SITE_PACKAGES_PATH: &str = "site-packages";
 
 #[derive(Debug, Clone)]
 pub struct PyEnv {
@@ -168,47 +168,53 @@ impl PyEnv {
                 cache_path,
             });
         }
+        let mut site_package_dirs = Vec::new();
         let mut lib_dir_entries = tokio::fs::read_dir(venv_path.join(LIB_PATH)).await?;
         while let Some(entry) = lib_dir_entries.next_entry().await? {
             if entry.file_type().await?.is_dir() {
                 let name = entry.file_name();
                 if let Some(name) = name.to_str() {
                     if name.starts_with("python") {
-                        let site_packages = entry.path().join("site-packages");
+                        let site_packages = entry.path().join(SITE_PACKAGES_PATH);
                         if site_packages.exists() {
-                            let mut editable_paths = Vec::new();
-                            let mut entries = tokio::fs::read_dir(&site_packages).await?;
-                            while let Some(entry) = entries.next_entry().await? {
-                                let name = entry.file_name();
-                                if let Some(name) = name.to_str() {
-                                    if name.starts_with("__editable__")
-                                        && name.ends_with(".pth")
-                                        && entry.file_type().await?.is_file()
-                                    {
-                                        editable_paths.push(
-                                            tokio::fs::read_to_string(&entry.path())
-                                                .await?
-                                                .trim()
-                                                .to_string(),
-                                        );
-                                    }
-                                }
-                            }
-                            Python::with_gil(|py| {
-                                let sys = py.import("sys").unwrap();
-                                let append = sys
-                                    .getattr(pyo3::intern!(sys.py(), "path"))?
-                                    .getattr(pyo3::intern!(sys.py(), "append"))?;
-                                append.call1((site_packages,))?;
-                                for path in editable_paths {
-                                    append.call1((path,))?;
-                                }
-                                PyResult::Ok(())
-                            })?;
+                            site_package_dirs.push(site_packages);
                         }
+                    } else if name == SITE_PACKAGES_PATH {
+                        site_package_dirs.push(entry.path());
                     }
                 }
             }
+        }
+        for site_package_dir in site_package_dirs {
+            let mut editable_paths = Vec::new();
+            let mut entries = tokio::fs::read_dir(&site_package_dir).await?;
+            while let Some(entry) = entries.next_entry().await? {
+                let name = entry.file_name();
+                if let Some(name) = name.to_str() {
+                    if name.starts_with("__editable__")
+                        && name.ends_with(".pth")
+                        && entry.file_type().await?.is_file()
+                    {
+                        editable_paths.push(
+                            tokio::fs::read_to_string(&entry.path())
+                                .await?
+                                .trim()
+                                .to_string(),
+                        );
+                    }
+                }
+            }
+            Python::with_gil(|py| {
+                let sys = py.import("sys").unwrap();
+                let append = sys
+                    .getattr(pyo3::intern!(sys.py(), "path"))?
+                    .getattr(pyo3::intern!(sys.py(), "append"))?;
+                append.call1((site_package_dir,))?;
+                for path in editable_paths {
+                    append.call1((path,))?;
+                }
+                PyResult::Ok(())
+            })?;
         }
         INITIALIZED_ENVS.write().await.insert(venv_path.clone());
         Ok(Self {
