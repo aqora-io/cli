@@ -36,7 +36,7 @@ pub async fn info(_: Info, global: GlobalArgs) -> Result<()> {
             .map(|c| c.display().to_string())
             .unwrap_or(command)
     };
-    let uv_path = { locate_uv(global.uv.as_ref()) };
+    let uv_path = locate_uv(global.uv.as_ref()).await;
     let uv_version = {
         if let Some(uv_path) = uv_path.as_ref() {
             let mut cmd = std::process::Command::new(uv_path);
