@@ -8,6 +8,7 @@ mod error;
 mod evaluate;
 mod graphql_client;
 mod id;
+mod manifest;
 #[cfg(feature = "extension-module")]
 mod module;
 mod process;
