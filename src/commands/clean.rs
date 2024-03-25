@@ -1,6 +1,6 @@
 use crate::{
     commands::GlobalArgs,
-    dirs::{project_config_dir, project_venv_dir, project_venv_symlink_path},
+    dirs::{project_config_dir, project_venv_dir},
 };
 use clap::Args;
 use glob::glob;
@@ -18,17 +18,6 @@ pub async fn clean(_: Clean, global: GlobalArgs) -> crate::error::Result<()> {
                 "{}: Failed to remove project config directory at {}: {}",
                 "WARNING".if_supports_color(OwoStream::Stderr, |t| t.yellow()),
                 project_config_dir.display(),
-                err
-            );
-        }
-    }
-    let venv_symlink = project_venv_symlink_path(&global.project);
-    if venv_symlink.exists() {
-        if let Err(err) = tokio::fs::remove_file(&venv_symlink).await {
-            eprintln!(
-                "{}: Failed to remove project venv symlink at {}: {}",
-                "WARNING".if_supports_color(OwoStream::Stderr, |t| t.yellow()),
-                venv_symlink.display(),
                 err
             );
         }
