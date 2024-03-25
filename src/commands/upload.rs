@@ -205,8 +205,59 @@ async fn upload_file(
     }
 }
 
+async fn update_pyproject_version(project: &PyProject, path: impl AsRef<Path>) -> Result<()> {
+    let greater_than = project.version().ok_or_else(|| {
+        error::user(
+            "No version found in pyproject.toml",
+            "Please make sure the project is valid",
+        )
+    })?;
+    let mut release = greater_than.release().to_vec();
+    if let Some(patch) = release.last_mut() {
+        *patch += 1
+    } else {
+        return Err(error::user(
+            "Invalid project version: no release",
+            "Please make sure the project is valid",
+        ));
+    }
+    let version = greater_than.with_release(release);
+    let mut document = tokio::fs::read_to_string(path.as_ref())
+        .await
+        .map_err(|err| {
+            error::user(
+                &format!("Could not read pyproject.toml: {}", err),
+                "Please make sure the file exists",
+            )
+        })?
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|err| {
+            error::user(
+                &format!("Could not parse pyproject.toml: {}", err),
+                "Please make sure the file is valid",
+            )
+        })?;
+    document["project"]["version"] = toml_edit::value(version.to_string());
+    tokio::fs::write(path, document.to_string())
+        .await
+        .map_err(|err| {
+            error::user(
+                &format!("Could not write pyproject.toml: {}", err),
+                "Please make sure you have permission to write to the file",
+            )
+        })?;
+    Ok(())
+}
+
 pub async fn upload_use_case(args: Upload, global: GlobalArgs, project: PyProject) -> Result<()> {
     let m = MultiProgress::new();
+
+    project.validate_version().map_err(|err| {
+        error::user(
+            &format!("Invalid project version: {err}"),
+            "Please make sure the project is valid",
+        )
+    })?;
 
     let mut venv_pb =
         ProgressBar::new_spinner().with_message("Initializing virtual environment...");
@@ -258,12 +309,7 @@ pub async fn upload_use_case(args: Upload, global: GlobalArgs, project: PyProjec
     let client = GraphQLClient::new(global.url.parse()?).await?;
     let competition_id = get_competition_id_by_slug(&client, slug).await?;
 
-    let version = project.version().ok_or_else(|| {
-        error::user(
-            "Could not get project version",
-            "Please make sure the project is valid",
-        )
-    })?;
+    let version = project.version().unwrap();
     let package_name = format!("use-case-{}", competition_id.to_package_id());
     let data_path = global.project.join(&config.data);
     if !data_path.exists() {
@@ -476,6 +522,13 @@ pub async fn upload_use_case(args: Upload, global: GlobalArgs, project: PyProjec
 pub async fn upload_submission(args: Upload, global: GlobalArgs, project: PyProject) -> Result<()> {
     let m = MultiProgress::new();
 
+    project.validate_version().map_err(|err| {
+        error::user(
+            &format!("Invalid project version: {err}"),
+            "Please make sure the project is valid",
+        )
+    })?;
+
     let mut venv_pb =
         ProgressBar::new_spinner().with_message("Initializing virtual environment...");
     venv_pb.enable_steady_tick(std::time::Duration::from_millis(100));
@@ -520,12 +573,7 @@ pub async fn upload_submission(args: Upload, global: GlobalArgs, project: PyProj
         )
     })?;
 
-    let version = project.version().ok_or_else(|| {
-        error::user(
-            "Could not get project version",
-            "Please make sure the project is valid",
-        )
-    })?;
+    let version = project.version().unwrap();
 
     let use_case_toml = PyProject::from_toml(
         tokio::fs::read_to_string(project_use_case_toml_path(&global.project)).await?,
