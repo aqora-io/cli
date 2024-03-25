@@ -121,6 +121,16 @@ impl PipPackage {
     }
 }
 
+#[cfg(not(target_os = "windows"))]
+const LIB_PATH: &str = "lib";
+#[cfg(target_os = "windows")]
+const LIB_PATH: &str = "Lib";
+
+#[cfg(not(target_os = "windows"))]
+const BIN_PATH: &str = "bin";
+#[cfg(target_os = "windows")]
+const BIN_PATH: &str = "Scripts";
+
 #[derive(Debug, Clone)]
 pub struct PyEnv {
     venv_path: PathBuf,
@@ -158,7 +168,7 @@ impl PyEnv {
                 cache_path,
             });
         }
-        let mut lib_dir_entries = tokio::fs::read_dir(venv_path.join("lib")).await?;
+        let mut lib_dir_entries = tokio::fs::read_dir(venv_path.join(LIB_PATH)).await?;
         while let Some(entry) = lib_dir_entries.next_entry().await? {
             if entry.file_type().await?.is_dir() {
                 let name = entry.file_name();
@@ -263,15 +273,15 @@ impl PyEnv {
     }
 
     pub fn python_path(&self) -> PathBuf {
-        self.venv_path.join("bin").join("python")
+        self.venv_path.join(BIN_PATH).join("python")
     }
 
     pub fn uv_path(&self) -> PathBuf {
-        self.venv_path.join("bin").join("uv")
+        self.venv_path.join(BIN_PATH).join("uv")
     }
 
     pub fn activate_path(&self) -> PathBuf {
-        self.venv_path.join("bin").join("activate")
+        self.venv_path.join(BIN_PATH).join("activate")
     }
 
     pub fn python_cmd(&self) -> Command {
