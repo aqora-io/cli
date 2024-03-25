@@ -8,8 +8,11 @@ use aqora_config::PyProject;
 use aqora_runner::python::PyEnv;
 use clap::ColorChoice;
 use indicatif::ProgressBar;
-use pyo3::Python;
-use std::path::{Path, PathBuf};
+use serde::{Deserialize, Serialize};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 const AQORA_DIRNAME: &str = ".aqora";
 const DATA_DIRNAME: &str = "data";
@@ -95,34 +98,64 @@ pub async fn read_pyproject(project_dir: impl AsRef<Path>) -> Result<PyProject> 
     })
 }
 
-pub fn locate_uv(uv_path: Option<impl AsRef<Path>>) -> Option<PathBuf> {
+#[derive(Serialize, Deserialize, Debug)]
+struct PipxAppPath {
+    #[serde(rename = "__Path__")]
+    path: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct PipxVenvPackageMetadata {
+    app_paths_of_dependencies: Option<HashMap<String, Vec<PipxAppPath>>>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct PipxVenvMetadata {
+    main_package: Option<PipxVenvPackageMetadata>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct PipxVenv {
+    metadata: Option<PipxVenvMetadata>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct PipxList {
+    pipx_spec_version: String,
+    venvs: HashMap<String, PipxVenv>,
+}
+
+pub async fn locate_uv(uv_path: Option<impl AsRef<Path>>) -> Option<PathBuf> {
     if let Some(uv_path) = uv_path.as_ref().map(|p| p.as_ref()).filter(|p| p.exists()) {
         Some(PathBuf::from(uv_path))
     } else if let Ok(path) = which::which("uv") {
         Some(path)
     } else {
-        let mut pipx_home_dirs = vec![];
-        if let Some(home) = std::env::var_os("HOME") {
-            pipx_home_dirs.push(PathBuf::from(home).join(".local").join("pipx"));
-        }
-        if let Some(pipx_home) = std::env::var_os("PIPX_HOME") {
-            pipx_home_dirs.push(PathBuf::from(pipx_home));
-        }
-        if let Ok(data_dir) = Python::with_gil(|py| {
-            py.import(pyo3::intern!(py, "platformdirs"))?
-                .call_method0(pyo3::intern!(py, "user_data_dir"))?
-                .extract::<String>()
-        }) {
-            pipx_home_dirs.push(PathBuf::from(data_dir).join("pipx"));
-        }
-        for pipx_home in pipx_home_dirs {
-            let uv_path = pipx_home
-                .join("venvs")
-                .join(manifest_name())
-                .join("bin")
-                .join("uv");
-            if uv_path.exists() {
-                return Some(uv_path);
+        let out = serde_json::from_slice::<PipxList>(
+            &tokio::process::Command::new("pipx")
+                .arg("list")
+                .arg("--json")
+                .output()
+                .await
+                .ok()?
+                .stdout,
+        )
+        .ok()?;
+        for path in out
+            .venvs
+            .get(manifest_name())?
+            .metadata
+            .as_ref()?
+            .main_package
+            .as_ref()?
+            .app_paths_of_dependencies
+            .as_ref()?
+            .get("uv")?
+            .iter()
+            .filter_map(|p| p.path.as_ref())
+        {
+            if Path::new(path).exists() {
+                return Some(PathBuf::from(path));
             }
         }
         None
@@ -130,19 +163,21 @@ pub fn locate_uv(uv_path: Option<impl AsRef<Path>>) -> Option<PathBuf> {
 }
 
 async fn ensure_uv(uv_path: Option<impl AsRef<Path>>, pb: &ProgressBar) -> Result<PathBuf> {
-    if let Some(uv_path) = uv_path
-        .as_ref()
-        .map(|p| PathBuf::from(p.as_ref()))
-        .or_else(|| locate_uv(uv_path))
-    {
-        return if uv_path.exists() {
-            Ok(uv_path)
+    if let Some(uv_path) = uv_path.as_ref() {
+        return if uv_path.as_ref().exists() {
+            Ok(uv_path.as_ref().into())
         } else {
             Err(error::user(
-                &format!("`uv` executable not found at {}", uv_path.display()),
+                &format!(
+                    "`uv` executable not found at {}",
+                    uv_path.as_ref().display()
+                ),
                 "Please make sure you have the correct path to `uv`",
             ))
         };
+    }
+    if let Some(uv_path) = locate_uv(uv_path).await {
+        return Ok(uv_path);
     }
 
     let confirmation = pb.suspend(|| {
