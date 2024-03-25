@@ -14,6 +14,14 @@ pub struct PyProject {
     pub tool: Option<Tools>,
 }
 
+#[derive(Error, Debug)]
+pub enum VersionError {
+    #[error("Project version is missing")]
+    MissingVersion,
+    #[error("Project version includes pre-release")]
+    VersionIncludesPrerelease,
+}
+
 impl PyProject {
     pub fn name(&self) -> Option<&str> {
         self.project.as_ref().map(|project| project.name.as_str())
@@ -31,6 +39,17 @@ impl PyProject {
         self.project
             .as_ref()
             .and_then(|project| project.version.to_owned())
+    }
+
+    pub fn validate_version(&self) -> Result<(), VersionError> {
+        if let Some(version) = self.version() {
+            if version.any_prerelease() {
+                return Err(VersionError::VersionIncludesPrerelease);
+            }
+            Ok(())
+        } else {
+            Err(VersionError::MissingVersion)
+        }
     }
 
     pub fn aqora(&self) -> Option<&AqoraConfig> {
