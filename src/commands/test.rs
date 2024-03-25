@@ -62,9 +62,12 @@ fn last_run_items(
     })
 }
 
-pub async fn test_submission(args: Test, global: GlobalArgs, project: PyProject) -> Result<()> {
-    let m = MultiProgress::new();
-
+pub async fn run_submission_tests(
+    m: &MultiProgress,
+    global: &GlobalArgs,
+    project: &PyProject,
+    tests: Vec<String>,
+) -> Result<()> {
     let submission = project
         .aqora()
         .and_then(|aqora| aqora.as_submission())
@@ -98,7 +101,7 @@ pub async fn test_submission(args: Test, global: GlobalArgs, project: PyProject)
 
     let last_run_dir = project_last_run_dir(&global.project);
     let last_run_result_file = project_last_run_result(&global.project);
-    if args.test.is_empty() {
+    if tests.is_empty() {
         if last_run_dir.exists() {
             tokio::fs::remove_dir_all(&last_run_dir)
                 .await
@@ -175,7 +178,7 @@ pub async fn test_submission(args: Test, global: GlobalArgs, project: PyProject)
         }
     };
 
-    let (num_inputs, generator) = if args.test.is_empty() {
+    let (num_inputs, generator) = if tests.is_empty() {
         match pipeline.generator() {
             Ok(generator) => {
                 let num_inputs = Arc::new(AtomicU32::new(0));
@@ -202,8 +205,7 @@ pub async fn test_submission(args: Test, global: GlobalArgs, project: PyProject)
             }
         }
     } else {
-        let tests = args
-            .test
+        let tests = tests
             .iter()
             .map(|test| {
                 test.parse::<usize>().map_err(|_| {
@@ -293,15 +295,15 @@ pub async fn test_submission(args: Test, global: GlobalArgs, project: PyProject)
         &mut file,
         &LastRunResult {
             info: EvaluateAllInfo {
-                score: if args.test.is_empty() {
+                score: if tests.is_empty() {
                     result.as_ref().ok().cloned()
                 } else {
                     None
                 },
                 num_inputs: num_inputs.load(std::sync::atomic::Ordering::Relaxed),
             },
+            time: chrono::Utc::now(),
             use_case_version: use_case_toml.version(),
-            submission_version: project.version(),
         },
     ) {
         return Err(error::user(
@@ -318,6 +320,11 @@ pub async fn test_submission(args: Test, global: GlobalArgs, project: PyProject)
     }
 
     result.map(|_| ())
+}
+
+pub async fn test_submission(args: Test, global: GlobalArgs, project: PyProject) -> Result<()> {
+    let m = MultiProgress::new();
+    run_submission_tests(&m, &global, &project, args.test).await
 }
 
 async fn test_use_case_test(
