@@ -39,20 +39,18 @@ pub async fn pip_install(
     pb: &ProgressBar,
 ) -> Result<()> {
     let modules = modules.into_iter().collect::<Vec<_>>();
-    pb.set_message(format!(
-        "pip install {}",
-        modules
-            .iter()
-            .map(|module| module.to_string())
-            .collect::<Vec<_>>()
-            .join(" ")
-    ));
+    let debug_modules = modules
+        .iter()
+        .map(|module| module.name())
+        .collect::<Vec<_>>()
+        .join(" ");
+    pb.set_message(format!("pip install {debug_modules}",));
     let mut cmd = env.pip_install(modules, options);
     run_command(&mut cmd, pb, Some("pip install"))
         .await
         .map_err(|e| {
             error::system(
-                &format!("Failed to install build module: {e}"),
+                &format!("Failed to pip install {debug_modules}: {e}"),
                 "Please make sure you have permissions to install packages",
             )
         })

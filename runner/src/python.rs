@@ -93,6 +93,16 @@ impl PipPackage {
         Self::Editable(path.into())
     }
 
+    pub fn name(&self) -> String {
+        match self {
+            Self::Pypi(name) => name.as_os_str(),
+            Self::Tar(name, _) => name.as_os_str(),
+            Self::Editable(path) => path.as_os_str(),
+        }
+        .to_string_lossy()
+        .to_string()
+    }
+
     fn apply(&self, cmd: &mut Command) {
         match self {
             Self::Pypi(name) => {
