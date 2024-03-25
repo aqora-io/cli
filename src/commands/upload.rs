@@ -205,6 +205,15 @@ async fn upload_file(
 pub async fn upload_use_case(args: Upload, global: GlobalArgs, project: PyProject) -> Result<()> {
     let m = MultiProgress::new();
 
+    let mut venv_pb =
+        ProgressBar::new_spinner().with_message("Initializing virtual environment...");
+    venv_pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    venv_pb = m.add(venv_pb);
+
+    let env = init_venv(&global.project, global.uv.as_ref(), &venv_pb, global.color).await?;
+
+    venv_pb.finish_with_message("Virtual environment initialized");
+
     let tempdir = tempdir().map_err(|err| {
         error::user(
             &format!("could not create temporary directory: {}", err),
@@ -423,14 +432,6 @@ pub async fn upload_use_case(args: Upload, global: GlobalArgs, project: PyProjec
         let package_pb_cloned = package_pb.clone();
         let client = s3_client.clone();
         async move {
-            let env = init_venv(
-                &global.project,
-                global.uv.as_ref(),
-                &package_pb_cloned,
-                global.color,
-            )
-            .await?;
-
             let project_file = RevertFile::save(pyproject_path(&global.project))?;
             let mut new_project = project.clone();
             new_project.set_name(package_name);
@@ -471,6 +472,15 @@ pub async fn upload_use_case(args: Upload, global: GlobalArgs, project: PyProjec
 
 pub async fn upload_submission(args: Upload, global: GlobalArgs, project: PyProject) -> Result<()> {
     let m = MultiProgress::new();
+
+    let mut venv_pb =
+        ProgressBar::new_spinner().with_message("Initializing virtual environment...");
+    venv_pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    venv_pb = m.add(venv_pb);
+
+    let env = init_venv(&global.project, global.uv.as_ref(), &venv_pb, global.color).await?;
+
+    venv_pb.finish_with_message("Virtual environment initialized");
 
     let mut use_case_pb = ProgressBar::new_spinner().with_message("Updating version");
     use_case_pb.enable_steady_tick(std::time::Duration::from_millis(100));
@@ -662,14 +672,6 @@ pub async fn upload_submission(args: Upload, global: GlobalArgs, project: PyProj
         let package_pb_cloned = package_pb.clone();
         let client = s3_client.clone();
         async move {
-            let env = init_venv(
-                &global.project,
-                global.uv.as_ref(),
-                &package_pb_cloned,
-                global.color,
-            )
-            .await?;
-
             let project_file = RevertFile::save(pyproject_path(&global.project))?;
             let mut new_project = project.clone();
             new_project.set_name(package_name);
