@@ -1,6 +1,7 @@
 use crate::{
     colors::ColorChoiceExt,
     error::{self, Result},
+    manifest::manifest_name,
     process::run_command,
 };
 use aqora_config::PyProject;
@@ -142,7 +143,7 @@ pub fn locate_uv(uv_path: Option<impl AsRef<Path>>) -> Option<PathBuf> {
         for pipx_home in pipx_home_dirs {
             let uv_path = pipx_home
                 .join("venvs")
-                .join("aqora-cli")
+                .join(manifest_name())
                 .join("bin")
                 .join("uv");
             if uv_path.exists() {
