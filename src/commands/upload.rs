@@ -32,19 +32,24 @@ pub struct Upload {
 
 #[derive(GraphQLQuery)]
 #[graphql(
-    query_path = "src/graphql/competition_id_by_slug.graphql",
+    query_path = "src/graphql/competition_by_slug.graphql",
     schema_path = "src/graphql/schema.graphql",
     response_derives = "Debug"
 )]
-pub struct CompetitionIdBySlug;
+struct CompetitionBySlug;
 
-pub async fn get_competition_id_by_slug(
+struct CompetitionInfo {
+    id: Id,
+    version: Option<Version>,
+}
+
+async fn get_competition_by_slug(
     client: &GraphQLClient,
     slug: impl Into<String>,
-) -> Result<Id> {
+) -> Result<CompetitionInfo> {
     let slug = slug.into();
     let competition = client
-        .send::<CompetitionIdBySlug>(competition_id_by_slug::Variables { slug: slug.clone() })
+        .send::<CompetitionBySlug>(competition_by_slug::Variables { slug: slug.clone() })
         .await?
         .competition_by_slug
         .ok_or_else(|| {
@@ -53,12 +58,25 @@ pub async fn get_competition_id_by_slug(
                 "Please make sure the competition is correct",
             )
         })?;
-    Id::parse_node_id(competition.id).map_err(|err| {
+    let id = Id::parse_node_id(competition.id).map_err(|err| {
         error::system(
             &format!("Could not parse competition ID: {}", err),
             "This is a bug, please report it",
         )
-    })
+    })?;
+    let version = competition
+        .use_case
+        .latest
+        .map(|latest| {
+            latest.version.parse().map_err(|err| {
+                error::system(
+                    &format!("Invalid use case version found: {err}"),
+                    "Please contact the competition organizer",
+                )
+            })
+        })
+        .transpose()?;
+    Ok(CompetitionInfo { id, version })
 }
 
 #[derive(GraphQLQuery)]
@@ -205,23 +223,17 @@ async fn upload_file(
     }
 }
 
-async fn update_pyproject_version(project: &PyProject, path: impl AsRef<Path>) -> Result<()> {
-    let greater_than = project.version().ok_or_else(|| {
-        error::user(
-            "No version found in pyproject.toml",
-            "Please make sure the project is valid",
-        )
-    })?;
-    let mut release = greater_than.release().to_vec();
+fn increment_version(version: &Version) -> Version {
+    let mut release = version.release().to_vec();
     if let Some(patch) = release.last_mut() {
         *patch += 1
     } else {
-        return Err(error::user(
-            "Invalid project version: no release",
-            "Please make sure the project is valid",
-        ));
+        panic!("Invalid project version: no release");
     }
-    let version = greater_than.with_release(release);
+    version.clone().with_release(release)
+}
+
+async fn update_pyproject_version(path: impl AsRef<Path>, version: &Version) -> Result<()> {
     let mut document = tokio::fs::read_to_string(path.as_ref())
         .await
         .map_err(|err| {
@@ -249,7 +261,11 @@ async fn update_pyproject_version(project: &PyProject, path: impl AsRef<Path>) -
     Ok(())
 }
 
-pub async fn upload_use_case(args: Upload, global: GlobalArgs, project: PyProject) -> Result<()> {
+pub async fn upload_use_case(
+    args: Upload,
+    global: GlobalArgs,
+    mut project: PyProject,
+) -> Result<()> {
     let m = MultiProgress::new();
 
     project.validate_version().map_err(|err| {
@@ -274,7 +290,6 @@ pub async fn upload_use_case(args: Upload, global: GlobalArgs, project: PyProjec
             "Please make sure you have permission to create temporary directories",
         )
     })?;
-    let pyproject_toml = std::fs::read_to_string(pyproject_path(&global.project))?;
     let config = project
         .aqora()
         .and_then(|aqora| aqora.as_use_case())
@@ -283,7 +298,8 @@ pub async fn upload_use_case(args: Upload, global: GlobalArgs, project: PyProjec
                 "Project is not a use case",
                 "Please make sure you are in the correct directory",
             )
-        })?;
+        })?
+        .clone();
 
     let slug = args
         .competition
@@ -307,10 +323,37 @@ pub async fn upload_use_case(args: Upload, global: GlobalArgs, project: PyProjec
     use_case_pb = m.add(use_case_pb);
 
     let client = GraphQLClient::new(global.url.parse()?).await?;
-    let competition_id = get_competition_id_by_slug(&client, slug).await?;
+    let competition = get_competition_by_slug(&client, slug).await?;
 
-    let version = project.version().unwrap();
-    let package_name = format!("use-case-{}", competition_id.to_package_id());
+    let mut version = project.version().unwrap();
+
+    if let Some(competition_version) = competition.version.as_ref() {
+        if competition_version >= &version {
+            let new_version = increment_version(competition_version);
+            let confirmation = m.suspend(|| {
+                dialoguer::Confirm::new()
+                    .with_prompt(format!(
+                        r#"Project version must be greater than {competition_version}.
+Do you want to update the version to {new_version} now?"#
+                    ))
+                    .interact()
+            })?;
+            if confirmation {
+                update_pyproject_version(&pyproject_path(&global.project), &new_version).await?;
+                version = new_version;
+                project = read_pyproject(&global.project).await?;
+            } else {
+                return Err(error::user(
+                    &format!("Project version must be greater than {competition_version}"),
+                    "Please update the project version in pyproject.toml",
+                ));
+            }
+        }
+    }
+
+    let pyproject_toml = std::fs::read_to_string(pyproject_path(&global.project))?;
+
+    let package_name = format!("use-case-{}", competition.id.to_package_id());
     let data_path = global.project.join(&config.data);
     if !data_path.exists() {
         return Err(error::user(
@@ -336,7 +379,7 @@ pub async fn upload_use_case(args: Upload, global: GlobalArgs, project: PyProjec
     })?;
     let project_version = client
         .send::<UpdateUseCaseMutation>(update_use_case_mutation::Variables {
-            competition_id: competition_id.to_node_id(),
+            competition_id: competition.id.to_node_id(),
             pyproject_toml,
             readme,
         })
