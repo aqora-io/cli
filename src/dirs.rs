@@ -158,7 +158,11 @@ pub async fn locate_uv(uv_path: Option<impl AsRef<Path>>) -> Option<PathBuf> {
     }
 }
 
-async fn ensure_uv(uv_path: Option<impl AsRef<Path>>, pb: &ProgressBar) -> Result<PathBuf> {
+async fn ensure_uv(
+    uv_path: Option<impl AsRef<Path>>,
+    pb: &ProgressBar,
+    color: ColorChoice,
+) -> Result<PathBuf> {
     if let Some(uv_path) = uv_path.as_ref() {
         return if uv_path.as_ref().exists() {
             Ok(uv_path.as_ref().into())
@@ -177,7 +181,7 @@ async fn ensure_uv(uv_path: Option<impl AsRef<Path>>, pb: &ProgressBar) -> Resul
     }
 
     let confirmation = pb.suspend(|| {
-        dialoguer::Confirm::new()
+        dialoguer::Confirm::with_theme(color.dialoguer().as_ref())
             .with_prompt("`uv` is required. Install it now? (python3 -m pip install uv)")
             .interact()
     })?;
@@ -215,7 +219,7 @@ pub async fn init_venv(
     color: ColorChoice,
 ) -> Result<PyEnv> {
     pb.set_message("Initializing the Python environment...");
-    let uv_path = ensure_uv(uv_path, pb).await?;
+    let uv_path = ensure_uv(uv_path, pb, color).await?;
     let venv_dir = project_venv_dir(&project_dir);
     let env = PyEnv::init(uv_path, &venv_dir, None::<PathBuf>, color.pip())
         .await

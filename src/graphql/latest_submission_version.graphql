@@ -1,0 +1,11 @@
+query LatestSubmissionVersion($entityId: ID!, $slug: String!) {
+  competitionBySlug(slug: $slug) {
+    submissions(entityId: $entityId) {
+      nodes {
+        latest {
+          version
+        }
+      }
+    }
+  }
+}

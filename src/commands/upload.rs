@@ -1,4 +1,5 @@
 use crate::{
+    colors::ColorChoiceExt,
     commands::GlobalArgs,
     compress::compress,
     dirs::{
@@ -13,7 +14,7 @@ use crate::{
     revert_file::RevertFile,
 };
 use aqora_config::{PyProject, Version};
-use clap::Args;
+use clap::{Args, ColorChoice};
 use futures::prelude::*;
 use graphql_client::GraphQLQuery;
 use indicatif::{MultiProgress, ProgressBar};
@@ -164,6 +165,45 @@ pub async fn get_submission_upload_info(
 
 #[derive(GraphQLQuery)]
 #[graphql(
+    query_path = "src/graphql/latest_submission_version.graphql",
+    schema_path = "src/graphql/schema.graphql",
+    response_derives = "Debug"
+)]
+pub struct LatestSubmissionVersion;
+
+pub async fn get_latest_submission_version(
+    client: &GraphQLClient,
+    slug: String,
+    entity_id: Id,
+) -> Result<Option<Version>> {
+    client
+        .send::<LatestSubmissionVersion>(latest_submission_version::Variables {
+            slug,
+            entity_id: entity_id.to_node_id(),
+        })
+        .await?
+        .competition_by_slug
+        .and_then(|competition| {
+            competition
+                .submissions
+                .nodes
+                .first()
+                .and_then(|submission| {
+                    submission.latest.as_ref().map(|latest| {
+                        latest.version.parse().map_err(|err| {
+                            error::system(
+                                &format!("Invalid submission version found: {err}"),
+                                "Please contact the competition organizer",
+                            )
+                        })
+                    })
+                })
+        })
+        .transpose()
+}
+
+#[derive(GraphQLQuery)]
+#[graphql(
     query_path = "src/graphql/update_use_case.graphql",
     schema_path = "src/graphql/schema.graphql",
     response_derives = "Debug"
@@ -261,6 +301,42 @@ async fn update_pyproject_version(path: impl AsRef<Path>, version: &Version) -> 
     Ok(())
 }
 
+async fn update_project_version(
+    project: &mut PyProject,
+    project_path: impl AsRef<Path>,
+    last_version: Option<&Version>,
+    pb: &ProgressBar,
+    color: ColorChoice,
+) -> Result<Version> {
+    let mut version = project.version().unwrap();
+
+    if let Some(last_version) = last_version {
+        if last_version >= &version {
+            let new_version = increment_version(last_version);
+            let confirmation = pb.suspend(|| {
+                dialoguer::Confirm::with_theme(color.dialoguer().as_ref())
+                    .with_prompt(format!(
+                        r#"Project version must be greater than {last_version}.
+Do you want to update the version to {new_version} now?"#
+                    ))
+                    .interact()
+            })?;
+            if confirmation {
+                update_pyproject_version(&pyproject_path(project_path.as_ref()), &new_version)
+                    .await?;
+                version = new_version;
+                *project = read_pyproject(project_path.as_ref()).await?;
+            } else {
+                return Err(error::user(
+                    &format!("Project version must be greater than {last_version}"),
+                    "Please update the project version in pyproject.toml",
+                ));
+            }
+        }
+    }
+    Ok(version)
+}
+
 pub async fn upload_use_case(
     args: Upload,
     global: GlobalArgs,
@@ -325,31 +401,14 @@ pub async fn upload_use_case(
     let client = GraphQLClient::new(global.url.parse()?).await?;
     let competition = get_competition_by_slug(&client, slug).await?;
 
-    let mut version = project.version().unwrap();
-
-    if let Some(competition_version) = competition.version.as_ref() {
-        if competition_version >= &version {
-            let new_version = increment_version(competition_version);
-            let confirmation = m.suspend(|| {
-                dialoguer::Confirm::new()
-                    .with_prompt(format!(
-                        r#"Project version must be greater than {competition_version}.
-Do you want to update the version to {new_version} now?"#
-                    ))
-                    .interact()
-            })?;
-            if confirmation {
-                update_pyproject_version(&pyproject_path(&global.project), &new_version).await?;
-                version = new_version;
-                project = read_pyproject(&global.project).await?;
-            } else {
-                return Err(error::user(
-                    &format!("Project version must be greater than {competition_version}"),
-                    "Please update the project version in pyproject.toml",
-                ));
-            }
-        }
-    }
+    let version = update_project_version(
+        &mut project,
+        &global.project,
+        competition.version.as_ref(),
+        &use_case_pb,
+        global.color,
+    )
+    .await?;
 
     let pyproject_toml = std::fs::read_to_string(pyproject_path(&global.project))?;
 
@@ -562,7 +621,11 @@ Do you want to update the version to {new_version} now?"#
     Ok(())
 }
 
-pub async fn upload_submission(args: Upload, global: GlobalArgs, project: PyProject) -> Result<()> {
+pub async fn upload_submission(
+    args: Upload,
+    global: GlobalArgs,
+    mut project: PyProject,
+) -> Result<()> {
     let m = MultiProgress::new();
 
     project.validate_version().map_err(|err| {
@@ -585,15 +648,12 @@ pub async fn upload_submission(args: Upload, global: GlobalArgs, project: PyProj
     use_case_pb.enable_steady_tick(std::time::Duration::from_millis(100));
     use_case_pb = m.add(use_case_pb);
 
-    let client = GraphQLClient::new(global.url.parse()?).await?;
-
     let tempdir = tempdir().map_err(|err| {
         error::user(
             &format!("could not create temporary directory: {}", err),
             "Please make sure you have permission to create temporary directories",
         )
     })?;
-    let pyproject_toml = std::fs::read_to_string(pyproject_path(&global.project))?;
     let config = project
         .aqora()
         .and_then(|aqora| aqora.as_submission())
@@ -602,7 +662,8 @@ pub async fn upload_submission(args: Upload, global: GlobalArgs, project: PyProj
                 "Project is not a submission",
                 "Please make sure you are in the correct directory",
             )
-        })?;
+        })?
+        .clone();
 
     let readme = read_readme(
         &global.project,
@@ -615,8 +676,6 @@ pub async fn upload_submission(args: Upload, global: GlobalArgs, project: PyProj
             "Please make sure the readme is valid",
         )
     })?;
-
-    let version = project.version().unwrap();
 
     let use_case_toml = PyProject::from_toml(
         tokio::fs::read_to_string(project_use_case_toml_path(&global.project)).await?,
@@ -639,16 +698,13 @@ pub async fn upload_submission(args: Upload, global: GlobalArgs, project: PyProj
             )
         })?;
 
+    let client = GraphQLClient::new(global.url.parse()?).await?;
+
     let SubmissionUploadInfoResponse {
         entity_id,
         competition_id,
         use_case_version,
     } = get_submission_upload_info(&client, slug, config.entity.as_ref()).await?;
-    let package_name = format!(
-        "submission-{}-{}",
-        competition_id.to_package_id(),
-        entity_id.to_package_id()
-    );
 
     if use_case_toml.version().as_ref() != Some(&use_case_version) {
         return Err(error::user(
@@ -679,7 +735,7 @@ pub async fn upload_submission(args: Upload, global: GlobalArgs, project: PyProj
     if let Ok(last_run_result) = last_run_result.as_ref() {
         if last_run_result.use_case_version.as_ref() != Some(&use_case_version) {
             let confirmation = m.suspend(|| {
-                dialoguer::Confirm::new()
+                dialoguer::Confirm::with_theme(global.color.dialoguer().as_ref())
                     .with_prompt(
                         r#"It seems the use case version has changed since the last test run.
 It is required to run the tests again.
@@ -707,7 +763,6 @@ Do you want to run the tests now?"#,
                 if let Some(modified) = entry.metadata().ok().and_then(|meta| meta.modified().ok())
                 {
                     if chrono::DateTime::<chrono::Utc>::from(modified) > time {
-                        println!("{:?}", entry.path());
                         should_run_tests = true;
                         break;
                     }
@@ -715,7 +770,7 @@ Do you want to run the tests now?"#,
             }
             if should_run_tests {
                 let confirmation = m.suspend(|| {
-                    dialoguer::Confirm::new()
+                    dialoguer::Confirm::with_theme(global.color.dialoguer().as_ref())
                         .with_prompt(
                             r#"It seems you have made some changes since since the last test run.
 Those changes may not be reflected in the submission unless you re-run the tests.
@@ -730,7 +785,7 @@ Do you want to re-run the tests now?"#,
         }
     } else {
         let confirmation = m.suspend(|| {
-            dialoguer::Confirm::new()
+            dialoguer::Confirm::with_theme(global.color.dialoguer().as_ref())
                 .with_prompt(
                     r#"It seems the last test run result is corrupted or missing.
 It is required to run the tests again.
@@ -748,6 +803,20 @@ Do you want to run the tests now?"#,
         }
     }
 
+    let submission_version =
+        get_latest_submission_version(&client, slug.clone(), entity_id).await?;
+
+    let version = update_project_version(
+        &mut project,
+        &global.project,
+        submission_version.as_ref(),
+        &use_case_pb,
+        global.color,
+    )
+    .await?;
+
+    let pyproject_toml = std::fs::read_to_string(pyproject_path(&global.project))?;
+
     let project_version = client
         .send::<UpdateSubmissionMutation>(update_submission_mutation::Variables {
             competition_id: competition_id.to_node_id(),
@@ -761,6 +830,12 @@ Do you want to run the tests now?"#,
     use_case_pb.finish_with_message("Version updated");
 
     let s3_client = reqwest::Client::new();
+
+    let package_name = format!(
+        "submission-{}-{}",
+        competition_id.to_package_id(),
+        entity_id.to_package_id()
+    );
 
     let evaluation_fut = {
         let upload_url = if let Some(url) = project_version
