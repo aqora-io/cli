@@ -20,6 +20,8 @@ pub enum VersionError {
     MissingVersion,
     #[error("Project version includes pre-release")]
     VersionIncludesPrerelease,
+    #[error("Version release contains too many fields")]
+    VersionReleaseTooManyFields,
 }
 
 impl PyProject {
@@ -45,6 +47,8 @@ impl PyProject {
         if let Some(version) = self.version() {
             if version.any_prerelease() {
                 return Err(VersionError::VersionIncludesPrerelease);
+            } else if version.release().len() > 3 {
+                return Err(VersionError::VersionReleaseTooManyFields);
             }
             Ok(())
         } else {

@@ -1,0 +1,10 @@
+query CompetitionBySlug($slug: String!) {
+  competitionBySlug(slug: $slug) {
+    id
+    useCase {
+      latest {
+        version
+      }
+    }
+  }
+}

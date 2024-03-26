@@ -1,5 +1,0 @@
-query CompetitionIdBySlug($slug: String!) {
-  competitionBySlug(slug: $slug) {
-    id
-  }
-}
