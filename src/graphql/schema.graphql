@@ -6,6 +6,8 @@ enum Action {
 	CREATE_COMPETITION
 	UPDATE_COMPETITION
 	DELETE_COMPETITION
+	READ_COMPETITION_RULE_AGREEMENT
+	UPDATE_COMPETITION_RULE_AGREEMENT
 	CREATE_TOPIC
 	UPDATE_TOPIC
 	DELETE_TOPIC
@@ -21,6 +23,12 @@ enum Action {
 	CREATE_SUBMISSION_VERSION
 	UPDATE_PROJECT_VERSION
 	READ_SUBMISSION_PROJECT
+	AWARD_BADGE
+}
+
+enum Badge {
+	TEST
+	UNKNOWN
 }
 
 
@@ -71,9 +79,12 @@ type Competition implements Node {
 	description: String
 	createdAt: DateTime!
 	id: ID!
-	viewerCan(action: Action!, asOrganization: ID): Boolean!
+	viewerCan(action: Action!, asEntity: ID): Boolean!
 	host: Entity!
 	useCase: UseCase!
+	latestRule: CompetitionRule!
+	rules(after: String, before: String, first: Int, last: Int): CompetitionRuleConnection!
+	entityRuleAgreements(after: String, before: String, first: Int, last: Int, entity: ID): CompetitionRuleAgreementConnection!
 	banner: Url
 	thumbnail: Url
 	leaderboard(after: String, before: String, first: Int, last: Int): ProjectVersionEvaluationConnection!
@@ -104,6 +115,79 @@ type CompetitionEdge {
 	The item at the end of the edge
 	"""
 	node: Competition!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+type CompetitionRule implements Node {
+	text: String!
+	createdAt: DateTime!
+	id: ID!
+	competition: Competition!
+	entityAgreement(entity: ID): CompetitionRuleAgreement
+}
+
+type CompetitionRuleAgreement implements Node {
+	createdAt: DateTime!
+	id: ID!
+	competitionRule: CompetitionRule!
+	entity: Entity!
+}
+
+type CompetitionRuleAgreementConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [CompetitionRuleAgreementEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [CompetitionRuleAgreement!]!
+}
+
+"""
+An edge in a connection.
+"""
+type CompetitionRuleAgreementEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: CompetitionRuleAgreement!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+type CompetitionRuleConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [CompetitionRuleEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [CompetitionRule!]!
+}
+
+"""
+An edge in a connection.
+"""
+type CompetitionRuleEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: CompetitionRule!
 	"""
 	A cursor for use in pagination
 	"""
@@ -163,8 +247,44 @@ interface Entity {
 	website: String
 	bio: String
 	createdAt: DateTime!
-	viewerCan(action: Action!, asOrganization: ID): Boolean!
+	viewerCan(action: Action!, asEntity: ID): Boolean!
 	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID): SubmissionConnection!
+	badges(after: String, before: String, first: Int, last: Int): EntityBadgeConnection!
+}
+
+type EntityBadge implements Node {
+	badge: Badge!
+	createdAt: DateTime!
+	id: ID!
+}
+
+type EntityBadgeConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [EntityBadgeEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [EntityBadge!]!
+}
+
+"""
+An edge in a connection.
+"""
+type EntityBadgeEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: EntityBadge!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type EntityConnection {
@@ -239,6 +359,9 @@ type Mutation {
 	oauth2Refresh(input: Oauth2RefreshInput!): Oauth2TokenOutput!
 	createUseCaseVersion(competitionId: ID!, input: UpdateUseCaseInput!): ProjectVersionEdge!
 	validateUseCaseVersion(projectVersionId: ID!): ProjectVersionEdge!
+	awardBadge(entityId: ID!, badge: Badge!): EntityBadgeEdge!
+	withdrawBadge(id: ID!): ID!
+	agreeToCompetitionRule(competition: ID!, asEntity: ID): CompetitionRuleAgreement!
 }
 
 interface Node {
@@ -296,7 +419,8 @@ type Organization implements Entity & Node {
 	imageThumbnail: Url
 	users(after: String, before: String, first: Int, last: Int): OrganizationMembershipConnection!
 	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID): SubmissionConnection!
-	viewerCan(action: Action!, asOrganization: ID): Boolean!
+	viewerCan(action: Action!, asEntity: ID): Boolean!
+	badges(after: String, before: String, first: Int, last: Int): EntityBadgeConnection!
 }
 
 """
@@ -318,7 +442,7 @@ type OrganizationMembership implements Node {
 	id: ID!
 	user: User!
 	organization: Organization!
-	viewerCan(action: Action!, asOrganization: ID): Boolean!
+	viewerCan(action: Action!, asEntity: ID): Boolean!
 }
 
 type OrganizationMembershipConnection {
@@ -383,7 +507,7 @@ interface Project {
 	id: ID!
 	competition: Competition!
 	name: String!
-	viewerCan(action: Action!, asOrganization: ID): Boolean!
+	viewerCan(action: Action!, asEntity: ID): Boolean!
 }
 
 type ProjectVersion implements Node {
@@ -395,7 +519,7 @@ type ProjectVersion implements Node {
 	validatedAt: DateTime
 	createdAt: DateTime!
 	id: ID!
-	viewerCan(action: Action!, asOrganization: ID): Boolean!
+	viewerCan(action: Action!, asEntity: ID): Boolean!
 	entity: Entity!
 	project: Project!
 	files: [ProjectVersionFile!]!
@@ -424,7 +548,7 @@ type ProjectVersionEvaluation implements Node {
 	finalizedAt: DateTime
 	createdAt: DateTime!
 	id: ID!
-	viewerCan(action: Action!, asOrganization: ID): Boolean!
+	viewerCan(action: Action!, asEntity: ID): Boolean!
 	projectVersion: ProjectVersion!
 	submission: Submission!
 }
@@ -461,7 +585,7 @@ type ProjectVersionEvaluationEdge {
 type ProjectVersionFile implements Node {
 	kind: ProjectVersionFileKind!
 	id: ID!
-	viewerCan(action: Action!, asOrganization: ID): Boolean!
+	viewerCan(action: Action!, asEntity: ID): Boolean!
 	projectVersion: ProjectVersion!
 	downloadUrl: Url!
 	uploadUrl: Url
@@ -506,7 +630,7 @@ input SignupUserInput {
 
 type Submission implements Project & Node {
 	id: ID!
-	viewerCan(action: Action!, asOrganization: ID): Boolean!
+	viewerCan(action: Action!, asEntity: ID): Boolean!
 	latest: ProjectVersion
 	competition: Competition!
 	entity: Entity!
@@ -547,7 +671,7 @@ type Topic implements Node {
 	description: String
 	createdAt: DateTime!
 	id: ID!
-	viewerCan(action: Action!, asOrganization: ID): Boolean!
+	viewerCan(action: Action!, asEntity: ID): Boolean!
 	author: Entity!
 	competition: Competition
 	numComments: Int!
@@ -590,6 +714,7 @@ input UpdateCompetitionInput {
 	description: String
 	banner: Upload
 	thumbnail: Upload
+	rules: String
 }
 
 input UpdateOrganizationInput {
@@ -643,7 +768,7 @@ scalar Url
 
 type UseCase implements Project & Node {
 	id: ID!
-	viewerCan(action: Action!, asOrganization: ID): Boolean!
+	viewerCan(action: Action!, asEntity: ID): Boolean!
 	latest: ProjectVersion
 	competition: Competition!
 	name: String!
@@ -668,12 +793,14 @@ type User implements Entity & Node {
 	"""
 	can this user perform the action on the given resource
 	"""
-	can(action: Action!, on: ID, asOrganization: ID): Boolean!
+	can(action: Action!, on: ID, asEntity: ID): Boolean!
 	organizations(after: String, before: String, first: Int, last: Int): OrganizationMembershipConnection!
 	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID): SubmissionConnection!
 	topics(after: String, before: String, first: Int, last: Int): TopicConnection!
 	comments(after: String, before: String, first: Int, last: Int): CommentConnection!
-	viewerCan(action: Action!, asOrganization: ID): Boolean!
+	viewerCan(action: Action!, asEntity: ID): Boolean!
+	badges(after: String, before: String, first: Int, last: Int): EntityBadgeConnection!
+	entities(action: Action, on: ID, search: String, after: String, before: String, first: Int, last: Int): EntityConnection!
 }
 
 """

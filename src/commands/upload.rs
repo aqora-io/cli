@@ -171,35 +171,55 @@ pub async fn get_submission_upload_info(
 )]
 pub struct LatestSubmissionVersion;
 
+#[derive(Debug)]
+pub struct LatestSubmissionVersionResponse {
+    previously_agreed: bool,
+    latest_agreed: bool,
+    version: Option<Version>,
+}
+
 pub async fn get_latest_submission_version(
     client: &GraphQLClient,
     slug: String,
     entity_id: Id,
-) -> Result<Option<Version>> {
-    client
+) -> Result<LatestSubmissionVersionResponse> {
+    let competition = client
         .send::<LatestSubmissionVersion>(latest_submission_version::Variables {
-            slug,
+            slug: slug.clone(),
             entity_id: entity_id.to_node_id(),
         })
         .await?
         .competition_by_slug
-        .and_then(|competition| {
-            competition
-                .submissions
-                .nodes
-                .first()
-                .and_then(|submission| {
-                    submission.latest.as_ref().map(|latest| {
-                        latest.version.parse().map_err(|err| {
-                            error::system(
-                                &format!("Invalid submission version found: {err}"),
-                                "Please contact the competition organizer",
-                            )
-                        })
-                    })
+        .ok_or_else(|| {
+            error::user(
+                &format!("Competition '{}' not found", slug),
+                "Please make sure the competition is correct",
+            )
+        })?;
+
+    let version = competition
+        .submissions
+        .nodes
+        .first()
+        .and_then(|submission| {
+            submission.latest.as_ref().map(|latest| {
+                latest.version.parse().map_err(|err| {
+                    error::system(
+                        &format!("Invalid submission version found: {err}"),
+                        "Please contact the competition organizer",
+                    )
                 })
+            })
         })
-        .transpose()
+        .transpose()?;
+    let latest_agreed = competition.latest_rule.entity_agreement.is_some();
+    let previously_agreed =
+        competition.entity_rule_agreements.nodes.len() > if latest_agreed { 1 } else { 0 };
+    Ok(LatestSubmissionVersionResponse {
+        previously_agreed,
+        latest_agreed,
+        version,
+    })
 }
 
 #[derive(GraphQLQuery)]
@@ -706,6 +726,26 @@ pub async fn upload_submission(
         use_case_version,
     } = get_submission_upload_info(&client, slug, config.entity.as_ref()).await?;
 
+    let LatestSubmissionVersionResponse {
+        version: submission_version,
+        previously_agreed,
+        latest_agreed,
+    } = get_latest_submission_version(&client, slug.clone(), entity_id).await?;
+
+    if !latest_agreed {
+        let message = if previously_agreed {
+            "The competition rules have been updated since you last agreed to them."
+        } else {
+            "You must agree to the competition rules before submitting."
+        };
+        let mut url = global.aqora_url().unwrap();
+        url.set_path(&format!("competitions/{slug}/rules"));
+        return Err(error::user(
+            message,
+            &format!("Please agree to the competition rules at {url}",),
+        ));
+    }
+
     if use_case_toml.version().as_ref() != Some(&use_case_version) {
         return Err(error::user(
             "Use case is not updated to the latest version",
@@ -802,9 +842,6 @@ Do you want to run the tests now?"#,
             ));
         }
     }
-
-    let submission_version =
-        get_latest_submission_version(&client, slug.clone(), entity_id).await?;
 
     let version = update_project_version(
         &mut project,
