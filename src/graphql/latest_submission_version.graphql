@@ -1,5 +1,15 @@
 query LatestSubmissionVersion($entityId: ID!, $slug: String!) {
   competitionBySlug(slug: $slug) {
+    entityRuleAgreements(entity: $entityId, first: 1) {
+      nodes {
+        id
+      }
+    }
+    latestRule {
+      entityAgreement(entity: $entityId) {
+        id
+      }
+    }
     submissions(entityId: $entityId) {
       nodes {
         latest {
