@@ -16,6 +16,7 @@ use aqora_runner::{
 use clap::Args;
 use futures::prelude::*;
 use indicatif::{MultiProgress, ProgressBar};
+use owo_colors::{OwoColorize, Stream as OwoStream};
 use pyo3::prelude::*;
 use pyo3::{exceptions::PyException, Python};
 use std::{
@@ -255,7 +256,12 @@ pub async fn run_submission_tests(
         .await
     {
         Ok(Some(score)) => {
-            pipeline_pb.finish_with_message(format!("Done: {score}"));
+            pipeline_pb.println(format!(
+                "{}: {}",
+                "Score".if_supports_color(OwoStream::Stdout, |text| { text.bold() }),
+                score
+            ));
+            pipeline_pb.finish_and_clear();
             Ok(score)
         }
         Ok(None) => {
