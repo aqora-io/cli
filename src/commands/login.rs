@@ -121,10 +121,11 @@ async fn get_oauth_code(
     let cloned_progress = progress.clone();
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        cloned_progress.set_message("Opening {authorize_url}...");
+        cloned_progress.set_message(format!("Opening {authorize_url}..."));
         if open::that(authorize_url.as_str()).is_err() {
-            cloned_progress
-                .set_message("Failed to open browser, please open {authorize_url} manually");
+            cloned_progress.set_message(format!(
+                "Failed to open browser, please open {authorize_url} manually"
+            ));
         }
         cloned_progress.set_message("Waiting for browser response...");
     });
