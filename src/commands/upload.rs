@@ -432,7 +432,7 @@ pub async fn upload_use_case(
 
     let pyproject_toml = std::fs::read_to_string(pyproject_path(&global.project))?;
 
-    let package_name = format!("use-case-{}", competition.id.to_package_id());
+    let package_name = format!("use_case_{}", competition.id.to_package_id());
     let data_path = global.project.join(&config.data);
     if !data_path.exists() {
         return Err(error::user(
@@ -593,9 +593,8 @@ pub async fn upload_use_case(
                 "This is a bug, please report it",
             ));
         };
-        let package_tar_file = tempdir
-            .path()
-            .join(format!("{package_name}-{version}.tar.gz"));
+        let package_build_path = tempdir.path().join("dist");
+        let package_tar_file = package_build_path.join(format!("{package_name}-{version}.tar.gz"));
         let mut package_pb = ProgressBar::new_spinner().with_message("Building package");
         package_pb.enable_steady_tick(std::time::Duration::from_millis(100));
         package_pb = m.add(package_pb);
@@ -607,7 +606,13 @@ pub async fn upload_use_case(
             let mut new_project = project.clone();
             new_project.set_name(package_name);
             std::fs::write(&project_file, new_project.toml()?)?;
-            build_package(&env, &global.project, tempdir.path(), &package_pb_cloned).await?;
+            build_package(
+                &env,
+                &global.project,
+                package_build_path,
+                &package_pb_cloned,
+            )
+            .await?;
             project_file.revert()?;
 
             package_pb_cloned.set_message("Uploading package");
@@ -647,6 +652,14 @@ pub async fn upload_submission(
     mut project: PyProject,
 ) -> Result<()> {
     let m = MultiProgress::new();
+
+    let use_case_toml_path = project_use_case_toml_path(&global.project);
+    if !use_case_toml_path.exists() {
+        return Err(error::user(
+            "Project not setup",
+            "Run `aqora install` first.",
+        ));
+    }
 
     project.validate_version().map_err(|err| {
         error::user(
@@ -796,6 +809,7 @@ Do you want to run the tests now?"#,
             let mut should_run_tests = false;
             for entry in ignore::WalkBuilder::new(&global.project)
                 .hidden(false)
+                .require_git(false)
                 .build()
                 .skip(1)
                 .flatten()
@@ -869,7 +883,7 @@ Do you want to run the tests now?"#,
     let s3_client = reqwest::Client::new();
 
     let package_name = format!(
-        "submission-{}-{}",
+        "submission_{}_{}",
         competition_id.to_package_id(),
         entity_id.to_package_id()
     );
@@ -944,9 +958,8 @@ Do you want to run the tests now?"#,
                 "This is a bug, please report it",
             ));
         };
-        let package_tar_file = tempdir
-            .path()
-            .join(format!("{package_name}-{version}.tar.gz"));
+        let package_build_path = tempdir.path().join("dist");
+        let package_tar_file = package_build_path.join(format!("{package_name}-{version}.tar.gz"));
         let mut package_pb = ProgressBar::new_spinner().with_message("Building package");
         package_pb.enable_steady_tick(std::time::Duration::from_millis(100));
         package_pb = m.add(package_pb);
@@ -958,7 +971,13 @@ Do you want to run the tests now?"#,
             let mut new_project = project.clone();
             new_project.set_name(package_name);
             std::fs::write(&project_file, new_project.toml()?)?;
-            build_package(&env, &global.project, tempdir.path(), &package_pb_cloned).await?;
+            build_package(
+                &env,
+                &global.project,
+                package_build_path,
+                &package_pb_cloned,
+            )
+            .await?;
             project_file.revert()?;
 
             package_pb_cloned.set_message("Uploading package");
