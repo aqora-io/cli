@@ -24,7 +24,8 @@ impl RevertFile {
             tmp_prefix,
             path.parent().unwrap_or_else(|| ".".as_ref()),
         )?;
-        std::fs::copy(&path, backed_up.path())?;
+        std::fs::rename(&path, backed_up.path())?;
+        std::fs::copy(backed_up.path(), &path)?;
         let mut files = REVERT_FILES.lock().map_err(|_| {
             std::io::Error::new(std::io::ErrorKind::Other, "Could not lock REVERT_FILES")
         })?;
@@ -43,7 +44,7 @@ impl RevertFile {
     }
 
     fn do_revert(&mut self) -> std::io::Result<()> {
-        std::fs::copy(self.backed_up.path(), &self.path)?;
+        std::fs::rename(self.backed_up.path(), &self.path)?;
         self.reverted = true;
         Ok(())
     }

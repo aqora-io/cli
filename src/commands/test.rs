@@ -154,7 +154,7 @@ pub async fn run_submission_tests(
         data: data_path.canonicalize()?,
     };
 
-    let mut pipeline_pb = ProgressBar::new_spinner().with_message("Running pipeline...");
+    let mut pipeline_pb = ProgressBar::new_spinner().with_message("Starting pipeline...");
     pipeline_pb.enable_steady_tick(std::time::Duration::from_millis(100));
     pipeline_pb = m.add(pipeline_pb);
 
@@ -165,6 +165,8 @@ pub async fn run_submission_tests(
         global.color,
     )
     .await?;
+
+    pipeline_pb.set_message("Importing pipeline..");
 
     let pipeline = match Pipeline::import(&env, &modified_use_case, config) {
         Ok(pipeline) => pipeline,
@@ -177,6 +179,8 @@ pub async fn run_submission_tests(
             ));
         }
     };
+
+    pipeline_pb.set_message("Running tests...");
 
     let (num_inputs, generator) = if tests.is_empty() {
         match pipeline.generator() {

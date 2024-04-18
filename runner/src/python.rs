@@ -230,32 +230,31 @@ impl PyEnv {
         color: ColorChoice,
     ) -> Result<(), EnvError> {
         let path = venv_path.as_ref();
-        if path.join("pyvenv.cfg").exists() {
-            return Ok(());
+        if !path.join("pyvenv.cfg").exists() {
+            let mut cmd = Command::new(uv_path.as_ref());
+            cmd.arg("venv")
+                .arg("--python")
+                .arg(PYTHON_VERSION.as_str())
+                .arg(venv_path.as_ref());
+            if let Some(cache_path) = cache_path.as_ref() {
+                cmd.arg("--cache-dir").arg(cache_path.as_ref());
+            }
+            color.apply(&mut cmd);
+            let output = cmd.output().await?;
+            if !output.status.success() {
+                return Err(EnvError::VenvFailed(
+                    String::from_utf8_lossy(&output.stderr).to_string(),
+                ));
+            }
         }
         let mut cmd = Command::new(uv_path.as_ref());
-        cmd.arg("venv")
-            .arg("--python")
-            .arg(PYTHON_VERSION.as_str())
-            .arg(venv_path.as_ref());
-        if let Some(cache_path) = cache_path.as_ref() {
-            cmd.arg("--cache-dir").arg(cache_path.as_ref());
-        }
-        color.apply(&mut cmd);
-        let output = cmd.output().await?;
-        if !output.status.success() {
-            return Err(EnvError::VenvFailed(
-                String::from_utf8_lossy(&output.stderr).to_string(),
-            ));
-        }
-        let mut cmd = Command::new(uv_path.as_ref());
-        cmd.env("VIRTUAL_ENV", venv_path.as_ref())
+        cmd.env("VIRTUAL_ENV", path)
             .arg("pip")
             .arg("install")
             .arg("uv")
             .arg("setuptools")
             .arg("wheel")
-            .arg("build");
+            .arg("build>=1.2,<1.3");
         if let Some(cache_path) = cache_path.as_ref() {
             cmd.arg("--cache-dir").arg(cache_path.as_ref());
         }
@@ -330,6 +329,8 @@ impl PyEnv {
         cmd.arg("-m")
             .arg("build")
             .arg("--sdist")
+            .arg("--installer")
+            .arg("uv")
             .arg("--outdir")
             .arg(output.as_ref().as_os_str())
             .arg(input.as_ref().as_os_str());
