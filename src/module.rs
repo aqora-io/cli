@@ -5,6 +5,7 @@ use pyo3::prelude::*;
 
 #[pyfunction]
 pub fn main(py: Python<'_>) -> PyResult<()> {
+    let _sentry = crate::sentry::setup();
     let cli = Cli::parse_from(std::env::args().skip(1));
     cli.run(py)?;
     Ok(())

@@ -1,6 +1,7 @@
 use toml_edit::DocumentMut;
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=SENTRY_DSN");
     println!("cargo:rerun-if-env-changed=CARGO_PKG_VERSION");
     let version = std::env::var("CARGO_PKG_VERSION").unwrap();
     let mut document = std::fs::read_to_string("pyproject.toml")

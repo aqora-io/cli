@@ -88,8 +88,17 @@ impl Cli {
     }
 
     pub fn run(self, py: pyo3::Python<'_>) -> pyo3::PyResult<()> {
+        let global = &self.global;
+        sentry::configure_scope(|scope| {
+            scope.set_extra("python.version", py.version().into());
+            scope.set_extra("aqora.url", global.url.clone().into());
+        });
+
+        sentry::capture_message("Hello, World!", sentry::Level::Debug);
+
         pyo3_asyncio::tokio::run::<_, ()>(py, async move {
             if let Err(e) = self.do_run().await {
+                sentry::capture_error(&e);
                 eprintln!("{}", e);
                 std::process::exit(1)
             }
