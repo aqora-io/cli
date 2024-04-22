@@ -15,6 +15,7 @@ mod process;
 mod python;
 mod readme;
 mod revert_file;
+pub mod sentry;
 mod shutdown;
 
 pub use commands::Cli;
