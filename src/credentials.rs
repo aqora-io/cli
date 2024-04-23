@@ -8,9 +8,9 @@ use fs4::tokio::AsyncFileExt;
 use futures::{future::BoxFuture, prelude::*};
 use graphql_client::GraphQLQuery;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, io::SeekFrom};
+use std::collections::HashMap;
 use tokio::{
-    fs::OpenOptions,
+    fs::{File, OpenOptions},
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
 };
 use url::Url;
@@ -40,6 +40,14 @@ pub async fn credentials_path() -> Result<std::path::PathBuf> {
 #[derive(Deserialize, Serialize, Debug, Eq, PartialEq, Clone)]
 pub struct CredentialsFile {
     pub credentials: HashMap<Url, Credentials>,
+}
+
+async fn replace_file(file: &mut File, contents: impl AsRef<[u8]>) -> std::io::Result<()> {
+    file.rewind().await?;
+    file.write_all(contents.as_ref()).await?;
+    file.set_len(contents.as_ref().len() as u64).await?;
+    file.sync_all().await?;
+    Ok(())
 }
 
 pub async fn with_locked_credentials<T, F>(f: F) -> Result<T>
@@ -105,20 +113,17 @@ where
         let original_credentials = credentials.clone();
         let res = f(&mut credentials).await?;
         if credentials != original_credentials {
-            file.set_len(0).await?;
-            file.seek(SeekFrom::Start(0)).await?;
-            file.write_all(
-                serde_json::to_vec_pretty(&credentials)
-                    .map_err(|e| {
-                        error::system(&format!("Failed to serialize credentials: {}", e), "")
-                    })?
-                    .as_slice(),
+            replace_file(
+                &mut file,
+                serde_json::to_vec_pretty(&credentials).map_err(|e| {
+                    error::system(&format!("Failed to serialize credentials: {}", e), "")
+                })?,
             )
             .await
             .map_err(|e| {
                 error::system(
                     &format!(
-                        "Failed to write credentials file at {}: {:?}",
+                        "Failed to write credentials file at {}: {}",
                         path.display(),
                         e
                     ),
