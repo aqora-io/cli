@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fs::FileTimes;
 use std::{
     ffi::OsString,
     path::{Path, PathBuf},
@@ -11,8 +12,22 @@ lazy_static::lazy_static! {
 
 pub struct RevertFile {
     backed_up: NamedTempFile,
+    file_times: FileTimes,
     path: PathBuf,
     reverted: bool,
+}
+
+fn get_filetimes(path: impl AsRef<Path>) -> FileTimes {
+    let mut file_times = FileTimes::new();
+    if let Ok(metadata) = std::fs::metadata(path.as_ref()) {
+        if let Ok(accessed) = metadata.accessed() {
+            file_times = file_times.set_accessed(accessed);
+        }
+        if let Ok(modified) = metadata.modified() {
+            file_times = file_times.set_modified(modified);
+        }
+    }
+    file_times
 }
 
 impl RevertFile {
@@ -24,8 +39,8 @@ impl RevertFile {
             tmp_prefix,
             path.parent().unwrap_or_else(|| ".".as_ref()),
         )?;
-        std::fs::rename(&path, backed_up.path())?;
-        std::fs::copy(backed_up.path(), &path)?;
+        let file_times = get_filetimes(&path);
+        std::fs::copy(&path, backed_up.path())?;
         let mut files = REVERT_FILES.lock().map_err(|_| {
             std::io::Error::new(std::io::ErrorKind::Other, "Could not lock REVERT_FILES")
         })?;
@@ -33,6 +48,7 @@ impl RevertFile {
             path.clone(),
             Self {
                 backed_up,
+                file_times,
                 path: path.clone(),
                 reverted: false,
             },
@@ -44,7 +60,10 @@ impl RevertFile {
     }
 
     fn do_revert(&mut self) -> std::io::Result<()> {
-        std::fs::rename(self.backed_up.path(), &self.path)?;
+        std::fs::copy(self.backed_up.path(), &self.path)?;
+        if let Ok(file) = std::fs::File::open(&self.path) {
+            let _ = file.set_times(self.file_times);
+        }
         self.reverted = true;
         Ok(())
     }
