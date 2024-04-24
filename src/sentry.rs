@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use chrono::Utc;
+use colored::Colorize as _;
 
 const RELEASE: &str = concat!(env!("CARGO_CRATE_NAME"), "_", env!("CARGO_PKG_VERSION"));
 
@@ -36,17 +37,32 @@ fn do_not_track() -> bool {
         return value.as_encoded_bytes().iter().any(|b| *b > 0x20u8);
     }
 
-    return false;
+    false
 }
 
 fn fern_setup() {
+    let env_level = std::env::var("AQORA_LOG")
+        .ok()
+        .and_then(|env| env.parse().ok())
+        .unwrap_or(log::LevelFilter::Info);
+
     let mut log = fern::Dispatch::new();
 
     // console logger
     log = log.chain(
         fern::Dispatch::new()
-            .level(log::LevelFilter::Info)
-            .format(|out, message, _record| out.finish(format_args!("{}", message)))
+            .level(env_level)
+            .format(|out, message, record| {
+                let level = match record.level() {
+                    log::Level::Error => "E".red(),
+                    log::Level::Warn => "W".yellow(),
+                    log::Level::Info => "I".green(),
+                    log::Level::Debug => "D".white(),
+                    log::Level::Trace => "T".blue(),
+                };
+
+                out.finish(format_args!("[{level}] {message}"))
+            })
             .chain(std::io::stdout()),
     );
 
@@ -58,7 +74,7 @@ fn fern_setup() {
             if let Ok(file) = fern::log_file(log_path) {
                 log = log.chain(
                     fern::Dispatch::new()
-                        .level(log::LevelFilter::Debug)
+                        .level(std::cmp::max(log::LevelFilter::Debug, env_level))
                         .format(|out, message, record| {
                             out.finish(format_args!(
                                 "[{} {} {}] {}",
