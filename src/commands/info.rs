@@ -1,8 +1,9 @@
 use crate::{
-    commands::{version::version, GlobalArgs},
+    commands::{version::python_version, GlobalArgs},
     dirs::{config_dir, locate_uv},
     error::Result,
     graphql_client::GraphQLClient,
+    manifest::manifest_version,
 };
 use clap::Args;
 use graphql_client::GraphQLQuery;
@@ -48,33 +49,34 @@ pub async fn info(_: Info, global: GlobalArgs) -> Result<()> {
         }
     };
     let viewer = get_viewer_info(&global).await;
-    println!("Command {}", command);
-    println!("Version {}", version());
-    println!(
+    log::info!("Command {}", command);
+    log::info!("Version {}", manifest_version());
+    log::info!("Python {}", python_version());
+    log::info!(
         "UV Path {}",
         uv_path
             .map(|p| p.display().to_string())
             .unwrap_or_else(|| "[not found]".to_string())
     );
-    println!(
+    log::info!(
         "UV Version {}",
         uv_version.unwrap_or_else(|err| format!("[error: {err}]"))
     );
-    println!(
+    log::info!(
         "Config {}",
         config_dir()
             .await
             .map(|p| p.display().to_string())
             .unwrap_or_else(|err| format!("[error: {err}]"))
     );
-    println!("URL {}", global.url);
-    println!(
+    log::info!("URL {}", global.url);
+    log::info!(
         "Viewer {}",
         viewer
             .map(|v| format!("{} {}", v.username, v.id))
             .unwrap_or_else(|err| format!("[error: {err}]"))
     );
-    println!(
+    log::info!(
         "Project {}",
         global
             .project

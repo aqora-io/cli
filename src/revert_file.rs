@@ -90,7 +90,7 @@ impl Drop for RevertFile {
             return;
         }
         if let Err(err) = self.do_revert() {
-            eprintln!("Could not revert file {}: {}", self.path.display(), err);
+            log::error!("Could not revert file {}: {}", self.path.display(), err);
         }
     }
 }
@@ -144,7 +144,7 @@ impl Drop for RevertFileHandle {
             return;
         }
         if let Err(err) = self.do_revert() {
-            eprintln!("Could not revert file {}: {}", self.path.display(), err);
+            log::error!("Could not revert file {}: {}", self.path.display(), err);
         }
     }
 }

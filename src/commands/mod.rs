@@ -26,11 +26,14 @@ use template::{template, Template};
 use test::{test, Test};
 use upload::{upload, Upload};
 
-use crate::{colors::ColorChoiceExt, revert_file::revert_all, shutdown::shutdown_signal};
+use crate::{
+    colors::ColorChoiceExt, commands::version::version, revert_file::revert_all,
+    shutdown::shutdown_signal,
+};
 use clap::{CommandFactory, Parser, Subcommand};
 
 #[derive(Parser, Debug)]
-#[command(author, version = version::version(), about)]
+#[command(author, version = version(), about)]
 pub struct Cli {
     #[command(flatten)]
     global: GlobalArgs,
@@ -80,7 +83,7 @@ impl Cli {
         tokio::select! {
             res = run => res,
             _ = shutdown_signal() => {
-                eprintln!("Exiting!");
+                log::warn!("Exiting!");
                 revert_all()?;
                 Ok(())
             }
@@ -94,12 +97,14 @@ impl Cli {
             scope.set_extra("aqora.url", global.url.clone().into());
         });
 
-        sentry::capture_message("Hello, World!", sentry::Level::Debug);
+        log::debug!("this is a debug message");
+        log::info!("this is an info message");
+        log::warn!("this is a warning message");
+        log::error!("this is an error message");
 
         pyo3_asyncio::tokio::run::<_, ()>(py, async move {
             if let Err(e) = self.do_run().await {
-                sentry::capture_error(&e);
-                eprintln!("{}", e);
+                log::error!("{}", e);
                 std::process::exit(1)
             }
             std::process::exit(0);
