@@ -14,7 +14,7 @@ pub async fn clean(_: Clean, global: GlobalArgs) -> crate::error::Result<()> {
     let project_config_dir = project_config_dir(&global.project);
     if project_config_dir.exists() {
         if let Err(err) = tokio::fs::remove_dir_all(&project_config_dir).await {
-            eprintln!(
+            log::error!(
                 "{}: Failed to remove project config directory at {}: {}",
                 "WARNING".if_supports_color(OwoStream::Stderr, |t| t.yellow()),
                 project_config_dir.display(),
@@ -25,7 +25,7 @@ pub async fn clean(_: Clean, global: GlobalArgs) -> crate::error::Result<()> {
     let venv_dir = project_venv_dir(&global.project);
     if venv_dir.exists() {
         if let Err(err) = tokio::fs::remove_dir_all(&venv_dir).await {
-            eprintln!(
+            log::error!(
                 "{}: Failed to remove project venv directory at {}: {}",
                 "WARNING".if_supports_color(OwoStream::Stderr, |t| t.yellow()),
                 venv_dir.display(),
@@ -39,7 +39,7 @@ pub async fn clean(_: Clean, global: GlobalArgs) -> crate::error::Result<()> {
     {
         if entry.is_dir() {
             if let Err(err) = tokio::fs::remove_dir_all(&entry).await {
-                eprintln!(
+                log::error!(
                     "{}: Failed to remove egg-info directory at {}: {}",
                     "WARNING".if_supports_color(OwoStream::Stderr, |t| t.yellow()),
                     entry.display(),
