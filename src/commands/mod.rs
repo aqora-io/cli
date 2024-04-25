@@ -1,3 +1,4 @@
+mod add;
 mod clean;
 mod global_args;
 mod info;
@@ -12,6 +13,7 @@ mod version;
 
 pub use global_args::GlobalArgs;
 
+use add::{add, Add};
 use clean::{clean, Clean};
 use info::{info, Info};
 use install::{install, Install};
@@ -44,6 +46,7 @@ pub enum Commands {
     Upload(Upload),
     Template(Template),
     Clean(Clean),
+    Add(Add),
     #[command(hide = true)]
     Info(Info),
 }
@@ -67,6 +70,7 @@ impl Cli {
                 Commands::Template(args) => template(args, global).await,
                 Commands::Clean(args) => clean(args, global).await,
                 Commands::Info(args) => info(args, global).await,
+                Commands::Add(args) => add(args, global).await,
             }
         };
         tokio::select! {

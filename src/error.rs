@@ -40,6 +40,15 @@ impl From<toml::ser::Error> for Error {
     }
 }
 
+impl From<toml_edit::TomlError> for Error {
+    fn from(e: toml_edit::TomlError) -> Self {
+        user(
+            &format!("Error parsing toml: {e}"),
+            "Please make sure the file is valid toml",
+        )
+    }
+}
+
 impl From<reqwest::header::InvalidHeaderValue> for Error {
     fn from(e: reqwest::header::InvalidHeaderValue) -> Self {
         system(&format!("Invalid header value: {e}"), "")
