@@ -1,6 +1,6 @@
 use crate::{
     colors::ColorChoiceExt,
-    commands::GlobalArgs,
+    commands::{remove::remove_matching_dependencies, GlobalArgs},
     dirs::{init_venv, pyproject_path, read_pyproject},
     error::{self, Result},
     python::pip_install,
@@ -17,10 +17,12 @@ use toml_edit::DocumentMut;
 #[derive(Args, Debug)]
 #[command(author, version, about)]
 pub struct Add {
+    #[arg(long, short)]
+    pub upgrade: bool,
     pub deps: Vec<String>,
 }
 
-pub fn insert_formatted(array: &mut toml_edit::Array, item: impl Into<toml_edit::Value>) {
+fn insert_formatted(array: &mut toml_edit::Array, item: impl Into<toml_edit::Value>) {
     let mut new_item = item.into();
     let trailing = array.trailing().as_str().unwrap_or_default().to_string();
     if let Some(last_item) = array.iter_mut().last() {
@@ -56,6 +58,52 @@ pub fn insert_formatted(array: &mut toml_edit::Array, item: impl Into<toml_edit:
     }
 }
 
+fn merge_requirements(old: &Requirement, new: &Requirement) -> Option<Requirement> {
+    if old.name != new.name {
+        return None;
+    }
+    let mut merged = old.clone();
+    if let Some(new_version) = new.version_or_url.as_ref() {
+        if old.version_or_url.is_some() && old.version_or_url.as_ref() != Some(new_version) {
+            return None;
+        }
+        merged.version_or_url = Some(new_version.clone());
+    }
+    merged.extras.extend(new.extras.iter().cloned());
+    merged.extras.dedup();
+    if let Some(new_marker) = new.marker.as_ref() {
+        if old.marker.is_some() && old.marker.as_ref() != Some(new_marker) {
+            return None;
+        } else {
+            merged.marker = Some(new_marker.clone());
+        }
+    }
+    Some(merged)
+}
+
+fn requirement_needs_update(old: &Requirement, new: &Requirement) -> bool {
+    if old.name != new.name {
+        return true;
+    }
+    if let Some(new_version) = new.version_or_url.as_ref() {
+        if old.version_or_url.as_ref() != Some(new_version) {
+            return true;
+        }
+    }
+    let mut merged_extras = old.extras.clone();
+    merged_extras.extend(new.extras.iter().cloned());
+    merged_extras.dedup();
+    if old.extras != merged_extras {
+        return true;
+    }
+    if let Some(new_marker) = new.marker.as_ref() {
+        if old.marker.as_ref() != Some(new_marker) {
+            return true;
+        }
+    }
+    false
+}
+
 pub async fn add(args: Add, global: GlobalArgs) -> Result<()> {
     let mut deps = Vec::new();
     for dep in args.deps.iter() {
@@ -63,21 +111,7 @@ pub async fn add(args: Add, global: GlobalArgs) -> Result<()> {
             .map_err(|e| error::user(&format!("Invalid requirement '{dep}': {e}"), ""))?;
         deps.push(req);
     }
-    let pyproject = read_pyproject(&global.project).await?;
-    if let Some(old_deps) = pyproject
-        .project
-        .as_ref()
-        .and_then(|p| p.dependencies.as_ref())
-    {
-        for old_dep in old_deps.iter() {
-            if deps.iter().any(|dep| dep.name == old_dep.name) {
-                return Err(error::user(
-                    "Dependency already exists",
-                    &format!("The dependency '{old_dep}' is already in the project's dependencies. Use `aqora remove` to remove it first."),
-                ));
-            }
-        }
-    }
+    let _ = read_pyproject(&global.project).await?;
     let progress = ProgressBar::new_spinner();
     progress.set_message("Initializing virtual environment");
     progress.enable_steady_tick(Duration::from_millis(100));
@@ -105,8 +139,41 @@ pub async fn add(args: Add, global: GlobalArgs) -> Result<()> {
                 "The 'dependencies' section must be an array",
             )
         })?;
+    let mut added_deps = Vec::new();
     for dep in deps.iter() {
-        insert_formatted(dependencies, dep.to_string());
+        let mut merge_list = remove_matching_dependencies(dependencies, &dep.name)?;
+        let to_insert = if merge_list.is_empty() {
+            added_deps.push(dep.clone());
+            dep.clone()
+        } else if merge_list.len() == 1 && !requirement_needs_update(&merge_list[0], dep) {
+            merge_list[0].clone()
+        } else {
+            merge_list.push(dep.clone());
+            let merged = merge_list
+                .iter()
+                .skip(1)
+                .try_fold(merge_list[0].clone(), |merged, next| {
+                    merge_requirements(&merged, next)
+                })
+                .ok_or_else(|| {
+                    let conflicting = merge_list
+                        .iter()
+                        .map(|req| format!("'{req}'"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    error::user(
+                        &format!("Could not merge dependencies: {conflicting}"),
+                        "The dependencies have incompatible versions or markers. Try using `aqora remove` to remove the conflicting dependencies.",
+                    )
+                })?;
+            added_deps.push(merged.clone());
+            merged
+        };
+        insert_formatted(dependencies, to_insert.to_string());
+    }
+    if added_deps.is_empty() {
+        progress.finish_with_message("No dependencies to update");
+        return Ok(());
     }
     fs::write(&project_file, toml.to_string())
         .await
@@ -123,6 +190,7 @@ pub async fn add(args: Add, global: GlobalArgs) -> Result<()> {
         &env,
         [PipPackage::editable(&global.project)],
         &PipOptions {
+            upgrade: args.upgrade,
             color: global.color.pip(),
             ..Default::default()
         },
@@ -132,11 +200,11 @@ pub async fn add(args: Add, global: GlobalArgs) -> Result<()> {
     project_file
         .commit()
         .map_err(|err| error::system(&format!("Failed to save pyproject.toml: {err}"), ""))?;
-    let added_deps = deps
+    let added_deps = added_deps
         .iter()
         .map(|dep| format!("'{dep}'"))
         .collect::<Vec<_>>()
         .join(", ");
-    progress.finish_with_message(format!("Added dependencies: {added_deps}"));
+    progress.finish_with_message(format!("Updated dependencies: {added_deps}"));
     Ok(())
 }
