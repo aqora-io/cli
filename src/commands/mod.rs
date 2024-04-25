@@ -5,6 +5,7 @@ mod info;
 mod install;
 mod login;
 mod python;
+mod remove;
 mod shell;
 mod template;
 mod test;
@@ -19,6 +20,7 @@ use info::{info, Info};
 use install::{install, Install};
 use login::{login, Login};
 use python::{python, Python};
+use remove::{remove, Remove};
 use shell::{shell, Shell};
 use template::{template, Template};
 use test::{test, Test};
@@ -47,6 +49,7 @@ pub enum Commands {
     Template(Template),
     Clean(Clean),
     Add(Add),
+    Remove(Remove),
     #[command(hide = true)]
     Info(Info),
 }
@@ -71,6 +74,7 @@ impl Cli {
                 Commands::Clean(args) => clean(args, global).await,
                 Commands::Info(args) => info(args, global).await,
                 Commands::Add(args) => add(args, global).await,
+                Commands::Remove(args) => remove(args, global).await,
             }
         };
         tokio::select! {
