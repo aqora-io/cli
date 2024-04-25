@@ -90,11 +90,10 @@ fn requirement_needs_update(old: &Requirement, new: &Requirement) -> bool {
             return true;
         }
     }
-    let mut merged_extras = old.extras.clone();
-    merged_extras.extend(new.extras.iter().cloned());
-    merged_extras.dedup();
-    if old.extras != merged_extras {
-        return true;
+    for new_extra in new.extras.iter() {
+        if !old.extras.contains(new_extra) {
+            return true;
+        }
     }
     if let Some(new_marker) = new.marker.as_ref() {
         if old.marker.as_ref() != Some(new_marker) {
