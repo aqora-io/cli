@@ -2,6 +2,7 @@ use crate::{
     colors::ColorChoiceExt,
     commands::GlobalArgs,
     dirs::{init_venv, pyproject_path, read_pyproject},
+    error::{self, Result},
     python::pip_install,
     revert_file::RevertFile,
 };
@@ -55,11 +56,11 @@ pub fn insert_formatted(array: &mut toml_edit::Array, item: impl Into<toml_edit:
     }
 }
 
-pub async fn add(args: Add, global: GlobalArgs) -> crate::error::Result<()> {
+pub async fn add(args: Add, global: GlobalArgs) -> Result<()> {
     let mut deps = Vec::new();
     for dep in args.deps.iter() {
         let req = Requirement::parse(dep, &global.project)
-            .map_err(|e| crate::error::user(&format!("Invalid requirement '{dep}': {e}"), ""))?;
+            .map_err(|e| error::user(&format!("Invalid requirement '{dep}': {e}"), ""))?;
         deps.push(req);
     }
     let pyproject = read_pyproject(&global.project).await?;
@@ -70,7 +71,7 @@ pub async fn add(args: Add, global: GlobalArgs) -> crate::error::Result<()> {
     {
         for old_dep in old_deps.iter() {
             if deps.iter().any(|dep| dep.name == old_dep.name) {
-                return Err(crate::error::user(
+                return Err(error::user(
                     "Dependency already exists",
                     &format!("The dependency '{old_dep}' is already in the project's dependencies. Use `aqora remove` to remove it first."),
                 ));
@@ -90,7 +91,7 @@ pub async fn add(args: Add, global: GlobalArgs) -> crate::error::Result<()> {
         .or_insert(toml_edit::table())
         .as_table_mut()
         .ok_or_else(|| {
-            crate::error::user(
+            error::user(
                 "Invalid pyproject.toml",
                 "The 'project' section must be a table",
             )
@@ -99,7 +100,7 @@ pub async fn add(args: Add, global: GlobalArgs) -> crate::error::Result<()> {
         .or_insert(toml_edit::array())
         .as_array_mut()
         .ok_or_else(|| {
-            crate::error::user(
+            error::user(
                 "Invalid pyproject.toml",
                 "The 'dependencies' section must be an array",
             )
@@ -110,7 +111,7 @@ pub async fn add(args: Add, global: GlobalArgs) -> crate::error::Result<()> {
     fs::write(&project_file, toml.to_string())
         .await
         .map_err(|e| {
-            crate::error::user(
+            error::user(
                 &format!("Failed to write pyproject.toml: {e}"),
                 &format!(
                     "Make sure you have permissions to write to {}",
@@ -128,9 +129,9 @@ pub async fn add(args: Add, global: GlobalArgs) -> crate::error::Result<()> {
         &progress,
     )
     .await?;
-    project_file.commit().map_err(|err| {
-        crate::error::system(&format!("Failed to save pyproject.toml: {err}"), "")
-    })?;
+    project_file
+        .commit()
+        .map_err(|err| error::system(&format!("Failed to save pyproject.toml: {err}"), ""))?;
     let added_deps = deps
         .iter()
         .map(|dep| format!("'{dep}'"))
