@@ -103,6 +103,46 @@ fn requirement_needs_update(old: &Requirement, new: &Requirement) -> bool {
     false
 }
 
+enum UpdateAction {
+    Insert,
+    Merge,
+    Skip,
+}
+
+fn update_dependencies_action(
+    dependencies: &toml_edit::Array,
+    new: &Requirement,
+) -> Result<UpdateAction> {
+    let mut matched = false;
+    for old in dependencies
+        .iter()
+        .map(|d| {
+            d.as_str()
+                .ok_or_else(|| {
+                    error::user("Invalid pyproject.toml", "Dependencies must be strings")
+                })
+                .and_then(|s| {
+                    s.parse::<Requirement>().map_err(|err| {
+                        error::system(&format!("Could not parse dependencies: {err}"), "")
+                    })
+                })
+        })
+        .collect::<Result<Vec<_>>>()?
+    {
+        if old.name == new.name {
+            if matched || requirement_needs_update(&old, new) {
+                return Ok(UpdateAction::Merge);
+            }
+            matched = true
+        }
+    }
+    if matched {
+        Ok(UpdateAction::Skip)
+    } else {
+        Ok(UpdateAction::Insert)
+    }
+}
+
 pub async fn add(args: Add, global: GlobalArgs) -> Result<()> {
     let mut deps = Vec::new();
     for dep in args.deps.iter() {
@@ -140,15 +180,13 @@ pub async fn add(args: Add, global: GlobalArgs) -> Result<()> {
         })?;
     let mut added_deps = Vec::new();
     for dep in deps.iter() {
-        let mut merge_list = remove_matching_dependencies(dependencies, &dep.name)?;
-        let to_insert = if merge_list.is_empty() {
-            added_deps.push(dep.clone());
-            dep.clone()
-        } else if merge_list.len() == 1 && !requirement_needs_update(&merge_list[0], dep) {
-            merge_list[0].clone()
-        } else {
-            merge_list.push(dep.clone());
-            let merged = merge_list
+        let to_insert = match update_dependencies_action(dependencies, dep)? {
+            UpdateAction::Skip => continue,
+            UpdateAction::Insert => dep.clone(),
+            UpdateAction::Merge => {
+                let mut merge_list = remove_matching_dependencies(dependencies, &dep.name)?;
+                merge_list.push(dep.clone());
+                merge_list
                 .iter()
                 .skip(1)
                 .try_fold(merge_list[0].clone(), |merged, next| {
@@ -164,11 +202,11 @@ pub async fn add(args: Add, global: GlobalArgs) -> Result<()> {
                         &format!("Could not merge dependencies: {conflicting}"),
                         "The dependencies have incompatible versions or markers. Try using `aqora remove` to remove the conflicting dependencies.",
                     )
-                })?;
-            added_deps.push(merged.clone());
-            merged
+                })?
+            }
         };
         insert_formatted(dependencies, to_insert.to_string());
+        added_deps.push(dep.clone());
     }
     if added_deps.is_empty() {
         progress.finish_with_message("No dependencies to update");
