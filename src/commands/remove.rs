@@ -6,7 +6,7 @@ use crate::{
     python::pip_install,
     revert_file::RevertFile,
 };
-use aqora_config::Requirement;
+use aqora_config::{PackageName, Requirement};
 use aqora_runner::python::{PipOptions, PipPackage};
 use clap::Args;
 use indicatif::ProgressBar;
@@ -20,17 +20,52 @@ pub struct Remove {
     pub deps: Vec<String>,
 }
 
+pub fn remove_matching_dependencies(
+    dependencies: &mut toml_edit::Array,
+    name: &PackageName,
+) -> Result<Vec<Requirement>> {
+    let mut removed = Vec::new();
+    loop {
+        let matched = dependencies
+            .iter()
+            .enumerate()
+            .find_map(|(index, d)| {
+                match d
+                    .as_str()
+                    .ok_or_else(|| {
+                        error::user("Invalid pyproject.toml", "Dependencies must be strings")
+                    })
+                    .and_then(|s| {
+                        s.parse::<Requirement>().map_err(|err| {
+                            error::system(&format!("Could not parse dependencies: {err}"), "")
+                        })
+                    }) {
+                    Ok(req) => {
+                        if &req.name == name {
+                            Some(Ok((index, req)))
+                        } else {
+                            None
+                        }
+                    }
+                    Err(err) => Some(Err(err)),
+                }
+            })
+            .transpose()?;
+        if let Some((index, req)) = matched {
+            dependencies.remove(index);
+            removed.push(req);
+        } else {
+            break;
+        }
+    }
+    Ok(removed)
+}
+
 pub async fn remove(args: Remove, global: GlobalArgs) -> Result<()> {
     let mut deps = Vec::new();
     for dep in args.deps.iter() {
-        let req = Requirement::parse(dep, &global.project)
-            .map_err(|e| error::user(&format!("Invalid requirement '{dep}': {e}"), ""))?;
-        if !req.extras.is_empty() || req.version_or_url.is_some() || req.marker.is_some() {
-            return Err(error::user(
-                &format!("Invalid requirement '{dep}'"),
-                "Only the package name is allowed",
-            ));
-        }
+        let req = PackageName::new(dep.to_string())
+            .map_err(|e| error::user(&format!("Invalid package name '{dep}': {e}"), ""))?;
         deps.push(req);
     }
     let _ = read_pyproject(&global.project).await?;
@@ -71,30 +106,7 @@ pub async fn remove(args: Remove, global: GlobalArgs) -> Result<()> {
     })?;
     let mut removed_deps = Vec::new();
     for dep in deps.iter() {
-        let mut removed = false;
-        while let Some(index) = dependencies
-            .iter()
-            .map(|d| {
-                d.as_str()
-                    .ok_or_else(|| {
-                        error::user("Invalid pyproject.toml", "Dependencies must be strings")
-                    })
-                    .and_then(|s| {
-                        s.parse::<Requirement>().map_err(|err| {
-                            error::system(&format!("Could not parse dependencies: {err}"), "")
-                        })
-                    })
-            })
-            .collect::<Result<Vec<_>>>()?
-            .iter()
-            .position(|old_dep| old_dep.name == dep.name)
-        {
-            dependencies.remove(index);
-            removed = true;
-        }
-        if removed {
-            removed_deps.push(dep);
-        }
+        removed_deps.extend(remove_matching_dependencies(dependencies, dep)?);
     }
     if removed_deps.is_empty() {
         progress.finish_with_message("No dependencies to remove");
