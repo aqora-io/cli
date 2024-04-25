@@ -20,6 +20,20 @@ pub struct Remove {
     pub deps: Vec<String>,
 }
 
+pub fn remove_formatted(dependencies: &mut toml_edit::Array, index: usize) {
+    let item = dependencies.remove(index);
+    if let Some(prefix) = item.decor().prefix() {
+        if let Some(next) = dependencies.get_mut(index) {
+            next.decor_mut().set_prefix(prefix.clone());
+        }
+    }
+    if let Some(suffix) = item.decor().suffix() {
+        if let Some(previous) = dependencies.get_mut(index - 1) {
+            previous.decor_mut().set_suffix(suffix.clone());
+        }
+    }
+}
+
 pub fn remove_matching_dependencies(
     dependencies: &mut toml_edit::Array,
     name: &PackageName,
@@ -44,7 +58,7 @@ pub fn remove_matching_dependencies(
         .collect::<Result<Vec<_>>>()?
     {
         if &req.name == name {
-            dependencies.remove(index - removed.len());
+            remove_formatted(dependencies, index - removed.len());
             removed.push(req);
         }
     }
