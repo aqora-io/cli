@@ -200,6 +200,7 @@ pub async fn add(args: Add, global: GlobalArgs) -> Result<()> {
     project_file
         .commit()
         .map_err(|err| error::system(&format!("Failed to save pyproject.toml: {err}"), ""))?;
+    added_deps.dedup();
     let added_deps = added_deps
         .iter()
         .map(|dep| format!("'{dep}'"))

@@ -25,37 +25,27 @@ pub fn remove_matching_dependencies(
     name: &PackageName,
 ) -> Result<Vec<Requirement>> {
     let mut removed = Vec::new();
-    loop {
-        let matched = dependencies
-            .iter()
-            .enumerate()
-            .find_map(|(index, d)| {
-                match d
-                    .as_str()
-                    .ok_or_else(|| {
-                        error::user("Invalid pyproject.toml", "Dependencies must be strings")
+    for (index, req) in dependencies
+        .iter()
+        .enumerate()
+        .map(|(index, d)| {
+            let req = d
+                .as_str()
+                .ok_or_else(|| {
+                    error::user("Invalid pyproject.toml", "Dependencies must be strings")
+                })
+                .and_then(|s| {
+                    s.parse::<Requirement>().map_err(|err| {
+                        error::system(&format!("Could not parse dependencies: {err}"), "")
                     })
-                    .and_then(|s| {
-                        s.parse::<Requirement>().map_err(|err| {
-                            error::system(&format!("Could not parse dependencies: {err}"), "")
-                        })
-                    }) {
-                    Ok(req) => {
-                        if &req.name == name {
-                            Some(Ok((index, req)))
-                        } else {
-                            None
-                        }
-                    }
-                    Err(err) => Some(Err(err)),
-                }
-            })
-            .transpose()?;
-        if let Some((index, req)) = matched {
-            dependencies.remove(index);
+                })?;
+            Ok((index, req))
+        })
+        .collect::<Result<Vec<_>>>()?
+    {
+        if &req.name == name {
+            dependencies.remove(index - removed.len());
             removed.push(req);
-        } else {
-            break;
         }
     }
     Ok(removed)
@@ -136,6 +126,7 @@ pub async fn remove(args: Remove, global: GlobalArgs) -> Result<()> {
     project_file
         .commit()
         .map_err(|err| error::system(&format!("Failed to save pyproject.toml: {err}"), ""))?;
+    removed_deps.dedup();
     let removed_deps = removed_deps
         .iter()
         .map(|dep| format!("'{dep}'"))
