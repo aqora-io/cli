@@ -68,6 +68,10 @@ impl RevertFile {
         Ok(())
     }
 
+    pub fn commit(mut self) {
+        self.reverted = true;
+    }
+
     pub fn revert(mut self) -> std::io::Result<()> {
         self.do_revert()?;
         Ok(())
@@ -97,7 +101,7 @@ pub struct RevertFileHandle {
 }
 
 impl RevertFileHandle {
-    fn do_revert(&mut self) -> std::io::Result<()> {
+    fn remove_file(&self) -> std::io::Result<RevertFile> {
         let mut files = REVERT_FILES.lock().map_err(|_| {
             std::io::Error::new(std::io::ErrorKind::Other, "Could not lock REVERT_FILES")
         })?;
@@ -107,7 +111,17 @@ impl RevertFileHandle {
                 format!("File {} not found", self.path.display()),
             )
         })?;
-        file.revert()?;
+        Ok(file)
+    }
+
+    fn do_revert(&mut self) -> std::io::Result<()> {
+        self.remove_file()?.revert()?;
+        self.reverted = true;
+        Ok(())
+    }
+
+    pub fn commit(mut self) -> std::io::Result<()> {
+        self.remove_file()?.commit();
         self.reverted = true;
         Ok(())
     }
