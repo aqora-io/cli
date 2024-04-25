@@ -1,4 +1,4 @@
-use aqora_config::PathStr;
+use aqora_config::{PackageName, PathStr};
 use futures::prelude::*;
 use pyo3::{
     intern,
@@ -320,6 +320,20 @@ impl PyEnv {
         opts.color.apply(&mut cmd);
         for module in modules {
             module.apply(&mut cmd);
+        }
+        cmd
+    }
+
+    pub fn pip_uninstall(
+        &self,
+        modules: impl IntoIterator<Item = PackageName>,
+        opts: &PipOptions,
+    ) -> Command {
+        let mut cmd = self.uv_cmd();
+        cmd.arg("pip").arg("uninstall");
+        opts.color.apply(&mut cmd);
+        for module in modules {
+            cmd.arg(module.to_string());
         }
         cmd
     }

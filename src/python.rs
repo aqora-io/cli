@@ -2,7 +2,7 @@ use crate::{
     error::{self, Result},
     process::run_command,
 };
-use aqora_config::Version;
+use aqora_config::{PackageName, Version};
 use aqora_runner::{
     pipeline::EvaluateAllInfo,
     python::{PipOptions, PipPackage, PyEnv},
@@ -52,6 +52,30 @@ pub async fn pip_install(
             error::system(
                 &format!("Failed to pip install {debug_modules}: {e}"),
                 "Please make sure you have permissions to install packages",
+            )
+        })
+}
+
+pub async fn pip_uninstall(
+    env: &PyEnv,
+    modules: impl IntoIterator<Item = PackageName>,
+    options: &PipOptions,
+    pb: &ProgressBar,
+) -> Result<()> {
+    let modules = modules.into_iter().collect::<Vec<_>>();
+    let debug_modules = modules
+        .iter()
+        .map(|module| module.to_string())
+        .collect::<Vec<_>>()
+        .join(" ");
+    pb.set_message(format!("pip uninstall {debug_modules}",));
+    let mut cmd = env.pip_uninstall(modules, options);
+    run_command(&mut cmd, pb, Some("pip uninstall"))
+        .await
+        .map_err(|e| {
+            error::system(
+                &format!("Failed to pip uninstall {debug_modules}: {e}"),
+                "Please make sure you have permissions to uninstall packages",
             )
         })
 }
