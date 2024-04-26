@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use tracing_subscriber::prelude::*;
 
-const RELEASE: &str = concat!(env!("CARGO_CRATE_NAME"), "_", env!("CARGO_PKG_VERSION"));
+use crate::manifest::manifest_version;
 
 #[must_use]
 pub struct Guard(
@@ -27,7 +27,7 @@ fn sentry_setup() -> Option<sentry::ClientInitGuard> {
     }
 
     let opts = sentry::ClientOptions {
-        release: Some(Cow::Borrowed(RELEASE)),
+        release: Some(Cow::Owned(manifest_version().to_string())),
         dsn: if let Some(sentry_dsn) = option_env!("SENTRY_DSN") {
             if let Ok(sentry_dsn) = sentry_dsn.parse() {
                 Some(sentry_dsn)
