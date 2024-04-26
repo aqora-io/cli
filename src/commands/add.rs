@@ -6,11 +6,16 @@ use crate::{
     python::pip_install,
     revert_file::RevertFile,
 };
-use aqora_config::Requirement;
+use aqora_config::{
+    pep440_rs::{Operator, VersionPattern, VersionSpecifier},
+    pep508_rs::VersionOrUrl,
+    PackageName, Requirement, Version,
+};
 use aqora_runner::python::{PipOptions, PipPackage};
 use clap::Args;
 use indicatif::ProgressBar;
-use std::time::Duration;
+use serde::Deserialize;
+use std::{collections::HashMap, time::Duration};
 use tokio::fs;
 use toml_edit::DocumentMut;
 
@@ -64,9 +69,6 @@ fn merge_requirements(old: &Requirement, new: &Requirement) -> Option<Requiremen
     }
     let mut merged = old.clone();
     if let Some(new_version) = new.version_or_url.as_ref() {
-        if old.version_or_url.is_some() && old.version_or_url.as_ref() != Some(new_version) {
-            return None;
-        }
         merged.version_or_url = Some(new_version.clone());
     }
     merged.extras.extend(new.extras.iter().cloned());
@@ -143,6 +145,34 @@ fn update_dependencies_action(
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct PypiProject {
+    releases: HashMap<Version, serde_json::Value>,
+}
+
+async fn get_latest_version(
+    client: &reqwest::Client,
+    package: &PackageName,
+) -> reqwest::Result<Option<Version>> {
+    Ok(client
+        .get(format!("https://pypi.org/pypi/{package}/json"))
+        .send()
+        .await?
+        .json::<PypiProject>()
+        .await?
+        .releases
+        .into_keys()
+        .reduce(|latest, next| {
+            if next.any_prerelease() {
+                latest
+            } else if next > latest {
+                next
+            } else {
+                latest
+            }
+        }))
+}
+
 pub async fn add(args: Add, global: GlobalArgs) -> Result<()> {
     let mut deps = Vec::new();
     for dep in args.deps.iter() {
@@ -178,11 +208,44 @@ pub async fn add(args: Add, global: GlobalArgs) -> Result<()> {
                 "The 'dependencies' section must be an array",
             )
         })?;
+    progress.set_message("Adding dependencies");
     let mut added_deps = Vec::new();
+    let pypi_client = reqwest::Client::new();
     for dep in deps.iter() {
         let to_insert = match update_dependencies_action(dependencies, dep)? {
             UpdateAction::Skip => continue,
-            UpdateAction::Insert => dep.clone(),
+            UpdateAction::Insert => {
+                let mut dep = dep.clone();
+                let name = &dep.name;
+                if dep.version_or_url.is_none() {
+                    match get_latest_version(&pypi_client, name).await {
+                        Ok(Some(version)) => {
+                            if let Ok(version) = VersionSpecifier::new(
+                                Operator::TildeEqual,
+                                VersionPattern::verbatim(version),
+                            ) {
+                                dep.version_or_url =
+                                    Some(VersionOrUrl::VersionSpecifier(version.into()))
+                            } else {
+                                progress.println(format!(
+                                    "Warning: Could not find compatible version for '{name}'"
+                                ));
+                            }
+                        }
+                        Ok(None) => {
+                            progress.println(format!(
+                                "Warning: Could not find latest version for '{name}'"
+                            ));
+                        }
+                        Err(err) => {
+                            progress.println(format!(
+                                "Warning: Could not get latest version for '{name}': {err}"
+                            ));
+                        }
+                    }
+                }
+                dep
+            }
             UpdateAction::Merge => {
                 let mut merge_list = remove_matching_dependencies(dependencies, &dep.name)?;
                 merge_list.push(dep.clone());
@@ -206,7 +269,7 @@ pub async fn add(args: Add, global: GlobalArgs) -> Result<()> {
             }
         };
         insert_formatted(dependencies, to_insert.to_string());
-        added_deps.push(dep.clone());
+        added_deps.push(to_insert);
     }
     if added_deps.is_empty() {
         progress.finish_with_message("No dependencies to update");
