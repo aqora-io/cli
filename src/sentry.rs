@@ -13,12 +13,20 @@ pub fn setup() -> Guard {
     Guard(tracing_setup(), sentry_setup())
 }
 
+#[inline]
+fn is_whitespace_ascii(b: u8) -> bool {
+    b <= 0x20u8
+}
+
 fn do_not_track() -> bool {
     if let Some(value) = std::env::var_os("DO_NOT_TRACK") {
-        return value.as_encoded_bytes().iter().any(|b| *b > 0x20u8);
+        value
+            .as_encoded_bytes()
+            .iter()
+            .any(|b| !is_whitespace_ascii(*b))
+    } else {
+        false
     }
-
-    false
 }
 
 fn sentry_setup() -> Option<sentry::ClientInitGuard> {
