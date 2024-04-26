@@ -83,7 +83,7 @@ impl Cli {
         tokio::select! {
             res = run => res,
             _ = shutdown_signal() => {
-                log::warn!("Exiting!");
+                tracing::warn!("Exiting!");
                 revert_all()?;
                 Ok(())
             }
@@ -97,14 +97,14 @@ impl Cli {
             scope.set_extra("aqora.url", global.url.clone().into());
         });
 
-        log::debug!("this is a debug message");
-        log::info!("this is an info message");
-        log::warn!("this is a warning message");
-        log::error!("this is an error message");
+        tracing::debug!("this is a debug message");
+        tracing::info!("this is an info message");
+        tracing::warn!("this is a warning message");
+        tracing::error!("this is an error message");
 
         pyo3_asyncio::tokio::run::<_, ()>(py, async move {
             if let Err(e) = self.do_run().await {
-                log::error!("{}", e);
+                tracing::error!("{}", e);
                 std::process::exit(1)
             }
             std::process::exit(0);

@@ -91,7 +91,7 @@ where
             tokio::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 if tx.send(value).is_err() {
-                    log::error!("Failed to send OAuth callback response!");
+                    tracing::error!("Failed to send OAuth callback response!");
                 }
             });
         }
