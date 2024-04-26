@@ -97,11 +97,6 @@ impl Cli {
             scope.set_extra("aqora.url", global.url.clone().into());
         });
 
-        tracing::debug!("this is a debug message");
-        tracing::info!("this is an info message");
-        tracing::warn!("this is a warning message");
-        tracing::error!("this is an error message");
-
         pyo3_asyncio::tokio::run::<_, ()>(py, async move {
             if let Err(e) = self.do_run().await {
                 tracing::error!("{}", e);
