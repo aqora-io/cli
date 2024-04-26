@@ -49,34 +49,34 @@ pub async fn info(_: Info, global: GlobalArgs) -> Result<()> {
         }
     };
     let viewer = get_viewer_info(&global).await;
-    log::info!("Command {}", command);
-    log::info!("Version {}", manifest_version());
-    log::info!("Python {}", python_version());
-    log::info!(
+    tracing::info!("Command {}", command);
+    tracing::info!("Version {}", manifest_version());
+    tracing::info!("Python {}", python_version());
+    tracing::info!(
         "UV Path {}",
         uv_path
             .map(|p| p.display().to_string())
             .unwrap_or_else(|| "[not found]".to_string())
     );
-    log::info!(
+    tracing::info!(
         "UV Version {}",
         uv_version.unwrap_or_else(|err| format!("[error: {err}]"))
     );
-    log::info!(
+    tracing::info!(
         "Config {}",
         config_dir()
             .await
             .map(|p| p.display().to_string())
             .unwrap_or_else(|err| format!("[error: {err}]"))
     );
-    log::info!("URL {}", global.url);
-    log::info!(
+    tracing::info!("URL {}", global.url);
+    tracing::info!(
         "Viewer {}",
         viewer
             .map(|v| format!("{} {}", v.username, v.id))
             .unwrap_or_else(|err| format!("[error: {err}]"))
     );
-    log::info!(
+    tracing::info!(
         "Project {}",
         global
             .project
