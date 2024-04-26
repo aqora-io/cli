@@ -72,3 +72,4 @@ which = "6.0"
 
 [build-dependencies]
 toml_edit = "0.22"
+sentry-types = "0.32"
