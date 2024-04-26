@@ -4,6 +4,7 @@ use tracing_subscriber::prelude::*;
 use crate::manifest::manifest_version;
 
 #[must_use]
+#[allow(dead_code)]
 pub struct Guard(
     Option<tracing_appender::non_blocking::WorkerGuard>,
     Option<sentry::ClientInitGuard>,
@@ -71,7 +72,7 @@ fn tracing_setup() -> Option<tracing_appender::non_blocking::WorkerGuard> {
         .or(dirs::cache_dir())
         .map(|dir| dir.join("aqora"))
     {
-        let appender = tracing_appender::rolling::daily(&log_dir, "aqora.log");
+        let appender = tracing_appender::rolling::daily(log_dir, "aqora.log");
         let (appender, guard) = tracing_appender::non_blocking(appender);
         opt_guard.replace(guard);
         layers.push(
