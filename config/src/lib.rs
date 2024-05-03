@@ -196,13 +196,13 @@ impl AqoraUseCaseConfig {
             .get(test_name)
             .ok_or_else(|| TestConfigError::TestNotFound(test_name.to_string()))?;
         if let Some(data) = test.data.as_ref() {
-            out.data = data.clone();
+            out.data.clone_from(data);
         }
         if let Some(generator) = test.generator.as_ref() {
-            out.generator = generator.clone();
+            out.generator.clone_from(generator);
         }
         if let Some(aggregator) = test.aggregator.as_ref() {
-            out.aggregator = aggregator.clone();
+            out.aggregator.clone_from(aggregator);
         }
         for (layer_name, override_) in test.overrides.iter() {
             if let Some(layer) = out
