@@ -187,31 +187,32 @@ impl PyEnv {
         }
         for site_package_dir in site_package_dirs {
             let mut editable_paths = Vec::new();
+            let mut venv_scripts = Vec::new();
             let mut entries = tokio::fs::read_dir(&site_package_dir).await?;
             while let Some(entry) = entries.next_entry().await? {
                 let name = entry.file_name();
                 if let Some(name) = name.to_str() {
-                    if name.starts_with("__editable__")
-                        && name.ends_with(".pth")
-                        && entry.file_type().await?.is_file()
-                    {
-                        editable_paths.push(
-                            tokio::fs::read_to_string(&entry.path())
-                                .await?
-                                .trim()
-                                .to_string(),
-                        );
+                    if name.ends_with(".pth") && entry.file_type().await?.is_file() {
+                        let contents = tokio::fs::read_to_string(&entry.path()).await?;
+                        if let Ok(true) = tokio::fs::try_exists(contents.trim()).await {
+                            editable_paths.push(contents.trim().to_string());
+                        } else {
+                            venv_scripts.push(contents);
+                        }
                     }
                 }
             }
             Python::with_gil(|py| {
-                let sys = py.import("sys").unwrap();
+                let sys = py.import("sys")?;
                 let append = sys
                     .getattr(pyo3::intern!(sys.py(), "path"))?
                     .getattr(pyo3::intern!(sys.py(), "append"))?;
-                append.call1((site_package_dir,))?;
+                append.call1((&site_package_dir,))?;
                 for path in editable_paths {
                     append.call1((path,))?;
+                }
+                for script in venv_scripts {
+                    py.run(&script, None, None)?;
                 }
                 PyResult::Ok(())
             })?;
