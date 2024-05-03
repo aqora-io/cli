@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "aqora-cli"
-version = "0.1.10"
+version = "0.1.11"
 description = "The aqora command line interface"
 authors = [{ name = "S.A.S Aqora Quantum", email = "hello@aqora.io" }]
 requires-python = ">=3.8"
@@ -12,10 +12,15 @@ requires-python = ">=3.8"
 # classifiers = []
 
 dependencies = [
-    "build >=1.1.1, <2.0.0",
+    "uv >=0.1.18, <0.2.0",
+]
+
+[project.optional-dependencies]
+venv = [
+    "build >=1.2.0, <2.0.0",
     "setuptools >=61.0",
     "ujson >= 5.9.0, <6.0.0",
-    "uv >=0.1.18, <0.2.0",
+    "ipykernel >=6.29.4, <7.0.0",
 ]
 
 [project.urls]
