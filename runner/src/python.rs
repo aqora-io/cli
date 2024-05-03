@@ -6,21 +6,19 @@ use pyo3::{
     pyclass::IterANextOutput,
     types::{PyString, PyType},
 };
-use std::collections::HashSet;
 use std::fmt;
 use std::{
     ffi::{OsStr, OsString},
     path::{Path, PathBuf},
 };
 use thiserror::Error;
-use tokio::{process::Command, sync::RwLock};
+use tokio::process::Command;
 
 lazy_static::lazy_static! {
     static ref PYTHON_VERSION: String = Python::with_gil(|py| {
         let version = py.version_info();
         format!("{}.{}", version.major, version.minor)
     });
-    static ref INITIALIZED_ENVS: RwLock<HashSet<PathBuf>> = RwLock::new(HashSet::new());
 }
 
 #[derive(Copy, Clone)]
@@ -162,12 +160,21 @@ impl PyEnv {
         };
         Self::ensure_venv(&uv_path, &venv_path, cache_path.as_ref(), color).await?;
         let venv_path = venv_path.as_ref().canonicalize()?;
-        if INITIALIZED_ENVS.read().await.contains(&venv_path) {
-            return Ok(Self {
-                venv_path,
-                cache_path,
-            });
-        }
+        let venv_path_string = venv_path.to_str().ok_or_else(|| {
+            EnvError::VenvFailed("Virtualenv path contains invalid characters".to_string())
+        })?;
+        Python::with_gil(|py| {
+            let sys = py.import(intern!(py, "sys"))?;
+            let prefix = sys.getattr(intern!(py, "prefix"))?.extract::<String>()?;
+            if prefix == venv_path_string {
+                return PyResult::Ok(());
+            }
+            sys.setattr(intern!(py, "prefix"), venv_path_string)?;
+            sys.setattr(intern!(py, "exec_prefix"), venv_path_string)?;
+            let site = py.import(intern!(py, "site"))?;
+            site.call_method0(intern!(py, "main"))?;
+            PyResult::Ok(())
+        })?;
         let mut site_package_dirs = Vec::new();
         let mut lib_dir_entries = tokio::fs::read_dir(venv_path.join(LIB_PATH)).await?;
         while let Some(entry) = lib_dir_entries.next_entry().await? {
@@ -185,39 +192,14 @@ impl PyEnv {
                 }
             }
         }
-        for site_package_dir in site_package_dirs {
-            let mut editable_paths = Vec::new();
-            let mut venv_scripts = Vec::new();
-            let mut entries = tokio::fs::read_dir(&site_package_dir).await?;
-            while let Some(entry) = entries.next_entry().await? {
-                let name = entry.file_name();
-                if let Some(name) = name.to_str() {
-                    if name.ends_with(".pth") && entry.file_type().await?.is_file() {
-                        let contents = tokio::fs::read_to_string(&entry.path()).await?;
-                        if let Ok(true) = tokio::fs::try_exists(contents.trim()).await {
-                            editable_paths.push(contents.trim().to_string());
-                        } else {
-                            venv_scripts.push(contents);
-                        }
-                    }
-                }
+        Python::with_gil(|py| {
+            let site = py.import(intern!(py, "site"))?;
+            let add_site_dir = site.getattr(intern!(py, "addsitedir"))?;
+            for site_packages in site_package_dirs {
+                add_site_dir.call1((site_packages.to_string_lossy(),))?;
             }
-            Python::with_gil(|py| {
-                let sys = py.import("sys")?;
-                let append = sys
-                    .getattr(pyo3::intern!(sys.py(), "path"))?
-                    .getattr(pyo3::intern!(sys.py(), "append"))?;
-                append.call1((&site_package_dir,))?;
-                for path in editable_paths {
-                    append.call1((path,))?;
-                }
-                for script in venv_scripts {
-                    py.run(&script, None, None)?;
-                }
-                PyResult::Ok(())
-            })?;
-        }
-        INITIALIZED_ENVS.write().await.insert(venv_path.clone());
+            PyResult::Ok(())
+        })?;
         Ok(Self {
             venv_path,
             cache_path,
