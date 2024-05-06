@@ -13,6 +13,8 @@ pub struct PyProject {
     pub build_system: Option<BuildSystem>,
     pub project: Option<Project>,
     pub tool: Option<Tools>,
+    #[serde(flatten)]
+    pub rest: Option<toml::Value>,
 }
 
 #[derive(Error, Debug)]
@@ -73,6 +75,8 @@ impl PyProject {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Tools {
     pub aqora: Option<AqoraConfig>,
+    #[serde(flatten)]
+    pub rest: Option<toml::Value>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
