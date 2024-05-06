@@ -163,18 +163,20 @@ impl PyEnv {
         let venv_path_string = venv_path.to_str().ok_or_else(|| {
             EnvError::VenvFailed("Virtualenv path contains invalid characters".to_string())
         })?;
-        Python::with_gil(|py| {
+        let is_initialized = Python::with_gil(|py| {
             let sys = py.import(intern!(py, "sys"))?;
             let prefix = sys.getattr(intern!(py, "prefix"))?.extract::<String>()?;
             if prefix == venv_path_string {
-                return PyResult::Ok(());
+                return PyResult::Ok(true);
             }
-            sys.setattr(intern!(py, "prefix"), venv_path_string)?;
-            sys.setattr(intern!(py, "exec_prefix"), venv_path_string)?;
-            let site = py.import(intern!(py, "site"))?;
-            site.call_method0(intern!(py, "main"))?;
-            PyResult::Ok(())
+            PyResult::Ok(false)
         })?;
+        if is_initialized {
+            return Ok(Self {
+                venv_path,
+                cache_path,
+            });
+        }
         let mut site_package_dirs = Vec::new();
         let mut lib_dir_entries = tokio::fs::read_dir(venv_path.join(LIB_PATH)).await?;
         while let Some(entry) = lib_dir_entries.next_entry().await? {
@@ -198,6 +200,9 @@ impl PyEnv {
             for site_packages in site_package_dirs {
                 add_site_dir.call1((site_packages.to_string_lossy(),))?;
             }
+            let sys = py.import(intern!(py, "sys"))?;
+            sys.setattr(intern!(py, "prefix"), venv_path_string)?;
+            sys.setattr(intern!(py, "exec_prefix"), venv_path_string)?;
             PyResult::Ok(())
         })?;
         Ok(Self {
