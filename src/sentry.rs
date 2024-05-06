@@ -14,17 +14,12 @@ pub fn setup() -> Guard {
     Guard(tracing_setup(), sentry_setup())
 }
 
-#[inline]
-fn is_whitespace_ascii(b: u8) -> bool {
-    b <= 0x20u8
-}
-
 fn do_not_track() -> bool {
     if let Some(value) = std::env::var_os("DO_NOT_TRACK") {
-        value
-            .as_encoded_bytes()
-            .iter()
-            .any(|b| !is_whitespace_ascii(*b))
+        !matches!(
+            value.to_string_lossy().to_lowercase().trim(),
+            "0" | "false" | "no" | ""
+        )
     } else {
         false
     }
