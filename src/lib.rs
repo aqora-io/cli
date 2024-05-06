@@ -5,6 +5,7 @@ mod credentials;
 mod dirs;
 mod download;
 mod error;
+pub use error::{Error, Result};
 mod evaluate;
 mod graphql_client;
 mod id;

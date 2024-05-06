@@ -90,19 +90,14 @@ impl Cli {
         }
     }
 
-    pub fn run(self, py: pyo3::Python<'_>) -> pyo3::PyResult<()> {
+    pub fn run(self, py: pyo3::Python<'_>) -> crate::error::Result<()> {
         let global = &self.global;
         sentry::configure_scope(|scope| {
             scope.set_extra("python.version", py.version().into());
             scope.set_extra("aqora.url", global.url.clone().into());
         });
 
-        pyo3_asyncio::tokio::run::<_, ()>(py, async move {
-            if let Err(e) = self.do_run().await {
-                tracing::error!("{}", e);
-                std::process::exit(1)
-            }
-            std::process::exit(0);
-        })
+        let result = pyo3_asyncio::tokio::run(py, async move { Ok(self.do_run().await) });
+        result?
     }
 }

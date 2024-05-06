@@ -73,6 +73,12 @@ impl From<dialoguer::Error> for Error {
     }
 }
 
+impl From<pyo3::PyErr> for Error {
+    fn from(e: pyo3::PyErr) -> Self {
+        system(&format!("Python error: {e}"), "")
+    }
+}
+
 impl IntoResponse for Error {
     fn into_response(self) -> Response<Body> {
         let body = Body::new(format!("{}", self));
