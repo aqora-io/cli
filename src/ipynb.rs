@@ -13,14 +13,6 @@ use thiserror::Error;
 const PARAMETERS_TAG: &str = "parameters";
 const CODE_TYPE: &str = "code";
 
-const AQORA_NOTEBOOK_SCRIPT: &str = r#"__AQORA__NOTEBOOK_SCRIPT"#;
-const AQORA_FUNCTION_DEF: &str = r#"async def __aqora__(*__aqora__args, **__aqora__kwargs):
-    globals().update(locals())
-    exec(__AQORA__NOTEBOOK_SCRIPT, globals())
-    if 'output' in globals():
-        return globals()['output']
-    else:
-        raise NameError("No 'output' variable found in the notebook")"#;
 const AQORA_PARAMETERS: &str = r#"input = __aqora__args[0]
 context = __aqora__kwargs.get("context")
 original_input = __aqora__kwargs.get("original_input")"#;
@@ -132,25 +124,29 @@ fn inject_parameters(cells: &mut Vec<Cell>) {
 impl Ipynb {
     fn into_python_function(mut self) -> String {
         inject_parameters(&mut self.cells);
-        let source = self
+        let cells = self
             .cells
             .iter()
             .filter_map(|cell| {
                 if cell.is_code() {
-                    Some(cell.source.0.join(""))
+                    let code = cell.source.0.join("").replace(r#"'''"#, r#"'\''"#);
+                    Some(format!("exec('''\n{code}\n''', globals())"))
                 } else {
                     None
                 }
             })
-            .map(|s| s.replace(r#"'''"#, r#"'\''"#))
             .collect::<Vec<String>>()
-            .join("\n\n");
+            .join("\n\n    ");
         format!(
-            r#"{AQORA_NOTEBOOK_SCRIPT} = '''
-{source}
-'''
+            r#"async def __aqora__(*__aqora__args, **__aqora__kwargs):
+    globals().update(locals())
 
-{AQORA_FUNCTION_DEF}"#,
+    {cells}
+
+    if 'output' in globals():
+        return globals()['output']
+    else:
+        raise NameError("No 'output' variable found in the notebook")"#
         )
     }
 }
