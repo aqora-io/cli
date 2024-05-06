@@ -3,6 +3,9 @@ use clap::{Args, ColorChoice};
 use std::path::PathBuf;
 use url::Url;
 
+/// Aqora respects your privacy and follows https://consoledonottrack.com/ :
+/// when $DO_NOT_TRACK environment variable is defined, Aqora will not
+/// record any statistics or report any incidents.
 #[derive(Args, Debug)]
 pub struct GlobalArgs {
     #[arg(
