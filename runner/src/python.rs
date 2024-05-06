@@ -160,13 +160,10 @@ impl PyEnv {
         };
         Self::ensure_venv(&uv_path, &venv_path, cache_path.as_ref(), color).await?;
         let venv_path = venv_path.as_ref().canonicalize()?;
-        let venv_path_string = venv_path.to_str().ok_or_else(|| {
-            EnvError::VenvFailed("Virtualenv path contains invalid characters".to_string())
-        })?;
         let is_initialized = Python::with_gil(|py| {
             let sys = py.import(intern!(py, "sys"))?;
-            let prefix = sys.getattr(intern!(py, "prefix"))?.extract::<String>()?;
-            if prefix == venv_path_string {
+            let prefix = sys.getattr(intern!(py, "prefix"))?.extract::<PathBuf>()?;
+            if prefix == venv_path {
                 return PyResult::Ok(true);
             }
             PyResult::Ok(false)
@@ -201,8 +198,8 @@ impl PyEnv {
                 add_site_dir.call1((site_packages.to_string_lossy(),))?;
             }
             let sys = py.import(intern!(py, "sys"))?;
-            sys.setattr(intern!(py, "prefix"), venv_path_string)?;
-            sys.setattr(intern!(py, "exec_prefix"), venv_path_string)?;
+            sys.setattr(intern!(py, "prefix"), &venv_path)?;
+            sys.setattr(intern!(py, "exec_prefix"), &venv_path)?;
             PyResult::Ok(())
         })?;
         Ok(Self {
