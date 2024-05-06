@@ -337,6 +337,25 @@ impl PyEnv {
         let module = PyModule::import(py, PyString::new(py, &path.module().to_string()))?;
         module.getattr(PyString::new(py, path.name()))
     }
+
+    pub fn find_spec_search_locations(&self, py: Python, path: &PathStr) -> PyResult<Vec<PathBuf>> {
+        let importlib = py.import(intern!(py, "importlib"))?;
+        let spec = importlib
+            .getattr(intern!(py, "util"))?
+            .getattr(intern!(py, "find_spec"))?
+            .call1((&path.module().to_string(),))?;
+        if spec.is_none() {
+            return Ok(Vec::new());
+        }
+        let locations = spec.getattr("submodule_search_locations")?;
+        if locations.is_none() {
+            return Ok(Vec::new());
+        }
+        locations
+            .iter()?
+            .map(|path| path.and_then(|p| p.extract::<PathBuf>()))
+            .collect()
+    }
 }
 
 macro_rules! async_python_run {

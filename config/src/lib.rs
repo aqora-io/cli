@@ -110,7 +110,7 @@ impl AqoraConfig {
     }
 }
 
-pub type RefMap<'a> = HashMap<String, PathStr<'a>>;
+pub type RefMap = HashMap<String, FunctionDef>;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AqoraUseCaseConfig {
@@ -145,7 +145,7 @@ pub struct LayerOverride {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TestConfig {
     #[serde(default)]
-    pub refs: RefMap<'static>,
+    pub refs: RefMap,
     pub data: Option<PathBuf>,
     pub generator: Option<PathStr<'static>>,
     pub aggregator: Option<PathStr<'static>>,
@@ -174,20 +174,23 @@ pub enum UseCaseConfigValidationError {
 
 impl AqoraUseCaseConfig {
     pub fn replace_refs(&mut self, refs: &RefMap) -> Result<(), PathStrReplaceError> {
-        self.generator = self.generator.replace_refs(refs)?;
-        self.aggregator = self.aggregator.replace_refs(refs)?;
+        let refs = refs
+            .iter()
+            .map(|(k, v)| (k.clone(), v.path.clone()))
+            .collect();
+        self.generator = self.generator.replace_refs(&refs)?;
+        self.aggregator = self.aggregator.replace_refs(&refs)?;
         for layer in self.layers.iter_mut() {
-            if let Some(transform) = layer.transform.as_mut() {
-                transform.path = transform.path.replace_refs(refs)?;
-            }
-            if let Some(context) = layer.context.as_mut() {
-                context.path = context.path.replace_refs(refs)?;
-            }
-            if let Some(metric) = layer.metric.as_mut() {
-                metric.path = metric.path.replace_refs(refs)?;
-            }
-            if let Some(branch) = layer.branch.as_mut() {
-                branch.path = branch.path.replace_refs(refs)?;
+            for function in [
+                &mut layer.transform,
+                &mut layer.context,
+                &mut layer.metric,
+                &mut layer.branch,
+            ]
+            .into_iter()
+            .flatten()
+            {
+                function.path = function.path.replace_refs(&refs)?;
             }
         }
         Ok(())
@@ -208,23 +211,21 @@ impl AqoraUseCaseConfig {
         if let Some(aggregator) = test.aggregator.as_ref() {
             out.aggregator.clone_from(aggregator);
         }
-        for (layer_name, override_) in test.overrides.iter() {
+        for (layer_name, layer_override) in test.overrides.iter() {
             if let Some(layer) = out
                 .layers
                 .iter_mut()
                 .find(|layer| layer.name == *layer_name)
             {
-                if let Some(transform) = override_.transform.as_ref() {
-                    layer.transform = Some(transform.clone());
-                }
-                if let Some(context) = override_.context.as_ref() {
-                    layer.context = Some(context.clone());
-                }
-                if let Some(metric) = override_.metric.as_ref() {
-                    layer.metric = Some(metric.clone());
-                }
-                if let Some(branch) = override_.branch.as_ref() {
-                    layer.branch = Some(branch.clone());
+                for (function, override_function) in [
+                    (&mut layer.transform, &layer_override.transform),
+                    (&mut layer.context, &layer_override.context),
+                    (&mut layer.metric, &layer_override.metric),
+                    (&mut layer.branch, &layer_override.branch),
+                ] {
+                    if let Some(override_function) = override_function {
+                        *function = Some(override_function.clone());
+                    }
                 }
             } else {
                 return Err(TestConfigError::LayerNotFound(layer_name.to_string()));
@@ -250,12 +251,13 @@ pub struct AqoraSubmissionConfig {
     pub competition: Option<String>,
     pub entity: Option<String>,
     #[serde(default)]
-    pub refs: RefMap<'static>,
+    pub refs: RefMap,
 }
 
 #[derive(Clone, Serialize, Debug)]
 pub struct FunctionDef {
     pub path: PathStr<'static>,
+    pub notebook: bool,
 }
 
 impl<'de> Deserialize<'de> for FunctionDef {
@@ -278,6 +280,7 @@ impl<'de> Deserialize<'de> for FunctionDef {
             {
                 Ok(FunctionDef {
                     path: value.parse().map_err(de::Error::custom)?,
+                    notebook: false,
                 })
             }
 
@@ -286,6 +289,7 @@ impl<'de> Deserialize<'de> for FunctionDef {
                 A: de::MapAccess<'de>,
             {
                 let mut path = None;
+                let mut notebook = None;
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
                         "path" => {
@@ -294,13 +298,20 @@ impl<'de> Deserialize<'de> for FunctionDef {
                             }
                             path = Some(map.next_value()?);
                         }
+                        "notebook" => {
+                            if notebook.is_some() {
+                                return Err(de::Error::duplicate_field("notebook"));
+                            }
+                            notebook = Some(map.next_value()?);
+                        }
                         _ => {
                             return Err(de::Error::unknown_field(key.as_str(), &["path"]));
                         }
                     }
                 }
                 let path = path.ok_or_else(|| de::Error::missing_field("path"))?;
-                Ok(FunctionDef { path })
+                let notebook = notebook.unwrap_or(false);
+                Ok(FunctionDef { path, notebook })
             }
         }
 
@@ -308,7 +319,7 @@ impl<'de> Deserialize<'de> for FunctionDef {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Hash, Eq, PartialEq, PartialOrd, Ord)]
 pub struct PathStr<'a>(Cow<'a, [String]>);
 
 #[derive(Error, Debug)]
@@ -344,6 +355,12 @@ impl<'a> PathStr<'a> {
     }
     pub fn has_ref(&self) -> bool {
         self.0.iter().any(|part| part.starts_with('$'))
+    }
+    pub fn push(&mut self, part: impl ToString) {
+        self.0.to_mut().push(part.to_string());
+    }
+    pub fn into_owned(self) -> PathStr<'static> {
+        PathStr(Cow::Owned(self.0.into_owned()))
     }
 }
 
@@ -423,7 +440,7 @@ mod tests {
         assert_eq!(path_str.to_string(), "foo.$bar.baz");
         assert!(path_str.has_ref());
 
-        let refs: RefMap = vec![("bar".to_string(), "qux.quux".parse().unwrap())]
+        let refs: HashMap<String, PathStr> = vec![("bar".to_string(), "qux.quux".parse().unwrap())]
             .into_iter()
             .collect();
         let replaced = path_str.replace_refs(&refs).unwrap();
