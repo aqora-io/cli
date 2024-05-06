@@ -23,7 +23,9 @@ fn main() {
                 panic!("Malformed Sentry DSN {sentry_dsn:?}: {dsn_error:?}");
             }
         }
-        Err(env::VarError::NotPresent) => {}
+        Err(env::VarError::NotPresent) => {
+            println!("cargo:warning=Sentry integration is disabled");
+        }
         Err(error) => panic!("Unexpected Sentry DSN: {error:?}"),
     }
 }
