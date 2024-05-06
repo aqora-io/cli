@@ -1,7 +1,7 @@
 use aqora_cli::Cli;
 use clap::Parser;
 
-fn main() -> pyo3::PyResult<()> {
+fn main() -> aqora_cli::Result<()> {
     let _sentry = aqora_cli::sentry::setup();
 
     pyo3::prepare_freethreaded_python();
