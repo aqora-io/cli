@@ -403,7 +403,7 @@ impl Pipeline {
         env: &PyEnv,
         def: Option<&FunctionDef>,
     ) -> PyResult<LayerFunctionDef> {
-        if let Some(FunctionDef { path }) = def {
+        if let Some(FunctionDef { path, .. }) = def {
             if path.has_ref() {
                 Ok(LayerFunctionDef::UseDefault)
             } else {

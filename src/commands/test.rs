@@ -6,6 +6,7 @@ use crate::{
     },
     error::{self, Result},
     evaluate::evaluate,
+    ipynb::convert_submission_notebooks,
     python::LastRunResult,
 };
 use aqora_config::{AqoraUseCaseConfig, PyProject};
@@ -141,8 +142,26 @@ pub async fn run_submission_tests(
             )
         })?;
 
+    let mut pipeline_pb = ProgressBar::new_spinner().with_message("Starting pipeline...");
+    pipeline_pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    pipeline_pb = m.add(pipeline_pb);
+
+    pipeline_pb.set_message("Setting up virtual environment...");
+
+    let env = init_venv(
+        &global.project,
+        global.uv.as_ref(),
+        &pipeline_pb,
+        global.color,
+    )
+    .await?;
+
+    pipeline_pb.set_message("Converting notebooks...");
+
     let modified_use_case = {
         let mut use_case = use_case.clone();
+        let mut submission = submission.clone();
+        convert_submission_notebooks(&env, &mut submission)?;
         if let Err(err) = use_case.replace_refs(&submission.refs) {
             return Err(error::system(
                 &format!("Failed to import pipeline: {err}"),
@@ -154,18 +173,6 @@ pub async fn run_submission_tests(
     let config = PipelineConfig {
         data: data_path.canonicalize()?,
     };
-
-    let mut pipeline_pb = ProgressBar::new_spinner().with_message("Starting pipeline...");
-    pipeline_pb.enable_steady_tick(std::time::Duration::from_millis(100));
-    pipeline_pb = m.add(pipeline_pb);
-
-    let env = init_venv(
-        &global.project,
-        global.uv.as_ref(),
-        &pipeline_pb,
-        global.color,
-    )
-    .await?;
 
     pipeline_pb.set_message("Importing pipeline..");
 
