@@ -32,45 +32,61 @@ pub async fn clean(_: Clean, global: GlobalArgs) -> crate::error::Result<()> {
             );
         }
     }
-    for entry in ignore::WalkBuilder::new(&global.project)
-        .standard_filters(false)
-        .build()
-        .flatten()
-        .map(|entry| entry.into_path())
-    {
-        if entry.is_dir()
-            && (entry.extension().map_or(false, |ext| ext == "egg-info")
-                || entry
-                    .file_name()
-                    .map_or(false, |name| name == "__pycache__"))
+    let gitignore = {
+        let mut builder = ignore::gitignore::GitignoreBuilder::new(&global.project);
+        if let Some(err) = builder.add(global.project.join(".gitignore")) {
+            Err(err)
+        } else {
+            builder.build()
+        }
+    };
+    if let Ok(gitignore) = gitignore {
+        for entry in ignore::WalkBuilder::new(&global.project)
+            .standard_filters(false)
+            .build()
+            .flatten()
+            .map(|entry| entry.into_path())
         {
-            if let Err(err) = tokio::fs::remove_dir_all(&entry).await {
-                tracing::warn!(
-                    "{}: Failed to remove directory at {}: {}",
-                    "WARNING".if_supports_color(OwoStream::Stderr, |t| t.yellow()),
-                    entry.display(),
-                    err
-                );
+            if !gitignore
+                .matched_path_or_any_parents(&entry, entry.is_dir())
+                .is_ignore()
+            {
+                continue;
             }
-        } else if entry.is_file()
-            && (entry
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .map_or(false, |ext| matches!(ext, "pyc" | "pyo" | "pyd" | "egg"))
-                || entry
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .map_or(false, |name| {
-                        name.starts_with("__generated__") && name.ends_with(".py")
-                    }))
-        {
-            if let Err(err) = tokio::fs::remove_file(&entry).await {
-                tracing::warn!(
-                    "{}: Failed to remove file at {}: {}",
-                    "WARNING".if_supports_color(OwoStream::Stderr, |t| t.yellow()),
-                    entry.display(),
-                    err
-                );
+            if entry.is_dir()
+                && (entry.extension().map_or(false, |ext| ext == "egg-info")
+                    || entry
+                        .file_name()
+                        .map_or(false, |name| name == "__pycache__"))
+            {
+                if let Err(err) = tokio::fs::remove_dir_all(&entry).await {
+                    tracing::warn!(
+                        "{}: Failed to remove directory at {}: {}",
+                        "WARNING".if_supports_color(OwoStream::Stderr, |t| t.yellow()),
+                        entry.display(),
+                        err
+                    );
+                }
+            } else if entry.is_file()
+                && (entry
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .map_or(false, |ext| matches!(ext, "pyc" | "pyo" | "pyd" | "egg"))
+                    || entry
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .map_or(false, |name| {
+                            name.starts_with("__generated__") && name.ends_with(".py")
+                        }))
+            {
+                if let Err(err) = tokio::fs::remove_file(&entry).await {
+                    tracing::warn!(
+                        "{}: Failed to remove file at {}: {}",
+                        "WARNING".if_supports_color(OwoStream::Stderr, |t| t.yellow()),
+                        entry.display(),
+                        err
+                    );
+                }
             }
         }
     }
