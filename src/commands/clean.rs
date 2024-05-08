@@ -3,7 +3,6 @@ use crate::{
     dirs::{project_config_dir, project_venv_dir},
 };
 use clap::Args;
-use glob::glob;
 use owo_colors::{OwoColorize, Stream as OwoStream};
 
 #[derive(Args, Debug)]
@@ -33,14 +32,41 @@ pub async fn clean(_: Clean, global: GlobalArgs) -> crate::error::Result<()> {
             );
         }
     }
-    for entry in glob("**/*.egg-info")
-        .expect("{}: Failed to read glob pattern")
+    for entry in ignore::WalkBuilder::new(&global.project)
+        .standard_filters(false)
+        .build()
         .flatten()
+        .map(|entry| entry.into_path())
     {
-        if entry.is_dir() {
+        if entry.is_dir()
+            && (entry.extension().map_or(false, |ext| ext == "egg-info")
+                || entry
+                    .file_name()
+                    .map_or(false, |name| name == "__pycache__"))
+        {
             if let Err(err) = tokio::fs::remove_dir_all(&entry).await {
-                tracing::error!(
-                    "{}: Failed to remove egg-info directory at {}: {}",
+                tracing::warn!(
+                    "{}: Failed to remove directory at {}: {}",
+                    "WARNING".if_supports_color(OwoStream::Stderr, |t| t.yellow()),
+                    entry.display(),
+                    err
+                );
+            }
+        } else if entry.is_file()
+            && (entry
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map_or(false, |ext| matches!(ext, "pyc" | "pyo" | "pyd" | "egg"))
+                || entry
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .map_or(false, |name| {
+                        name.starts_with("__generated__") && name.ends_with(".py")
+                    }))
+        {
+            if let Err(err) = tokio::fs::remove_file(&entry).await {
+                tracing::warn!(
+                    "{}: Failed to remove file at {}: {}",
                     "WARNING".if_supports_color(OwoStream::Stderr, |t| t.yellow()),
                     entry.display(),
                     err
