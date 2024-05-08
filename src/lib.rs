@@ -12,6 +12,7 @@ mod ipynb;
 mod manifest;
 #[cfg(feature = "extension-module")]
 mod module;
+mod print;
 mod process;
 mod python;
 mod readme;

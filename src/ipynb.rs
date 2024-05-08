@@ -1,5 +1,5 @@
 use crate::error::{self, Error};
-use aqora_config::{AqoraSubmissionConfig, AqoraUseCaseConfig, FunctionDef, PathStr};
+use aqora_config::{AqoraConfig, AqoraSubmissionConfig, AqoraUseCaseConfig, FunctionDef, PathStr};
 use aqora_runner::python::PyEnv;
 use pyo3::prelude::*;
 use serde::{de, Deserialize};
@@ -279,4 +279,14 @@ pub fn convert_use_case_notebooks(
         }
     }
     Ok(())
+}
+
+pub fn convert_project_notebooks(
+    env: &PyEnv,
+    config: &mut AqoraConfig,
+) -> Result<(), NotebookToPythonFunctionError> {
+    match config {
+        AqoraConfig::UseCase(use_case) => convert_use_case_notebooks(env, use_case),
+        AqoraConfig::Submission(submission) => convert_submission_notebooks(env, submission),
+    }
 }

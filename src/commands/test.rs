@@ -6,7 +6,8 @@ use crate::{
     },
     error::{self, Result},
     evaluate::evaluate,
-    ipynb::convert_submission_notebooks,
+    ipynb::{convert_submission_notebooks, convert_use_case_notebooks},
+    print::override_print,
     python::LastRunResult,
 };
 use aqora_config::{AqoraUseCaseConfig, PyProject};
@@ -174,13 +175,23 @@ pub async fn run_submission_tests(
         data: data_path.canonicalize()?,
     };
 
+    override_print(pipeline_pb.clone()).map_err(|err| {
+        pipeline_pb.suspend(|| {
+            Python::with_gil(|py| err.print_and_set_sys_last_vars(py));
+        });
+        pipeline_pb.finish_with_message("Failed to run tests");
+        error::system(&format!("Failed to setup print: {err}"), "")
+    })?;
+
     pipeline_pb.set_message("Importing pipeline..");
 
     let pipeline = match Pipeline::import(&env, &modified_use_case, config) {
         Ok(pipeline) => pipeline,
         Err(err) => {
+            pipeline_pb.suspend(|| {
+                Python::with_gil(|py| err.print_and_set_sys_last_vars(py));
+            });
             pipeline_pb.finish_with_message("Failed to import pipeline");
-            Python::with_gil(|py| err.print_and_set_sys_last_vars(py));
             return Err(error::user(
                 "Failed to import pipeline",
                 "Check the above error and try again",
@@ -208,8 +219,10 @@ pub async fn run_submission_tests(
                 )
             }
             Err(error) => {
+                pipeline_pb.suspend(|| {
+                    Python::with_gil(|py| error.print_and_set_sys_last_vars(py));
+                });
                 pipeline_pb.finish_with_message("Failed to run pipeline");
-                Python::with_gil(|py| error.print_and_set_sys_last_vars(py));
                 return Err(error::user(
                     "Unable to generate an inputs",
                     "Check the above error and try again",
@@ -279,8 +292,10 @@ pub async fn run_submission_tests(
             ))
         }
         Err(EvaluationError::Python(e)) => {
+            pipeline_pb.suspend(|| {
+                Python::with_gil(|py| e.print_and_set_sys_last_vars(py));
+            });
             pipeline_pb.finish_with_message("Failed to run pipeline");
-            Python::with_gil(|py| e.print_and_set_sys_last_vars(py));
             Err(error::user(
                 "Failed to run pipeline",
                 "Check the above error and try again",
@@ -386,8 +401,10 @@ async fn test_use_case_test(
     let pipeline = match Pipeline::import(env, &modified_use_case, config) {
         Ok(pipeline) => pipeline,
         Err(err) => {
+            pb.suspend(|| {
+                Python::with_gil(|py| err.print_and_set_sys_last_vars(py));
+            });
             pb.finish_with_message(format!("Failed to import pipeline for {name}"));
-            Python::with_gil(|py| err.print_and_set_sys_last_vars(py));
             return Err(error::user(
                 "Failed to import pipeline",
                 "Check the above error and try again",
@@ -403,8 +420,10 @@ async fn test_use_case_test(
                     as Pin<Box<dyn Stream<Item = (usize, PyResult<PyObject>)> + Send + Sync>>
             })
             .map_err(|error| {
+                pb.suspend(|| {
+                    Python::with_gil(|py| error.print_and_set_sys_last_vars(py));
+                });
                 pb.finish_with_message(format!("Failed to run pipeline for {name}"));
-                Python::with_gil(|py| error.print_and_set_sys_last_vars(py));
                 error::user(
                     &format!("Unable to generate an inputs for {name}"),
                     "Check the above error and try again",
@@ -451,8 +470,10 @@ async fn test_use_case_test(
             ));
         }
         Err(EvaluationError::Python(e)) => {
+            pb.suspend(|| {
+                Python::with_gil(|py| e.print_and_set_sys_last_vars(py));
+            });
             pb.finish_with_message(format!("Failed to run pipeline for {name}"));
-            Python::with_gil(|py| e.print_and_set_sys_last_vars(py));
             return Err(error::user(
                 &format!("Failed to run pipeline for {name}"),
                 "Check the above error and try again",
@@ -490,8 +511,10 @@ async fn test_use_case_test(
                     .extract::<String>()
             })
             .map_err(|e| {
+                pb.suspend(|| {
+                    Python::with_gil(|py| e.print_and_set_sys_last_vars(py));
+                });
                 pb.finish_with_message(format!("Failed to evaluate {name} score"));
-                Python::with_gil(|py| e.print_and_set_sys_last_vars(py));
                 error::user(
                     &format!("Failed to convert {name} score to JSON"),
                     "Check the pipeline configuration and try again",
@@ -582,15 +605,26 @@ async fn test_use_case(args: Test, global: GlobalArgs, project: PyProject) -> Re
 
     let env = init_venv(&global.project, global.uv.as_ref(), &venv_pb, global.color).await?;
 
+    let mut use_case = use_case.clone();
+    convert_use_case_notebooks(&env, &mut use_case)?;
+
     venv_pb.finish_with_message("Virtual environment ready");
 
     let test_pb = m.add(ProgressBar::new_spinner().with_message("Running tests..."));
     test_pb.enable_steady_tick(std::time::Duration::from_millis(100));
 
+    override_print(test_pb.clone()).map_err(|err| {
+        test_pb.suspend(|| {
+            Python::with_gil(|py| err.print_and_set_sys_last_vars(py));
+        });
+        test_pb.finish_with_message("Failed to run tests");
+        error::system(&format!("Failed to setup print: {err}"), "")
+    })?;
+
     let last_run_dir = project_last_run_dir(&global.project);
     for (name, indexes) in tests {
         let indexes = indexes.unwrap_or_default();
-        test_use_case_test(&m, &env, &last_run_dir, use_case, &name, indexes)
+        test_use_case_test(&m, &env, &last_run_dir, &use_case, &name, indexes)
             .await
             .map_err(|e| {
                 test_pb.finish_with_message("Failed to run tests");

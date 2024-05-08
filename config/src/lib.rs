@@ -63,6 +63,10 @@ impl PyProject {
         self.tool.as_ref().and_then(|tool| tool.aqora.as_ref())
     }
 
+    pub fn aqora_mut(&mut self) -> Option<&mut AqoraConfig> {
+        self.tool.as_mut().and_then(|tool| tool.aqora.as_mut())
+    }
+
     pub fn from_toml(s: impl AsRef<str>) -> Result<Self, toml::de::Error> {
         toml::from_str(s.as_ref())
     }
