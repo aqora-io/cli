@@ -153,7 +153,7 @@ impl Ipynb {
 
 #[derive(Error, Debug)]
 pub enum NotebookToPythonFunctionError {
-    #[error("Invalid notebook {0}: {0}")]
+    #[error("Invalid notebook {0}: {1}")]
     Json(PathBuf, #[source] serde_json::Error),
     #[error("Could not read python notebook {0}: {1}")]
     Read(PathBuf, #[source] std::io::Error),
