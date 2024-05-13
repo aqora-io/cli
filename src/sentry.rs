@@ -128,7 +128,7 @@ fn tracing_gc() -> TracingGCGuard {
     const GC_THRESHOLD: usize = 10_000_000;
     const GC_THREADS: usize = 1;
 
-    /// Scan for logging files on disk.
+    /// Scan for archived logfiles on disk.
     #[tracing::instrument(err, skip(dir))]
     async fn read_dir(dir: impl AsRef<Path>) -> Result<Vec<PathBuf>> {
         let mut entries = tokio::fs::read_dir(dir).await?;
@@ -136,7 +136,7 @@ fn tracing_gc() -> TracingGCGuard {
         while let Some(entry) = entries.next_entry().await? {
             let entry_name = entry.file_name();
             let entry_name = entry_name.to_string_lossy();
-            if !entry_name.starts_with(LOG_FILENAME) {
+            if entry_name == LOG_FILENAME || !entry_name.starts_with(LOG_FILENAME) {
                 continue;
             }
             children.push(entry.path());
@@ -162,11 +162,11 @@ fn tracing_gc() -> TracingGCGuard {
     /// - with threshold=100 and sizes=[70, 30, 50], it will return 1,
     /// - with threshold=100 and sizes=[60, 30, 40], it will return 2,
     /// - with threshold=100 and sizes=[10, 20, 30], it will return 3,
-    fn find_garbage(sizes: &[usize]) -> usize {
+    fn find_garbage(sizes: &[usize], threshold: usize) -> usize {
         let mut acc = 0;
         for (index, size) in sizes.iter().enumerate() {
             acc += size;
-            if acc >= GC_THRESHOLD {
+            if acc >= threshold {
                 return index;
             }
         }
@@ -188,15 +188,22 @@ fn tracing_gc() -> TracingGCGuard {
     async fn attempt_gc() -> Result<()> {
         let gc_dir = log_dir().ok_or(Error::from(ErrorKind::NotFound))?;
 
+        // (a) account for every log files that would need to be collected,
         let mut files = read_dir(gc_dir).await?;
+        if files.is_empty() {
+            return Ok(());
+        }
 
-        // sort files by descending order: newer files first.
+        // (b) sort files by descending order (newest files first),
         files.sort_by(|lhs, rhs| lhs.file_name().cmp(&rhs.file_name()).reverse());
 
+        // (c) get each files' size,
         let sizes = size_of(&files[..]).await?;
 
-        let gc_index = find_garbage(&sizes[..]);
+        // (d) find index where total size exceeds our threshold,
+        let gc_index = find_garbage(&sizes[..], GC_THRESHOLD);
 
+        // (e) erase everything else after
         let to_collect = files.iter().skip(gc_index).collect::<Vec<_>>();
         erase_all(&to_collect[..]).await
     }
