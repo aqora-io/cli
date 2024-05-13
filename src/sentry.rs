@@ -67,11 +67,7 @@ fn tracing_setup() -> Option<tracing_appender::non_blocking::WorkerGuard> {
             .compact()
             .without_time()
             .with_target(false)
-            .with_filter(if cfg!(debug_assertions) {
-                tracing::level_filters::LevelFilter::DEBUG
-            } else {
-                tracing::level_filters::LevelFilter::INFO
-            })
+            .with_filter(tracing_subscriber::EnvFilter::from_env("AQORA_LOG"))
             .boxed(),
     );
 
