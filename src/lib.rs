@@ -5,7 +5,6 @@ mod credentials;
 mod dirs;
 mod download;
 mod error;
-pub use error::{Error, Result};
 mod evaluate;
 mod graphql_client;
 mod id;
@@ -19,7 +18,7 @@ mod revert_file;
 pub mod sentry;
 mod shutdown;
 
-pub use commands::Cli;
+pub use commands::{Cli, CliExit};
 
 #[cfg(feature = "extension-module")]
 pub use module::*;
