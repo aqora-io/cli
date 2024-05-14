@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use tracing::level_filters::LevelFilter;
 use tracing_subscriber::prelude::*;
 
 use crate::manifest::manifest_version;
@@ -67,7 +68,12 @@ fn tracing_setup() -> Option<tracing_appender::non_blocking::WorkerGuard> {
             .compact()
             .without_time()
             .with_target(false)
-            .with_filter(tracing_subscriber::EnvFilter::from_env("AQORA_LOG"))
+            .with_filter(
+                tracing_subscriber::EnvFilter::builder()
+                    .with_default_directive(LevelFilter::INFO.into())
+                    .with_env_var("AQORA_LOG")
+                    .from_env_lossy(),
+            )
             .boxed(),
     );
 
