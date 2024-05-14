@@ -7,9 +7,7 @@ use pyo3::prelude::*;
 pub fn main(py: Python<'_>) -> PyResult<()> {
     let _sentry = crate::sentry::setup();
     let cli = Cli::parse_from(std::env::args().skip(1));
-    cli.run(py)
-        .map_err(|err| pyo3::PyErr::new::<pyo3::exceptions::PyValueError, _>(err.message()))?;
-    Ok(())
+    cli.run(py).into()
 }
 
 #[pymodule]

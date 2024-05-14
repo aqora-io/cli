@@ -12,6 +12,8 @@ mod test;
 mod upload;
 mod version;
 
+use std::process::Termination;
+
 pub use global_args::GlobalArgs;
 
 use add::{add, Add};
@@ -39,6 +41,43 @@ pub struct Cli {
     global: GlobalArgs,
     #[command(subcommand)]
     commands: Commands,
+}
+
+pub struct CliExit(i32);
+
+impl CliExit {
+    const SUCCESS: CliExit = CliExit(0);
+    const FAILURE: CliExit = CliExit(1);
+}
+
+impl Termination for CliExit {
+    fn report(self) -> std::process::ExitCode {
+        match self.0 {
+            0 => std::process::ExitCode::SUCCESS,
+            _ => std::process::ExitCode::FAILURE,
+        }
+    }
+}
+
+impl From<i32> for CliExit {
+    fn from(value: i32) -> Self {
+        Self(value)
+    }
+}
+
+impl From<CliExit> for pyo3::PyErr {
+    fn from(value: CliExit) -> Self {
+        pyo3::exceptions::PySystemExit::new_err::<(i32,)>((value.0,))
+    }
+}
+
+impl From<CliExit> for pyo3::PyResult<()> {
+    fn from(value: CliExit) -> Self {
+        match value.0 {
+            0 => Ok(()),
+            _ => Err(value.into()),
+        }
+    }
 }
 
 #[derive(Subcommand, Debug)]
@@ -90,14 +129,26 @@ impl Cli {
         }
     }
 
-    pub fn run(self, py: pyo3::Python<'_>) -> crate::error::Result<()> {
+    pub fn run(self, py: pyo3::Python<'_>) -> CliExit {
         let global = &self.global;
         sentry::configure_scope(|scope| {
             scope.set_extra("python.version", py.version().into());
             scope.set_extra("aqora.url", global.url.clone().into());
         });
 
-        let result = pyo3_asyncio::tokio::run(py, async move { Ok(self.do_run().await) });
-        result?
+        let code = pyo3_asyncio::tokio::run::<_, CliExit>(py, async move {
+            if let Err(run_error) = self.do_run().await {
+                tracing::error!("{run_error}");
+                Ok(CliExit::FAILURE)
+            } else {
+                Ok(CliExit::SUCCESS)
+            }
+        });
+
+        if let Err(asyncio_error) = &code {
+            tracing::error!("{asyncio_error}");
+        }
+
+        code.unwrap_or(CliExit::FAILURE)
     }
 }
