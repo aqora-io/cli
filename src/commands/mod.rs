@@ -12,6 +12,7 @@ mod test;
 mod upload;
 mod version;
 
+use serde::Serialize;
 use std::process::Termination;
 
 pub use global_args::GlobalArgs;
@@ -34,7 +35,7 @@ use crate::{
 };
 use clap::{CommandFactory, Parser, Subcommand};
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Serialize)]
 #[command(author, version = version(), about)]
 pub struct Cli {
     #[command(flatten)]
@@ -80,7 +81,7 @@ impl From<CliExit> for pyo3::PyResult<()> {
     }
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Serialize)]
 pub enum Commands {
     Install(Install),
     Login(Login),
@@ -130,25 +131,47 @@ impl Cli {
     }
 
     pub fn run(self, py: pyo3::Python<'_>) -> CliExit {
-        let global = &self.global;
         sentry::configure_scope(|scope| {
-            scope.set_extra("python.version", py.version().into());
-            scope.set_extra("aqora.url", global.url.clone().into());
+            let mut map = std::collections::BTreeMap::new();
+            map.insert(
+                "args".into(),
+                serde_json::to_value(&self).unwrap_or_default(),
+            );
+            scope.set_context("command", sentry::protocol::Context::Other(map));
+            scope.set_context(
+                "python",
+                sentry::protocol::RuntimeContext {
+                    name: Some("Python".into()),
+                    version: Some(py.version().into()),
+                    ..Default::default()
+                },
+            );
         });
 
-        let code = pyo3_asyncio::tokio::run::<_, CliExit>(py, async move {
+        match pyo3_asyncio::tokio::run::<_, CliExit>(py, async move {
             if let Err(run_error) = self.do_run().await {
-                tracing::error!("{run_error}");
+                if run_error.is_user() {
+                    tracing::error!(
+                        error = &run_error as &dyn std::error::Error,
+                        is_user = true,
+                        "{run_error}"
+                    );
+                } else {
+                    tracing::error!(error = &run_error as &dyn std::error::Error, "{run_error}");
+                }
                 Ok(CliExit::FAILURE)
             } else {
                 Ok(CliExit::SUCCESS)
             }
-        });
-
-        if let Err(asyncio_error) = &code {
-            tracing::error!("{asyncio_error}");
+        }) {
+            Err(asyncio_error) => {
+                tracing::error!(
+                    error = &asyncio_error as &dyn std::error::Error,
+                    "{asyncio_error}"
+                );
+                CliExit::FAILURE
+            }
+            Ok(exit_code) => exit_code,
         }
-
-        code.unwrap_or(CliExit::FAILURE)
     }
 }

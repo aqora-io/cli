@@ -16,7 +16,7 @@ use clap::Args;
 use futures::prelude::*;
 use graphql_client::GraphQLQuery;
 use indicatif::ProgressBar;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{future::IntoFuture, sync::Arc};
 use tokio::{
     net::TcpListener,
@@ -26,7 +26,7 @@ use url::Url;
 
 const CLIENT_ID_PREFIX: &str = "localhost-";
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Serialize)]
 #[command(author, version, about)]
 pub struct Login;
 

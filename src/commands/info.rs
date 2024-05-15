@@ -7,6 +7,7 @@ use crate::{
 };
 use clap::Args;
 use graphql_client::GraphQLQuery;
+use serde::Serialize;
 use std::env::args;
 use which::which;
 
@@ -26,7 +27,7 @@ pub async fn get_viewer_info(global: &GlobalArgs) -> Result<viewer_info::ViewerI
         .viewer)
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Serialize)]
 #[command(author, version, about)]
 pub struct Info;
 

@@ -52,3 +52,14 @@ impl ColorChoiceExt for ColorChoice {
         }
     }
 }
+
+pub fn serialize_color_choice<S>(color: &ColorChoice, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match color {
+        ColorChoice::Auto => serializer.serialize_str("auto"),
+        ColorChoice::Always => serializer.serialize_str("always"),
+        ColorChoice::Never => serializer.serialize_str("never"),
+    }
+}

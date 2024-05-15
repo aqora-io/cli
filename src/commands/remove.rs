@@ -10,11 +10,12 @@ use aqora_config::{PackageName, Requirement};
 use aqora_runner::python::{PipOptions, PipPackage};
 use clap::Args;
 use indicatif::ProgressBar;
+use serde::Serialize;
 use std::time::Duration;
 use tokio::fs;
 use toml_edit::DocumentMut;
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Serialize)]
 #[command(author, version, about)]
 pub struct Remove {
     pub deps: Vec<String>,

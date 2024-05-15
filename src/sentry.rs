@@ -62,12 +62,21 @@ fn tracing_setup() -> Option<tracing_appender::non_blocking::WorkerGuard> {
     let mut layers = Vec::new();
     let mut opt_guard = None;
 
+    let formatter = tracing_subscriber::fmt::format::debug_fn(|writer, field, value| {
+        if field.name() == "message" {
+            write!(writer, "{value:?}")
+        } else {
+            Ok(())
+        }
+    });
+
     // console logger
     layers.push(
         tracing_subscriber::fmt::layer()
             .compact()
             .without_time()
             .with_target(false)
+            .fmt_fields(formatter)
             .with_filter(
                 tracing_subscriber::EnvFilter::builder()
                     .with_default_directive(LevelFilter::INFO.into())
@@ -90,6 +99,23 @@ fn tracing_setup() -> Option<tracing_appender::non_blocking::WorkerGuard> {
                 .boxed(),
         );
     }
+
+    // sentry logger
+    layers.push(
+        sentry::integrations::tracing::layer()
+            .event_filter(|meta| {
+                use sentry::integrations::tracing::EventFilter::*;
+                if meta.level() > &tracing::Level::WARN || meta.fields().field("is_user").is_some()
+                {
+                    Ignore
+                } else if meta.level() > &tracing::Level::ERROR {
+                    Event
+                } else {
+                    Exception
+                }
+            })
+            .boxed(),
+    );
 
     tracing_subscriber::registry().with(layers).init();
 

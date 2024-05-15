@@ -20,13 +20,14 @@ use futures::prelude::*;
 use graphql_client::GraphQLQuery;
 use indicatif::{MultiProgress, ProgressBar};
 use reqwest::header::{CONTENT_LENGTH, CONTENT_TYPE};
+use serde::Serialize;
 use std::path::Path;
 use tempfile::tempdir;
 use url::Url;
 
 use super::test::run_submission_tests;
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Serialize)]
 #[command(author, version, about)]
 pub struct Upload {
     pub competition: Option<String>,
