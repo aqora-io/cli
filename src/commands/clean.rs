@@ -3,7 +3,6 @@ use crate::{
     dirs::{project_config_dir, project_venv_dir},
 };
 use clap::Args;
-use owo_colors::{OwoColorize, Stream as OwoStream};
 use serde::Serialize;
 
 #[derive(Args, Debug, Serialize)]
@@ -14,9 +13,8 @@ pub async fn clean(_: Clean, global: GlobalArgs) -> crate::error::Result<()> {
     let project_config_dir = project_config_dir(&global.project);
     if project_config_dir.exists() {
         if let Err(err) = tokio::fs::remove_dir_all(&project_config_dir).await {
-            tracing::error!(
-                "{}: Failed to remove project config directory at {}: {}",
-                "WARNING".if_supports_color(OwoStream::Stderr, |t| t.yellow()),
+            tracing::warn!(
+                "Failed to remove project config directory at {}: {}",
                 project_config_dir.display(),
                 err
             );
@@ -25,9 +23,8 @@ pub async fn clean(_: Clean, global: GlobalArgs) -> crate::error::Result<()> {
     let venv_dir = project_venv_dir(&global.project);
     if venv_dir.exists() {
         if let Err(err) = tokio::fs::remove_dir_all(&venv_dir).await {
-            tracing::error!(
-                "{}: Failed to remove project venv directory at {}: {}",
-                "WARNING".if_supports_color(OwoStream::Stderr, |t| t.yellow()),
+            tracing::warn!(
+                "Failed to remove project venv directory at {}: {}",
                 venv_dir.display(),
                 err
             );
@@ -61,12 +58,7 @@ pub async fn clean(_: Clean, global: GlobalArgs) -> crate::error::Result<()> {
                         .map_or(false, |name| name == "__pycache__"))
             {
                 if let Err(err) = tokio::fs::remove_dir_all(&entry).await {
-                    tracing::warn!(
-                        "{}: Failed to remove directory at {}: {}",
-                        "WARNING".if_supports_color(OwoStream::Stderr, |t| t.yellow()),
-                        entry.display(),
-                        err
-                    );
+                    tracing::warn!("Failed to remove directory at {}: {}", entry.display(), err);
                 }
             } else if entry.is_file()
                 && (entry
@@ -81,12 +73,7 @@ pub async fn clean(_: Clean, global: GlobalArgs) -> crate::error::Result<()> {
                         }))
             {
                 if let Err(err) = tokio::fs::remove_file(&entry).await {
-                    tracing::warn!(
-                        "{}: Failed to remove file at {}: {}",
-                        "WARNING".if_supports_color(OwoStream::Stderr, |t| t.yellow()),
-                        entry.display(),
-                        err
-                    );
+                    tracing::warn!("Failed to remove file at {}: {}", entry.display(), err);
                 }
             }
         }
