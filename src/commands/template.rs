@@ -7,6 +7,7 @@ use crate::{
 use clap::Args;
 use graphql_client::GraphQLQuery;
 use indicatif::{MultiProgress, ProgressBar};
+use serde::Serialize;
 use std::path::PathBuf;
 use url::Url;
 
@@ -18,7 +19,7 @@ use url::Url;
 )]
 pub struct GetCompetitionTemplate;
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Serialize)]
 #[command(author, version, about)]
 pub struct Template {
     pub competition: String,

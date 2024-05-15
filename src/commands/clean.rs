@@ -4,8 +4,9 @@ use crate::{
 };
 use clap::Args;
 use owo_colors::{OwoColorize, Stream as OwoStream};
+use serde::Serialize;
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Serialize)]
 #[command(author, version, about)]
 pub struct Clean;
 

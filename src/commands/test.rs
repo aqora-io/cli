@@ -21,6 +21,7 @@ use indicatif::{MultiProgress, ProgressBar};
 use owo_colors::{OwoColorize, Stream as OwoStream};
 use pyo3::prelude::*;
 use pyo3::{exceptions::PyException, Python};
+use serde::Serialize;
 use std::{
     collections::HashMap,
     path::Path,
@@ -28,7 +29,7 @@ use std::{
     sync::{atomic::AtomicU32, Arc},
 };
 
-#[derive(Args, Debug, Clone)]
+#[derive(Args, Debug, Clone, Serialize)]
 #[command(author, version, about)]
 pub struct Test {
     #[arg(short, long)]

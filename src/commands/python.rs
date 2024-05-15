@@ -4,9 +4,10 @@ use crate::{
 };
 use clap::Args;
 use indicatif::ProgressBar;
+use serde::Serialize;
 use std::{ffi::OsString, time::Duration};
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Serialize)]
 #[command(author, version, about)]
 pub struct Python {
     #[arg(last = true)]

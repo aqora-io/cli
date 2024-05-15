@@ -14,12 +14,12 @@ use aqora_config::{
 use aqora_runner::python::{PipOptions, PipPackage};
 use clap::Args;
 use indicatif::ProgressBar;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, time::Duration};
 use tokio::fs;
 use toml_edit::DocumentMut;
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Serialize)]
 #[command(author, version, about)]
 pub struct Add {
     #[arg(long, short)]

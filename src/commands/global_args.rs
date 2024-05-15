@@ -1,12 +1,13 @@
-use crate::{error::Result, graphql_client::graphql_url};
+use crate::{colors::serialize_color_choice, error::Result, graphql_client::graphql_url};
 use clap::{Args, ColorChoice};
+use serde::Serialize;
 use std::path::PathBuf;
 use url::Url;
 
 /// Aqora respects your privacy and follows https://consoledonottrack.com/ :
 /// when $DO_NOT_TRACK environment variable is defined, Aqora will not
 /// record any statistics or report any incidents.
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Serialize)]
 pub struct GlobalArgs {
     #[arg(
         long,
@@ -21,6 +22,7 @@ pub struct GlobalArgs {
     #[arg(long, global = true)]
     pub uv: Option<PathBuf>,
     #[arg(long, default_value_t = ColorChoice::Auto, global = true)]
+    #[serde(serialize_with = "serialize_color_choice")]
     pub color: ColorChoice,
 }
 

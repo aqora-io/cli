@@ -15,6 +15,7 @@ use clap::Args;
 use futures::prelude::*;
 use graphql_client::GraphQLQuery;
 use indicatif::{MultiProgress, ProgressBar};
+use serde::Serialize;
 use url::Url;
 
 #[derive(GraphQLQuery)]
@@ -25,7 +26,7 @@ use url::Url;
 )]
 pub struct GetCompetitionUseCase;
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Serialize)]
 pub struct Install {
     #[arg(long, short)]
     pub upgrade: bool,
