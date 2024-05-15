@@ -13,6 +13,9 @@ on:
 permissions:
   contents: read
 
+env:
+  SENTRY_DSN: ${{ vars.SENTRY_DSN }}
+
 jobs:
   linux:
     runs-on: ubuntu-latest
