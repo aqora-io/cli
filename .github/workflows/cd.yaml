@@ -34,7 +34,7 @@ jobs:
           args: --release --out dist
           sccache: 'true'
           manylinux: auto
-          docker-options: -e SENTRY_DSN=$SENTRY_DSN
+          docker-options: -e SENTRY_DSN
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
