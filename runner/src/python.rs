@@ -339,9 +339,8 @@ impl PyEnv {
     }
 
     pub fn find_spec_search_locations(&self, py: Python, path: &PathStr) -> PyResult<Vec<PathBuf>> {
-        let importlib = py.import(intern!(py, "importlib"))?;
+        let importlib = py.import(intern!(py, "importlib.util"))?;
         let spec = importlib
-            .getattr(intern!(py, "util"))?
             .getattr(intern!(py, "find_spec"))?
             .call1((&path.module().to_string(),))?;
         if spec.is_none() {
