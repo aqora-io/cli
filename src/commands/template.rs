@@ -121,10 +121,8 @@ pub async fn template(args: Template, global: GlobalArgs) -> Result<()> {
         .await?;
         // Repeat succcess message after install
         println!(
-            "\n{} {} {}",
+            "\n{} Competition template downloaded to {}",
             " ".if_supports_color(owo_colors::Stream::Stdout, |_| "🎉"),
-            "Competition template downloaded to"
-                .if_supports_color(owo_colors::Stream::Stdout, |text| text.dimmed()),
             destination
                 .display()
                 .if_supports_color(owo_colors::Stream::Stdout, |text| text.bold())
