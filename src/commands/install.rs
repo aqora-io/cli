@@ -26,7 +26,7 @@ use url::Url;
 )]
 pub struct GetCompetitionUseCase;
 
-#[derive(Args, Debug, Serialize)]
+#[derive(Args, Debug, Default, Serialize)]
 pub struct Install {
     #[arg(long, short)]
     pub upgrade: bool,
