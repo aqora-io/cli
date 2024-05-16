@@ -91,7 +91,7 @@ dependencies = [
 
 [[package]]
 name = "aqora"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "aqora-config",
  "aqora-runner",
