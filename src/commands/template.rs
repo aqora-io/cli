@@ -1,5 +1,8 @@
 use crate::{
-    commands::GlobalArgs,
+    commands::{
+        install::{install, Install},
+        GlobalArgs,
+    },
     download::download_tar_gz,
     error::{self, Result},
     graphql_client::GraphQLClient,
@@ -7,6 +10,7 @@ use crate::{
 use clap::Args;
 use graphql_client::GraphQLQuery;
 use indicatif::{MultiProgress, ProgressBar};
+use owo_colors::OwoColorize;
 use serde::Serialize;
 use std::path::PathBuf;
 use url::Url;
@@ -22,6 +26,8 @@ pub struct GetCompetitionTemplate;
 #[derive(Args, Debug, Serialize)]
 #[command(author, version, about)]
 pub struct Template {
+    #[arg(long)]
+    pub no_install: bool,
     pub competition: String,
     pub destination: Option<PathBuf>,
 }
@@ -99,6 +105,31 @@ pub async fn template(args: Template, global: GlobalArgs) -> Result<()> {
         "Competition template downloaded to {}",
         destination.display()
     ));
+
+    if !args.no_install {
+        let install_global = GlobalArgs {
+            project: destination.clone(),
+            ..global
+        };
+        install(
+            Install {
+                competition: Some(args.competition),
+                ..Default::default()
+            },
+            install_global,
+        )
+        .await?;
+        // Repeat succcess message after install
+        println!(
+            "\n{} {} {}",
+            " ".if_supports_color(owo_colors::Stream::Stdout, |_| "🎉"),
+            "Competition template downloaded to"
+                .if_supports_color(owo_colors::Stream::Stdout, |text| text.dimmed()),
+            destination
+                .display()
+                .if_supports_color(owo_colors::Stream::Stdout, |text| text.bold())
+        );
+    }
 
     Ok(())
 }

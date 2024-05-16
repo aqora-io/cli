@@ -10,37 +10,34 @@ pub fn supports_color() -> bool {
 }
 
 pub trait ColorChoiceExt {
+    fn should_use_color(self) -> bool;
     fn pip(self) -> PipColorChoice;
     fn set_override(self);
     fn dialoguer(self) -> Box<dyn dialoguer::theme::Theme>;
 }
 
 impl ColorChoiceExt for ColorChoice {
-    fn pip(self) -> PipColorChoice {
+    fn should_use_color(self) -> bool {
         match self {
-            ColorChoice::Auto => {
-                if supports_color() {
-                    PipColorChoice::Always
-                } else {
-                    PipColorChoice::Never
-                }
-            }
-            ColorChoice::Always => PipColorChoice::Always,
-            ColorChoice::Never => PipColorChoice::Never,
+            ColorChoice::Auto => supports_color(),
+            ColorChoice::Always => true,
+            ColorChoice::Never => false,
+        }
+    }
+
+    fn pip(self) -> PipColorChoice {
+        if self.should_use_color() {
+            PipColorChoice::Always
+        } else {
+            PipColorChoice::Never
         }
     }
 
     fn dialoguer(self) -> Box<dyn dialoguer::theme::Theme> {
-        match self {
-            ColorChoice::Auto => {
-                if supports_color() {
-                    Box::<ColorfulTheme>::default()
-                } else {
-                    Box::new(SimpleTheme)
-                }
-            }
-            ColorChoice::Always => Box::<ColorfulTheme>::default(),
-            ColorChoice::Never => Box::new(SimpleTheme),
+        if self.should_use_color() {
+            Box::<ColorfulTheme>::default()
+        } else {
+            Box::new(SimpleTheme)
         }
     }
 
