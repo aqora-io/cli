@@ -120,14 +120,9 @@ impl PipPackage {
 }
 
 #[cfg(not(target_os = "windows"))]
-const LIB_PATH: &str = "lib";
-#[cfg(target_os = "windows")]
-const LIB_PATH: &str = "Lib";
-#[cfg(not(target_os = "windows"))]
 const BIN_PATH: &str = "bin";
 #[cfg(target_os = "windows")]
 const BIN_PATH: &str = "Scripts";
-const SITE_PACKAGES_PATH: &str = "site-packages";
 
 #[derive(Debug, Clone)]
 pub struct PyEnv {
@@ -137,12 +132,12 @@ pub struct PyEnv {
 
 #[derive(Error, Debug)]
 pub enum EnvError {
-    #[error(transparent)]
-    Io(#[from] tokio::io::Error),
+    #[error("Error processing {0}: {1}")]
+    Io(PathBuf, tokio::io::Error),
     #[error("{}", format_err(_0))]
     Python(#[from] PyErr),
-    #[error("Failed to setup virtualenv: {0}")]
-    VenvFailed(String),
+    #[error("Failed to setup virtualenv: {0} ({1})")]
+    VenvFailed(String, String),
 }
 
 impl PyEnv {
@@ -153,53 +148,33 @@ impl PyEnv {
         color: ColorChoice,
     ) -> Result<Self, EnvError> {
         let cache_path = if let Some(cache_path) = cache_path {
-            tokio::fs::create_dir_all(&cache_path).await?;
-            Some(cache_path.as_ref().canonicalize()?)
+            let cache_path = cache_path.as_ref();
+            tokio::fs::create_dir_all(&cache_path)
+                .await
+                .map_err(|err| EnvError::Io(cache_path.to_path_buf(), err))?;
+            Some(
+                cache_path
+                    .canonicalize()
+                    .map_err(|err| EnvError::Io(cache_path.to_path_buf(), err))?,
+            )
         } else {
             None
         };
+        let venv_path = venv_path.as_ref();
         Self::ensure_venv(&uv_path, &venv_path, cache_path.as_ref(), color).await?;
-        let venv_path = venv_path.as_ref().canonicalize()?;
-        let is_initialized = Python::with_gil(|py| {
+        let venv_path = venv_path
+            .canonicalize()
+            .map_err(|err| EnvError::Io(venv_path.to_path_buf(), err))?;
+        Python::with_gil(|py| {
             let sys = py.import(intern!(py, "sys"))?;
             let prefix = sys.getattr(intern!(py, "prefix"))?.extract::<PathBuf>()?;
             if prefix == venv_path {
-                return PyResult::Ok(true);
+                return Ok(());
             }
-            PyResult::Ok(false)
-        })?;
-        if is_initialized {
-            return Ok(Self {
-                venv_path,
-                cache_path,
-            });
-        }
-        let mut site_package_dirs = Vec::new();
-        let mut lib_dir_entries = tokio::fs::read_dir(venv_path.join(LIB_PATH)).await?;
-        while let Some(entry) = lib_dir_entries.next_entry().await? {
-            if entry.file_type().await?.is_dir() {
-                let name = entry.file_name();
-                if let Some(name) = name.to_str() {
-                    if name.starts_with("python") {
-                        let site_packages = entry.path().join(SITE_PACKAGES_PATH);
-                        if site_packages.exists() {
-                            site_package_dirs.push(site_packages);
-                        }
-                    } else if name == SITE_PACKAGES_PATH {
-                        site_package_dirs.push(entry.path());
-                    }
-                }
-            }
-        }
-        Python::with_gil(|py| {
-            let site = py.import(intern!(py, "site"))?;
-            let add_site_dir = site.getattr(intern!(py, "addsitedir"))?;
-            for site_packages in site_package_dirs {
-                add_site_dir.call1((site_packages.to_string_lossy(),))?;
-            }
-            let sys = py.import(intern!(py, "sys"))?;
-            sys.setattr(intern!(py, "prefix"), &venv_path)?;
-            sys.setattr(intern!(py, "exec_prefix"), &venv_path)?;
+            let runpy = py.import(intern!(py, "runpy"))?;
+            runpy
+                .getattr(intern!(py, "run_path"))?
+                .call1((venv_path.join(BIN_PATH).join("activate_this.py"),))?;
             PyResult::Ok(())
         })?;
         Ok(Self {
@@ -214,9 +189,10 @@ impl PyEnv {
         cache_path: Option<impl AsRef<Path>>,
         color: ColorChoice,
     ) -> Result<(), EnvError> {
+        let uv_path = uv_path.as_ref();
         let path = venv_path.as_ref();
         if !path.join("pyvenv.cfg").exists() {
-            let mut cmd = Command::new(uv_path.as_ref());
+            let mut cmd = Command::new(uv_path);
             cmd.arg("venv")
                 .arg("--python")
                 .arg(PYTHON_VERSION.as_str())
@@ -225,14 +201,18 @@ impl PyEnv {
                 cmd.arg("--cache-dir").arg(cache_path.as_ref());
             }
             color.apply(&mut cmd);
-            let output = cmd.output().await?;
+            let output = cmd
+                .output()
+                .await
+                .map_err(|err| EnvError::Io(uv_path.to_path_buf(), err))?;
             if !output.status.success() {
                 return Err(EnvError::VenvFailed(
                     String::from_utf8_lossy(&output.stderr).to_string(),
+                    format!("{:?}", cmd.as_std()),
                 ));
             }
         }
-        let mut cmd = Command::new(uv_path.as_ref());
+        let mut cmd = Command::new(uv_path);
         cmd.env("VIRTUAL_ENV", path)
             .arg("pip")
             .arg("install")
@@ -241,12 +221,16 @@ impl PyEnv {
             cmd.arg("--cache-dir").arg(cache_path.as_ref());
         }
         color.apply(&mut cmd);
-        let output = cmd.output().await?;
+        let output = cmd
+            .output()
+            .await
+            .map_err(|err| EnvError::Io(uv_path.to_path_buf(), err))?;
         if output.status.success() {
             Ok(())
         } else {
             Err(EnvError::VenvFailed(
                 String::from_utf8_lossy(&output.stderr).to_string(),
+                format!("{:?}", cmd.as_std()),
             ))
         }
     }
