@@ -98,13 +98,16 @@ pub async fn template(args: Template, global: GlobalArgs) -> Result<()> {
         .download_url;
 
     pb.set_message("Downloading competition template...");
-
-    download_tar_gz(download_url, &destination).await?;
-
-    pb.finish_with_message(format!(
-        "Competition template downloaded to {}",
-        destination.display()
-    ));
+    match download_tar_gz(download_url, &destination, &pb).await {
+        Ok(_) => pb.finish_with_message(format!(
+            "Competition template downloaded to {}",
+            destination.display()
+        )),
+        Err(error) => {
+            pb.finish_with_message("Failed to download competition template");
+            return Err(error);
+        }
+    }
 
     if !args.no_install {
         let install_global = GlobalArgs {

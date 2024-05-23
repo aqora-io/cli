@@ -175,17 +175,19 @@ pub async fn install_submission(
             .download_url
             .clone();
 
-        let download_fut =
-            download_tar_gz(use_case_data_url, project_data_dir(&global.project, "data")).map(
-                move |res| {
-                    if res.is_ok() {
-                        download_pb.finish_with_message("Use case data downloaded");
-                    } else {
-                        download_pb.finish_with_message("Failed to download use case data");
-                    }
-                    res
-                },
-            );
+        download_pb.set_message("Downloading use case data");
+        let download_fut = download_tar_gz(
+            use_case_data_url,
+            project_data_dir(&global.project, "data"),
+            &download_pb,
+        )
+        .inspect(|res| {
+            if res.is_ok() {
+                download_pb.finish_with_message("Use case data downloaded")
+            } else {
+                download_pb.finish_with_message("Failed to download use case data")
+            }
+        });
 
         let mut use_case_pb = ProgressBar::new_spinner().with_message("Installing packages...");
         use_case_pb.enable_steady_tick(std::time::Duration::from_millis(100));
