@@ -3,11 +3,35 @@ use crate::{
     error::{self, Result},
 };
 use futures::prelude::*;
-use indicatif::ProgressBar;
+use indicatif::{ProgressBar, ProgressStyle};
 use std::path::Path;
 use url::Url;
 
+#[must_use]
+struct TempProgressStyle<'a> {
+    pb: &'a ProgressBar,
+    style: ProgressStyle,
+}
+
+impl<'a> TempProgressStyle<'a> {
+    fn new(pb: &'a ProgressBar) -> Self {
+        Self {
+            pb,
+            style: pb.style(),
+        }
+    }
+}
+
+impl<'a> Drop for TempProgressStyle<'a> {
+    fn drop(&mut self) {
+        self.pb.reset();
+        self.pb.set_style(self.style.clone());
+    }
+}
+
 pub async fn download_tar_gz(url: Url, dir: impl AsRef<Path>, pb: &ProgressBar) -> Result<()> {
+    let _guard = TempProgressStyle::new(pb);
+
     tokio::fs::create_dir_all(&dir).await.map_err(|e| {
         error::user(
             &format!(
@@ -32,7 +56,8 @@ pub async fn download_tar_gz(url: Url, dir: impl AsRef<Path>, pb: &ProgressBar) 
         .error_for_status()
         .map_err(|e| error::system(&format!("Failed to download data: {e}"), ""))?;
     let show_progress = if let Some(content_length) = response.content_length() {
-        pb.set_style(crate::progress_bar::pretty());
+        pb.reset();
+        pb.set_style(crate::progress_bar::pretty_bytes());
         pb.disable_steady_tick();
         pb.set_position(0);
         pb.set_length(content_length);
@@ -55,7 +80,7 @@ pub async fn download_tar_gz(url: Url, dir: impl AsRef<Path>, pb: &ProgressBar) 
             pb.inc(item.len() as u64);
         }
     }
-    decompress(tempfile.path(), &dir).await.map_err(|e| {
+    decompress(tempfile.path(), &dir, pb).await.map_err(|e| {
         error::user(
             &format!("Failed to decompress data: {e}"),
             "Please make sure you have permission to create files in this directory",

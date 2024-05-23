@@ -27,6 +27,7 @@ extension-module = ["pyo3/extension-module", "pyo3/abi3-py39", "pyo3/abi3"]
 aqora-config = { path = "config" }
 aqora-runner = { path = "runner" }
 async-compression = { version = "0.4", features = ["tokio", "gzip"] }
+async-tempfile = "0.5"
 axum = "0.7"
 base32 = "0.4"
 base64 = "0.21"
