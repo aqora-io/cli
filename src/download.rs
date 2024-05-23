@@ -3,10 +3,11 @@ use crate::{
     error::{self, Result},
 };
 use futures::prelude::*;
+use indicatif::ProgressBar;
 use std::path::Path;
 use url::Url;
 
-pub async fn download_tar_gz(url: Url, dir: impl AsRef<Path>) -> Result<()> {
+pub async fn download_tar_gz(url: Url, dir: impl AsRef<Path>, pb: &ProgressBar) -> Result<()> {
     tokio::fs::create_dir_all(&dir).await.map_err(|e| {
         error::user(
             &format!(
@@ -18,7 +19,7 @@ pub async fn download_tar_gz(url: Url, dir: impl AsRef<Path>) -> Result<()> {
         )
     })?;
     let client = reqwest::Client::new();
-    let mut byte_stream = client
+    let response = client
         .get(url)
         .send()
         .await
@@ -29,8 +30,17 @@ pub async fn download_tar_gz(url: Url, dir: impl AsRef<Path>) -> Result<()> {
             )
         })?
         .error_for_status()
-        .map_err(|e| error::system(&format!("Failed to download data: {e}"), ""))?
-        .bytes_stream();
+        .map_err(|e| error::system(&format!("Failed to download data: {e}"), ""))?;
+    let show_progress = if let Some(content_length) = response.content_length() {
+        pb.set_style(crate::progress_bar::pretty());
+        pb.disable_steady_tick();
+        pb.set_position(0);
+        pb.set_length(content_length);
+        true
+    } else {
+        false
+    };
+    let mut byte_stream = response.bytes_stream();
     let tempfile = tempfile::NamedTempFile::new().map_err(|e| {
         error::user(
             &format!("Failed to create temporary file: {e}"),
@@ -39,7 +49,11 @@ pub async fn download_tar_gz(url: Url, dir: impl AsRef<Path>) -> Result<()> {
     })?;
     let mut tar_file = tokio::fs::File::create(tempfile.path()).await?;
     while let Some(item) = byte_stream.next().await {
-        tokio::io::copy(&mut item?.as_ref(), &mut tar_file).await?;
+        let item = item?;
+        tokio::io::copy(&mut item.as_ref(), &mut tar_file).await?;
+        if show_progress {
+            pb.inc(item.len() as u64);
+        }
     }
     decompress(tempfile.path(), &dir).await.map_err(|e| {
         error::user(

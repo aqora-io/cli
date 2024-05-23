@@ -14,6 +14,7 @@ mod manifest;
 mod module;
 mod print;
 mod process;
+mod progress_bar;
 mod python;
 mod readme;
 mod revert_file;
