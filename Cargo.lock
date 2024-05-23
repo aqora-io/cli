@@ -96,6 +96,7 @@ dependencies = [
  "aqora-config",
  "aqora-runner",
  "async-compression",
+ "async-tempfile",
  "axum",
  "base32",
  "base64 0.21.7",
@@ -182,6 +183,15 @@ dependencies = [
  "futures-core",
  "memchr",
  "pin-project-lite",
+ "tokio",
+]
+
+[[package]]
+name = "async-tempfile"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c17d4a3286e6518d84be399efb8901aa74a183753b0bf4a8a4afe5bcfedcbb08"
+dependencies = [
  "tokio",
 ]
 
