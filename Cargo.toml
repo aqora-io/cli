@@ -7,7 +7,7 @@ members = [
 
 [package]
 name = "aqora"
-version = "0.1.13"
+version = "0.1.14"
 edition = "2021"
 default-run = "aqora"
 publish = false
