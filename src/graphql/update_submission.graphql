@@ -2,10 +2,12 @@ mutation UpdateSubmissionMutation(
   $competition_id: ID!
   $pyprojectToml: String!
   $readme: String
+  $entityId: String!
 ) {
   createSubmissionVersion(
     competitionId: $competition_id
     input: { pyprojectToml: $pyprojectToml, readme: $readme }
+    asEntity: $entityId
   ) {
     node {
       id

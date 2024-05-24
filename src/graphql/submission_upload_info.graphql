@@ -7,7 +7,7 @@ query SubmissionUploadInfo($slug: String!, $username: String!, $use_username: Bo
       }
     }
   }
-  viewer @skip(if: $use_username) {
+  viewer {
     id
   }
   entityByUsername(username: $username) @include(if: $use_username) {

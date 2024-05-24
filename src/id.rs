@@ -8,6 +8,7 @@ const BASE32_ALPHABET: base32::Alphabet = base32::Alphabet::RFC4648 { padding: f
 pub enum NodeType {
     User,
     Competition,
+    Organization,
 }
 
 impl FromStr for NodeType {
@@ -17,6 +18,7 @@ impl FromStr for NodeType {
         match s {
             "User" => Ok(NodeType::User),
             "Competition" => Ok(NodeType::Competition),
+            "Organization" => Ok(NodeType::Organization),
             _ => Err(format!("Unknown node kind: {}", s)),
         }
     }
@@ -27,6 +29,7 @@ impl fmt::Display for NodeType {
         match self {
             NodeType::User => write!(f, "User"),
             NodeType::Competition => write!(f, "Competition"),
+            NodeType::Organization => write!(f, "Organization"),
         }
     }
 }

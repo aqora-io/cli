@@ -876,6 +876,7 @@ Do you want to run the tests now?"#,
             competition_id: competition_id.to_node_id(),
             pyproject_toml,
             readme,
+            entity_id: entity_id.to_node_id(),
         })
         .await?
         .create_submission_version

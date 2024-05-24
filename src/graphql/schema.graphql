@@ -1,29 +1,51 @@
 enum Action {
+	ADD_COMPETITION_MEMBER
+	ADD_EVENT_COMPETITION
+	ADD_EVENT_MEMBER
+	AWARD_BADGE
+	CREATE_COMMENT
+	CREATE_COMPETITION
+	CREATE_COMPETITION_RULE_AGREEMENT
+	CREATE_EVENT
+	CREATE_ORGANIZATION
+	CREATE_SUBMISSION_VERSION
+	CREATE_TOPIC
+	CREATE_USE_CASE_VERSION
+	DELETE_COMMENT
+	DELETE_COMPETITION
+	DELETE_EVENT
+	DELETE_ORGANIZATION
+	DELETE_TOPIC
+	DELETE_USER
+	READ_COMMENT
+	READ_COMPETITION
+	READ_COMPETITION_MEMBERSHIP
+	READ_COMPETITION_RULE
+	READ_COMPETITION_RULE_AGREEMENT
+	READ_EVENT
+	READ_EVENT_COMPETITION
+	READ_EVENT_MEMBERSHIP
+	READ_PROJECT_VERSION
+	READ_PROJECT_VERSION_EVALUATION
+	READ_PROJECT_VERSION_FILE
+	READ_TOPIC
 	READ_USER_EMAIL
 	READ_USER_PERMISSIONS
-	UPDATE_USER
-	DELETE_USER
-	CREATE_COMPETITION
+	REMOVE_COMPETITION_MEMBER
+	REMOVE_EVENT_COMPETITION
+	REMOVE_EVENT_MEMBER
+	REMOVE_ORGANIZATION_MEMBER
+	TRANSFER_COMPETITION_OWNERSHIP
+	TRANSFER_EVENT_OWNERSHIP
+	TRANSFER_ORGANIZATION_OWNERSHIP
 	UPDATE_COMPETITION
-	DELETE_COMPETITION
-	READ_COMPETITION_RULE_AGREEMENT
-	UPDATE_COMPETITION_RULE_AGREEMENT
-	CREATE_TOPIC
-	UPDATE_TOPIC
-	DELETE_TOPIC
-	CREATE_COMMENT
-	DELETE_COMMENT
-	CREATE_ORGANIZATION
-	DELETE_ORGANIZATION
+	UPDATE_EVENT
 	UPDATE_ORGANIZATION
 	UPDATE_ORGANIZATION_MEMBERSHIP
-	DELETE_ORGANIZATION_MEMBERSHIP
-	TRANSFER_ORGANIZATION_OWNERSHIP
-	CREATE_USE_CASE_VERSION
-	CREATE_SUBMISSION_VERSION
 	UPDATE_PROJECT_VERSION
-	READ_SUBMISSION_PROJECT
-	AWARD_BADGE
+	UPDATE_PROJECT_VERSION_FILE
+	UPDATE_TOPIC
+	UPDATE_USER
 }
 
 enum Badge {
@@ -41,6 +63,7 @@ type Comment implements Node {
 	parent: Comment
 	numChildren: Int!
 	children(after: String, before: String, first: Int, last: Int): CommentConnection!
+	viewerCan(action: Action!, asEntity: ID): Boolean!
 }
 
 type CommentConnection {
@@ -78,6 +101,7 @@ type Competition implements Node {
 	shortDescription: String!
 	description: String
 	createdAt: DateTime!
+	isPrivate: Boolean!
 	id: ID!
 	viewerCan(action: Action!, asEntity: ID): Boolean!
 	host: Entity!
@@ -90,6 +114,7 @@ type Competition implements Node {
 	leaderboard(after: String, before: String, first: Int, last: Int): ProjectVersionEvaluationConnection!
 	submissions(after: String, before: String, first: Int, last: Int, entityId: ID): SubmissionConnection!
 	topics(after: String, before: String, first: Int, last: Int): TopicConnection!
+	members(after: String, before: String, first: Int, last: Int): CompetitionMembershipConnection!
 }
 
 type CompetitionConnection {
@@ -119,6 +144,48 @@ type CompetitionEdge {
 	A cursor for use in pagination
 	"""
 	cursor: String!
+}
+
+type CompetitionMembership implements Node {
+	kind: CompetitionMembershipKind!
+	id: ID!
+	entity: Entity!
+	competition: Competition!
+	viewerCan(action: Action!, asEntity: ID): Boolean!
+}
+
+type CompetitionMembershipConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [CompetitionMembershipEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [CompetitionMembership!]!
+}
+
+"""
+An edge in a connection.
+"""
+type CompetitionMembershipEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: CompetitionMembership!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+enum CompetitionMembershipKind {
+	HOST
+	PARTICIPANT
 }
 
 type CompetitionRule implements Node {
@@ -205,6 +272,17 @@ input CreateCompetitionInput {
 	description: String
 	banner: Upload
 	thumbnail: Upload
+	isPrivate: Boolean!
+}
+
+input CreateEventInput {
+	slug: String!
+	title: String!
+	shortDescription: String!
+	description: String
+	banner: Upload
+	thumbnail: Upload
+	isPrivate: Boolean!
 }
 
 input CreateOrganizationInput {
@@ -321,6 +399,196 @@ enum EntityKind {
 	ORGANIZATION
 }
 
+type Event implements Node {
+	slug: String!
+	title: String!
+	shortDescription: String!
+	description: String
+	createdAt: DateTime!
+	isPrivate: Boolean!
+	id: ID!
+	viewerCan(action: Action!, asEntity: ID): Boolean!
+	host: Entity!
+	banner: Url
+	thumbnail: Url
+	members(after: String, before: String, first: Int, last: Int, userIsOrgMember: ID): EventMembershipConnection!
+	competitions(after: String, before: String, first: Int, last: Int): EventCompetitionConnection!
+}
+
+type EventCompetition implements Node {
+	id: ID!
+	competition: Competition!
+	event: Event!
+	viewerCan(action: Action!, asEntity: ID): Boolean!
+}
+
+type EventCompetitionConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [EventCompetitionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [EventCompetition!]!
+}
+
+"""
+An edge in a connection.
+"""
+type EventCompetitionEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: EventCompetition!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+type EventConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [EventEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Event!]!
+}
+
+"""
+An edge in a connection.
+"""
+type EventEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Event!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+type EventMembership implements Node {
+	kind: EventMembershipKind!
+	id: ID!
+	entity: Entity!
+	event: Event!
+	viewerCan(action: Action!, asEntity: ID): Boolean!
+}
+
+type EventMembershipConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [EventMembershipEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [EventMembership!]!
+}
+
+"""
+An edge in a connection.
+"""
+type EventMembershipEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: EventMembership!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+enum EventMembershipKind {
+	HOST
+	PARTICIPANT
+}
+
+type FileBrowser {
+	"""
+	List direct descendants of a directory.
+	Each item in [`directory`] is a part of the path to be listed.
+	"""
+	readDir(directory: [String!]!): [FileBrowserEntry!]!
+	"""
+	Read contents of a file.
+	Each item in [`path`] is a part of the path to be read.
+	"""
+	readFile(path: [String!]!): FileBrowserResult!
+}
+
+type FileBrowserEntry {
+	parents: [String!]!
+	name: String!
+	fileType: FileBrowserEntryType!
+	mimeType: String!
+	mode: Int!
+	size: Int!
+}
+
+enum FileBrowserEntryType {
+	REGULAR
+	DIRECTORY
+	UNKNOWN
+}
+
+interface FileBrowserResult {
+	entry: FileBrowserEntry!
+	contents: String!
+	encoding: String!
+}
+
+type FileBrowserResultAsBinary implements FileBrowserResult {
+	"""
+	Metadata of the file that has been read.
+	"""
+	entry: FileBrowserEntry!
+	"""
+	Contents of the file that has been read.
+	"""
+	contents: String!
+	encoding: String!
+}
+
+type FileBrowserResultAsText implements FileBrowserResult {
+	"""
+	Metadata of the file that has been read.
+	"""
+	entry: FileBrowserEntry!
+	"""
+	Contents of the file that has been read.
+	"""
+	contents: String!
+	encoding: String!
+}
+
+type FileBrowserResultTooLarge implements FileBrowserResult {
+	"""
+	Metadata of the file that has been read.
+	"""
+	entry: FileBrowserEntry!
+	contents: String!
+	encoding: String!
+}
+
 
 
 
@@ -340,7 +608,7 @@ type Mutation {
 	createCompetition(input: CreateCompetitionInput!): CompetitionEdge!
 	updateCompetition(id: ID!, input: UpdateCompetitionInput!): CompetitionEdge!
 	deleteCompetition(id: ID!): ID!
-	createSubmissionVersion(competitionId: ID!, input: UpdateSubmissionInput!): ProjectVersionEdge!
+	createSubmissionVersion(competitionId: ID!, input: UpdateSubmissionInput!, asEntity: ID): ProjectVersionEdge!
 	validateSubmissionVersion(projectVersionId: ID!): ProjectVersionEdge!
 	createTopicForCompetition(competitionId: ID!, input: CreateTopicInput!): TopicEdge!
 	updateTopic(id: ID!, input: UpdateTopicInput!): Topic!
@@ -352,7 +620,7 @@ type Mutation {
 	deleteOrganization(id: ID!): ID!
 	updateOrganization(id: ID!, input: UpdateOrganizationInput!): OrganizationEdge!
 	updateOrganizationMembership(organizationId: ID!, userId: ID!, kind: OrganizationMembershipKind!): OrganizationMembershipEdge!
-	deleteOrganizationMembership(id: ID!): ID!
+	removeOrganizationMember(id: ID!): ID!
 	transferOrganizationOwnership(organizationId: ID!, toUserId: ID!): [OrganizationMembershipEdge!]!
 	oauth2Authorize(input: Oauth2AuthorizeInput!): Oauth2AuthorizeOutput!
 	oauth2Token(input: Oauth2TokenInput!): Oauth2TokenOutput!
@@ -362,6 +630,17 @@ type Mutation {
 	awardBadge(entityId: ID!, badge: Badge!): EntityBadgeEdge!
 	withdrawBadge(id: ID!): ID!
 	agreeToCompetitionRule(competition: ID!, asEntity: ID): CompetitionRuleAgreement!
+	addCompetitionMember(competitionId: ID!, entityId: ID!): CompetitionMembershipEdge!
+	removeCompetitionMember(id: ID!): ID!
+	transferCompetitionOwnership(competitionId: ID!, toEntityId: ID!): [CompetitionMembershipEdge!]!
+	createEvent(input: CreateEventInput!): EventEdge!
+	updateEvent(id: ID!, input: UpdateEventInput!): EventEdge!
+	deleteEvent(id: ID!): ID!
+	addEventMember(eventId: ID!, entityId: ID!): EventMembershipEdge!
+	removeEventMember(id: ID!): ID!
+	transferEventOwnership(eventId: ID!, toEntityId: ID!): [EventMembershipEdge!]!
+	addEventCompetition(eventId: ID!, competitionId: ID!): EventCompetitionEdge!
+	removeEventCompetition(id: ID!): ID!
 }
 
 interface Node {
@@ -421,6 +700,7 @@ type Organization implements Entity & Node {
 	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID): SubmissionConnection!
 	viewerCan(action: Action!, asEntity: ID): Boolean!
 	badges(after: String, before: String, first: Int, last: Int): EntityBadgeConnection!
+	userMembership(user: ID): OrganizationMembership
 }
 
 """
@@ -501,6 +781,12 @@ type PageInfo {
 	When paginating forwards, the cursor to continue.
 	"""
 	endCursor: String
+}
+
+input Permission {
+	to: Action!
+	on: ID
+	actingAs: ID
 }
 
 interface Project {
@@ -589,6 +875,7 @@ type ProjectVersionFile implements Node {
 	projectVersion: ProjectVersion!
 	downloadUrl: Url!
 	uploadUrl: Url
+	browse: FileBrowser!
 }
 
 enum ProjectVersionFileKind {
@@ -601,10 +888,12 @@ enum ProjectVersionFileKind {
 type Query {
 	node(id: ID!): Node!
 	viewer: User!
-	competitions(after: String, before: String, first: Int, last: Int): CompetitionConnection!
+	competitions(after: String, before: String, first: Int, last: Int, search: String): CompetitionConnection!
 	competitionBySlug(slug: String!): Competition
 	entities(after: String, before: String, first: Int, last: Int, search: String, kinds: [EntityKind!]): EntityConnection!
 	entityByUsername(username: String!): Entity
+	events(after: String, before: String, first: Int, last: Int, search: String): EventConnection!
+	eventBySlug(slug: String!): Event
 }
 
 input ResetPasswordInput {
@@ -715,6 +1004,17 @@ input UpdateCompetitionInput {
 	banner: Upload
 	thumbnail: Upload
 	rules: String
+	isPrivate: Boolean
+}
+
+input UpdateEventInput {
+	slug: String
+	title: String
+	shortDescription: String
+	description: String
+	banner: Upload
+	thumbnail: Upload
+	isPrivate: Boolean
 }
 
 input UpdateOrganizationInput {
@@ -793,14 +1093,14 @@ type User implements Entity & Node {
 	"""
 	can this user perform the action on the given resource
 	"""
-	can(action: Action!, on: ID, asEntity: ID): Boolean!
+	can(action: Action!, on: ID, actingAs: ID): Boolean!
 	organizations(after: String, before: String, first: Int, last: Int): OrganizationMembershipConnection!
 	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID): SubmissionConnection!
 	topics(after: String, before: String, first: Int, last: Int): TopicConnection!
 	comments(after: String, before: String, first: Int, last: Int): CommentConnection!
 	viewerCan(action: Action!, asEntity: ID): Boolean!
 	badges(after: String, before: String, first: Int, last: Int): EntityBadgeConnection!
-	entities(action: Action, on: ID, search: String, after: String, before: String, first: Int, last: Int): EntityConnection!
+	entities(permission: Permission, search: String, after: String, before: String, first: Int, last: Int): EntityConnection!
 }
 
 """
