@@ -10,8 +10,10 @@ use std::{ffi::OsString, time::Duration};
 #[derive(Args, Debug, Serialize)]
 #[command(author, version, about)]
 pub struct Python {
+    #[arg(short = 'm', help = "run library module as a script")]
+    pub module: Option<OsString>,
     #[arg(last = true)]
-    pub slop: Vec<OsString>,
+    pub python_args: Vec<OsString>,
 }
 
 pub async fn python(args: Python, global: GlobalArgs) -> crate::error::Result<()> {
@@ -22,7 +24,11 @@ pub async fn python(args: Python, global: GlobalArgs) -> crate::error::Result<()
     let env = init_venv(&global.project, global.uv.as_ref(), &progress, global.color).await?;
     progress.finish_and_clear();
     let mut cmd = env.python_cmd();
-    for arg in args.slop {
+    cmd.current_dir(&global.project);
+    if let Some(run_mod) = args.module {
+        cmd.arg("-m").arg(run_mod);
+    }
+    for arg in args.python_args {
         cmd.arg(arg);
     }
     cmd.spawn()?.wait().await?;
