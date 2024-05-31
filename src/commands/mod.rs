@@ -3,6 +3,7 @@ mod clean;
 mod global_args;
 mod info;
 mod install;
+mod lab;
 mod login;
 mod python;
 mod remove;
@@ -21,6 +22,7 @@ use add::{add, Add};
 use clean::{clean, Clean};
 use info::{info, Info};
 use install::{install, Install};
+use lab::{lab, Lab};
 use login::{login, Login};
 use python::{python, Python};
 use remove::{remove, Remove};
@@ -95,6 +97,7 @@ pub enum Commands {
     Remove(Remove),
     #[command(hide = true)]
     Info(Info),
+    Lab(Lab),
 }
 
 impl Cli {
@@ -112,6 +115,7 @@ impl Cli {
                 Commands::Python(args) => python(args, global).await,
                 Commands::Shell(args) => shell(args, global).await,
                 Commands::Test(args) => test(args, global).await,
+                Commands::Lab(args) => lab(args, global).await,
                 Commands::Upload(args) => upload(args, global).await,
                 Commands::Template(args) => template(args, global).await,
                 Commands::Clean(args) => clean(args, global).await,
