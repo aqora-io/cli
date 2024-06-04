@@ -17,6 +17,7 @@ use futures::prelude::*;
 use graphql_client::GraphQLQuery;
 use indicatif::ProgressBar;
 use serde::{Deserialize, Serialize};
+use std::io::{BufRead, Write};
 use std::{future::IntoFuture, sync::Arc};
 use tokio::{
     net::TcpListener,
@@ -28,7 +29,10 @@ const CLIENT_ID_PREFIX: &str = "localhost-";
 
 #[derive(Args, Debug, Serialize)]
 #[command(author, version, about)]
-pub struct Login;
+pub struct Login {
+    #[arg(long, short, help = "Force login without a browser")]
+    interactive: bool,
+}
 
 fn client_id() -> String {
     let hostname = hostname::get()
@@ -98,11 +102,24 @@ where
     }
 }
 
+async fn open_that(url: Url) -> bool {
+    tokio::task::spawn_blocking(move || open::that(url.as_str()))
+        .await
+        .is_ok()
+}
+
 async fn get_oauth_code(
     global: &GlobalArgs,
     client_id: &str,
     progress: &ProgressBar,
+    interactive: bool,
 ) -> Result<Option<(Url, String)>> {
+    let (tx, rx) = oneshot::channel();
+    let state = ServerState::new(tx);
+
+    let router = Router::<ServerState<LoginResponse>>::new()
+        .route("/", get(login_callback))
+        .with_state(state);
     let listener = TcpListener::bind("127.0.0.1:0").await.map_err(|e| {
         error::user(
             &format!("Could not bind to any port for OAuth callback: {e:?}"),
@@ -110,40 +127,195 @@ async fn get_oauth_code(
         )
     })?;
     let port = listener.local_addr()?.port();
-    let redirect_uri = Url::parse(&format!("http://localhost:{port}"))?;
+    let http = axum::serve(listener, router)
+        .with_graceful_shutdown(shutdown_signal())
+        .into_future();
+
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     let session = BASE64_URL_SAFE_NO_PAD.encode(rand::random::<[u8; 16]>());
-    let (tx, rx) = oneshot::channel();
-    let state = ServerState::new(tx);
-    let router = Router::<ServerState<LoginResponse>>::new()
-        .route("/", get(login_callback))
-        .with_state(state);
+    let redirect_uri = Url::parse(&format!("http://localhost:{port}"))?;
     let authorize_url = global.authorize_url(client_id, &redirect_uri, &session)?;
-    let cloned_progress = progress.clone();
-    tokio::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        cloned_progress.set_message(format!("Opening {authorize_url}..."));
-        if open::that(authorize_url.as_str()).is_err() {
-            cloned_progress.set_message(format!(
-                "Failed to open browser, please open {authorize_url} manually"
-            ));
-        }
-        cloned_progress.set_message("Waiting for browser response...");
-    });
+
+    if !interactive {
+        progress.suspend(|| {
+            // NOTE: suspending here instead of just `progress.println(...)`
+            // because indicatif will drop out of screen characters instead of wrapping
+            println!("Please navigate to this url (it should open automatically):");
+            println!("{authorize_url}");
+            println!(
+                "If it does not open automatically, you can instead run the same command like:"
+            );
+            println!(" => aqora login --interactive");
+        });
+        progress.set_message("Waiting for browser response...");
+    }
+
+    if interactive || !open_that(authorize_url.clone()).await {
+        return login_interactive(global, client_id, progress).await;
+    }
+
     let res = tokio::select! {
         state = rx => state?,
-        res = axum::serve(listener, router).with_graceful_shutdown(shutdown_signal()).into_future() => {
-            return res.map(|_| None).map_err(|e| {
-                error::user("Failed to start OAuth callback server", &format!("{:?}", e))
-            });
-        }
+        res = http => match res {
+            Ok(_) => return Ok(None),
+            Err(e) => return Err(error::user("Failed to start OAuth callback server", &format!("{:?}", e))),
+        },
     };
+
     if res.state != session {
         return Err(error::system(
             "OAuth callback returned invalid state",
             "This is a bug, please report it",
         ));
     }
+
     Ok(Some((redirect_uri, res.code)))
+}
+
+fn prompt_line(prompt: Option<impl AsRef<str>>) -> std::io::Result<String> {
+    if let Some(prompt) = prompt {
+        let mut stdout = std::io::stdout().lock();
+        stdout.write_all(prompt.as_ref().as_bytes())?;
+        stdout.flush()?;
+    }
+
+    let stdin = std::io::stdin();
+    let mut buf = String::new();
+    stdin.lock().read_line(&mut buf)?;
+    Ok(buf.trim_end().to_string())
+}
+
+#[derive(GraphQLQuery)]
+#[graphql(
+    query_path = "src/graphql/login.graphql",
+    schema_path = "src/graphql/schema.graphql",
+    variables_derives = "Debug",
+    response_derives = "Debug"
+)]
+struct LoginPageUserMutation;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+    query_path = "src/graphql/oauth2_authorize.graphql",
+    schema_path = "src/graphql/schema.graphql",
+    variables_derives = "Debug",
+    response_derives = "Debug"
+)]
+struct Oauth2AuthorizePageMutation;
+
+async fn login_interactive(
+    global: &GlobalArgs,
+    client_id: &str,
+    progress: &ProgressBar,
+) -> Result<Option<(Url, String)>> {
+    if !passterm::isatty(passterm::Stream::Stdout) {
+        return Err(error::user(
+            "Not in a tty",
+            "Please retry in a terminal, and without output redirections",
+        ));
+    }
+
+    let cloned_progress = progress.clone();
+    let (username, password) = tokio::task::spawn_blocking(move || {
+        cloned_progress.suspend(|| -> Result<(String, String)> {
+            let username = prompt_line(Some("Enter username: ")).map_err(|_| {
+                error::system("Could not read username from stdin", "Please retry again")
+            })?;
+            let password =
+                passterm::prompt_password_tty(Some("Enter password: ")).map_err(|_| {
+                    error::system("Could not read password from tty", "Please retry again")
+                })?;
+            Ok((username, password))
+        })
+    })
+    .await
+    .map_err(|_| error::user("Interactive login has been cancelled", ""))??;
+
+    let client = reqwest::Client::new();
+
+    progress.set_message("Authenticating [1/2]");
+    let access_token = {
+        let data = LoginPageUserMutation::build_query(login_page_user_mutation::Variables {
+            input: login_page_user_mutation::LoginUserInput {
+                username_or_email: username,
+                password,
+            },
+        });
+        let response = client
+            .post(global.graphql_url()?)
+            .json(&data)
+            .send()
+            .await?;
+        let header = response.headers().get("x-access-token").ok_or(error::user(
+            "Invalid username or password",
+            "Please check your credentials",
+        ))?;
+        header
+            .to_str()
+            .map_err(|_| {
+                error::system("Invalid data returned by server", "Please try again later")
+            })?
+            .to_string()
+    };
+
+    let redirect_uri: Url = "http://localhost/".parse().unwrap();
+
+    progress.set_message("Authenticating [2/2]");
+    let oauth_token = {
+        let data =
+            Oauth2AuthorizePageMutation::build_query(oauth2_authorize_page_mutation::Variables {
+                input: oauth2_authorize_page_mutation::Oauth2AuthorizeInput {
+                    client_id: client_id.into(),
+                    redirect_uri: Some(redirect_uri.clone()),
+                    state: Some(BASE64_URL_SAFE_NO_PAD.encode(rand::random::<[u8; 16]>())),
+                },
+            });
+        let response = client
+            .post(global.graphql_url()?)
+            .header("Authorization", format!("Bearer {access_token}"))
+            .json(&data)
+            .send()
+            .await?;
+        let data = response
+            .json::<graphql_client::Response<
+                <Oauth2AuthorizePageMutation as graphql_client::GraphQLQuery>::ResponseData,
+            >>()
+            .await
+            .map_err(|_| {
+                error::system("Invalid data returned by server", "Please try again later")
+            })?;
+        let data = data.data.ok_or(error::system(
+            "Invalid data returned by backend",
+            "Please try again later",
+        ))?;
+        if let Some(uri) = data.oauth2_authorize.redirect_uri {
+            uri.query_pairs()
+                .find_map(|(key, value)| {
+                    if key == "code" {
+                        Some(value.into_owned())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or(error::system(
+                    "Invalid data returned by backend",
+                    "Please retry again",
+                ))?
+        } else if data.oauth2_authorize.client_error || data.oauth2_authorize.unauthorized {
+            return Err(error::user(
+                "Server denied this authentication request",
+                "Please try again later",
+            ));
+        } else {
+            return Err(error::system(
+                "Server could not authenticate your account",
+                "Please try again later",
+            ));
+        }
+    };
+
+    progress.set_message("Authenticated!");
+    Ok(Some((redirect_uri, oauth_token)))
 }
 
 #[derive(GraphQLQuery)]
@@ -154,19 +326,20 @@ async fn get_oauth_code(
 )]
 pub struct Oauth2TokenMutation;
 
-pub async fn login(_: Login, global: GlobalArgs) -> Result<()> {
+pub async fn login(args: Login, global: GlobalArgs) -> Result<()> {
     with_locked_credentials(|file| {
         async move {
             let progress = ProgressBar::new_spinner().with_message("Logging in...");
             progress.enable_steady_tick(std::time::Duration::from_millis(100));
             let client_id = client_id();
-            let (redirect_uri, code) =
-                if let Some(res) = get_oauth_code(&global, &client_id, &progress).await? {
-                    res
-                } else {
-                    // cancelled
-                    return Ok(());
-                };
+            let (redirect_uri, code) = if let Some(res) =
+                get_oauth_code(&global, &client_id, &progress, args.interactive).await?
+            {
+                res
+            } else {
+                // cancelled
+                return Ok(());
+            };
             let client = reqwest::Client::new();
             let result = graphql_client::reqwest::post_graphql::<Oauth2TokenMutation, _>(
                 &client,
