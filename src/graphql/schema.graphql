@@ -285,6 +285,11 @@ input CreateEventInput {
 	isPrivate: Boolean!
 }
 
+type CreateMultipartUploadResponse {
+	uploadId: String!
+	urls: [Url!]!
+}
+
 input CreateOrganizationInput {
 	username: String!
 	displayName: String!
@@ -641,6 +646,8 @@ type Mutation {
 	transferEventOwnership(eventId: ID!, toEntityId: ID!): [EventMembershipEdge!]!
 	addEventCompetition(eventId: ID!, competitionId: ID!): EventCompetitionEdge!
 	removeEventCompetition(id: ID!): ID!
+	createProjectVersionFileMultipartUpload(id: ID!, chunks: [Int!]!, contentType: String): CreateMultipartUploadResponse!
+	completeProjectVersionFileMultipartUpload(id: ID!, uploadId: String!, eTags: [String!]!): ProjectVersionFile!
 }
 
 interface Node {

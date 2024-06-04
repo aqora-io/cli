@@ -10,6 +10,7 @@ mutation UpdateUseCaseMutation(
     node {
       id
       files {
+        id
         kind
         uploadUrl
       }

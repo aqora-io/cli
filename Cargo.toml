@@ -60,6 +60,7 @@ thiserror = "1.0"
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", "signal", "fs", "process", "io-util"] }
 tokio-stream = { version = "0.1", features = ["io-util"] }
 tokio-tar = "0.3"
+tokio-util = { version = "0.7", features = ["io"] }
 toml = "0.8"
 toml_edit = "0.22"
 tracing = "0.1"

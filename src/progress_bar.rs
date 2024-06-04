@@ -1,5 +1,26 @@
-use indicatif::{ProgressState, ProgressStyle};
+use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use std::fmt::Write;
+
+pub struct TempProgressStyle<'a> {
+    pb: &'a ProgressBar,
+    style: ProgressStyle,
+}
+
+impl<'a> TempProgressStyle<'a> {
+    pub fn new(pb: &'a ProgressBar) -> Self {
+        Self {
+            pb,
+            style: pb.style(),
+        }
+    }
+}
+
+impl<'a> Drop for TempProgressStyle<'a> {
+    fn drop(&mut self) {
+        self.pb.reset();
+        self.pb.set_style(self.style.clone());
+    }
+}
 
 pub fn pretty() -> ProgressStyle {
     ProgressStyle::with_template(
@@ -9,7 +30,7 @@ pub fn pretty() -> ProgressStyle {
     .with_key("eta", |state: &ProgressState, w: &mut dyn Write| {
         write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap()
     })
-    .progress_chars("#>-")
+    .progress_chars("=>-")
 }
 
 pub fn pretty_bytes() -> ProgressStyle {
@@ -20,5 +41,5 @@ pub fn pretty_bytes() -> ProgressStyle {
     .with_key("eta", |state: &ProgressState, w: &mut dyn Write| {
         write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap()
     })
-    .progress_chars("#>-")
+    .progress_chars("=>-")
 }

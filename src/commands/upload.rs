@@ -13,13 +13,13 @@ use crate::{
     python::{build_package, LastRunResult},
     readme::read_readme,
     revert_file::RevertFile,
+    upload::upload_project_version_file,
 };
 use aqora_config::{PyProject, Version};
 use clap::{Args, ColorChoice};
 use futures::prelude::*;
 use graphql_client::GraphQLQuery;
 use indicatif::{MultiProgress, ProgressBar};
-use reqwest::header::{CONTENT_LENGTH, CONTENT_TYPE};
 use serde::Serialize;
 use std::path::Path;
 use tempfile::tempdir;
@@ -228,7 +228,7 @@ pub async fn get_latest_submission_version(
 #[graphql(
     query_path = "src/graphql/update_use_case.graphql",
     schema_path = "src/graphql/schema.graphql",
-    response_derives = "Debug"
+    response_derives = "Debug,PartialEq"
 )]
 pub struct UpdateUseCaseMutation;
 
@@ -244,7 +244,7 @@ pub struct ValidateUseCaseMutation;
 #[graphql(
     query_path = "src/graphql/update_submission.graphql",
     schema_path = "src/graphql/schema.graphql",
-    response_derives = "Debug"
+    response_derives = "Debug,PartialEq"
 )]
 pub struct UpdateSubmissionMutation;
 
@@ -256,32 +256,55 @@ pub struct UpdateSubmissionMutation;
 )]
 pub struct ValidateSubmissionMutation;
 
-async fn upload_file(
-    client: &reqwest::Client,
-    file: impl AsRef<Path>,
-    upload_url: &Url,
-    content_type: &str,
-) -> Result<()> {
-    let file = tokio::fs::File::open(file).await?;
-    let content_len = file.metadata().await?.len();
-    let response = client
-        .put(upload_url.to_string())
-        .header(CONTENT_LENGTH, content_len)
-        .header(CONTENT_TYPE, content_type)
-        .body(file)
-        .send()
-        .await?;
-    if !response.status().is_success() {
-        Err(error::system(
-            &format!(
-                "Could not upload data: [{}] {}",
-                response.status(),
-                response.text().await.unwrap_or("".to_string())
-            ),
-            "",
-        ))
+fn get_use_case_file(
+    files: &[update_use_case_mutation::UpdateUseCaseMutationCreateUseCaseVersionNodeFiles],
+    kind: update_use_case_mutation::ProjectVersionFileKind,
+) -> Result<(Id, &Url)> {
+    if let Some(file) = files
+        .iter()
+        .find(|f| f.kind == kind)
+        .and_then(|f| f.upload_url.as_ref().map(|url| (&f.id, url)))
+        .map(|(id, url)| Id::parse_node_id(id).map(|id| (id, url)))
+        .transpose()
+        .map_err(|err| {
+            error::system(
+                &format!("Could not parse data file ID: {}", err),
+                "This is a bug, please report it",
+            )
+        })?
+    {
+        Ok(file)
     } else {
-        Ok(())
+        Err(error::system(
+            "No upload URL found",
+            "This is a bug, please report it",
+        ))
+    }
+}
+
+fn get_submission_file(
+    files: &[update_submission_mutation::UpdateSubmissionMutationCreateSubmissionVersionNodeFiles],
+    kind: update_submission_mutation::ProjectVersionFileKind,
+) -> Result<(Id, &Url)> {
+    if let Some(file) = files
+        .iter()
+        .find(|f| f.kind == kind)
+        .and_then(|f| f.upload_url.as_ref().map(|url| (&f.id, url)))
+        .map(|(id, url)| Id::parse_node_id(id).map(|id| (id, url)))
+        .transpose()
+        .map_err(|err| {
+            error::system(
+                &format!("Could not parse data file ID: {}", err),
+                "This is a bug, please report it",
+            )
+        })?
+    {
+        Ok(file)
+    } else {
+        Err(error::system(
+            "No upload URL found",
+            "This is a bug, please report it",
+        ))
     }
 }
 
@@ -470,27 +493,11 @@ pub async fn upload_use_case(
 
     use_case_pb.finish_with_message("Version updated");
 
-    let s3_client = reqwest::Client::new();
-
     let data_fut = {
-        let upload_url = if let Some(url) = project_version
-            .files
-            .iter()
-            .find(|f| {
-                matches!(
-                    f.kind,
-                    update_use_case_mutation::ProjectVersionFileKind::DATA
-                )
-            })
-            .and_then(|f| f.upload_url.as_ref())
-        {
-            url
-        } else {
-            return Err(error::system(
-                "No upload URL found",
-                "This is a bug, please report it",
-            ));
-        };
+        let (id, upload_url) = get_use_case_file(
+            &project_version.files,
+            update_use_case_mutation::ProjectVersionFileKind::DATA,
+        )?;
         let data_tar_file = tempdir
             .path()
             .join(format!("{package_name}-{version}.data.tar.gz"));
@@ -499,16 +506,26 @@ pub async fn upload_use_case(
         data_pb = m.add(data_pb);
 
         let data_pb_cloned = data_pb.clone();
-        let client = s3_client.clone();
+        let client = client.clone();
         async move {
-            compress(data_path, &data_tar_file).await.map_err(|err| {
-                error::system(
-                    &format!("Could not compress data: {}", err),
-                    "Please make sure the data directory is valid",
-                )
-            })?;
+            compress(data_path, &data_tar_file, &data_pb_cloned)
+                .await
+                .map_err(|err| {
+                    error::system(
+                        &format!("Could not compress data: {}", err),
+                        "Please make sure the data directory is valid",
+                    )
+                })?;
             data_pb_cloned.set_message("Uploading data");
-            upload_file(&client, data_tar_file, upload_url, "application/gzip").await
+            upload_project_version_file(
+                &client,
+                data_tar_file,
+                &id,
+                Some("application/gzip"),
+                Some(upload_url),
+                &data_pb_cloned,
+            )
+            .await
         }
         .map(move |res| {
             if res.is_ok() {
@@ -523,24 +540,10 @@ pub async fn upload_use_case(
 
     let template_fut = {
         if let Some(template_path) = template_path {
-            let upload_url = if let Some(url) = project_version
-                .files
-                .iter()
-                .find(|f| {
-                    matches!(
-                        f.kind,
-                        update_use_case_mutation::ProjectVersionFileKind::TEMPLATE
-                    )
-                })
-                .and_then(|f| f.upload_url.as_ref())
-            {
-                url
-            } else {
-                return Err(error::system(
-                    "No upload URL found",
-                    "This is a bug, please report it",
-                ));
-            };
+            let (id, upload_url) = get_use_case_file(
+                &project_version.files,
+                update_use_case_mutation::ProjectVersionFileKind::TEMPLATE,
+            )?;
             let template_tar_file = tempdir
                 .path()
                 .join(format!("{package_name}-{version}.template.tar.gz"));
@@ -549,9 +552,9 @@ pub async fn upload_use_case(
             template_pb = m.add(template_pb);
 
             let template_pb_cloned = template_pb.clone();
-            let client = s3_client.clone();
+            let client = client.clone();
             async move {
-                compress(template_path, &template_tar_file)
+                compress(template_path, &template_tar_file, &template_pb_cloned)
                     .await
                     .map_err(|err| {
                         error::system(
@@ -560,7 +563,15 @@ pub async fn upload_use_case(
                         )
                     })?;
                 template_pb_cloned.set_message("Uploading template");
-                upload_file(&client, template_tar_file, upload_url, "application/gzip").await
+                upload_project_version_file(
+                    &client,
+                    template_tar_file,
+                    &id,
+                    Some("application/gzip"),
+                    Some(upload_url),
+                    &template_pb_cloned,
+                )
+                .await
             }
             .map(move |res| {
                 if res.is_ok() {
@@ -577,24 +588,10 @@ pub async fn upload_use_case(
     };
 
     let package_fut = {
-        let upload_url = if let Some(url) = project_version
-            .files
-            .iter()
-            .find(|f| {
-                matches!(
-                    f.kind,
-                    update_use_case_mutation::ProjectVersionFileKind::PACKAGE
-                )
-            })
-            .and_then(|f| f.upload_url.as_ref())
-        {
-            url
-        } else {
-            return Err(error::system(
-                "No upload URL found",
-                "This is a bug, please report it",
-            ));
-        };
+        let (id, upload_url) = get_use_case_file(
+            &project_version.files,
+            update_use_case_mutation::ProjectVersionFileKind::PACKAGE,
+        )?;
         let package_build_path = tempdir.path().join("dist");
         let package_tar_file = package_build_path.join(format!("{package_name}-{version}.tar.gz"));
         let mut package_pb = ProgressBar::new_spinner().with_message("Building package");
@@ -602,7 +599,7 @@ pub async fn upload_use_case(
         package_pb = m.add(package_pb);
 
         let package_pb_cloned = package_pb.clone();
-        let client = s3_client.clone();
+        let client = client.clone();
         async move {
             let project_file = RevertFile::save(pyproject_path(&global.project))?;
             let mut new_project = project.clone();
@@ -619,7 +616,15 @@ pub async fn upload_use_case(
             project_file.revert()?;
 
             package_pb_cloned.set_message("Uploading package");
-            upload_file(&client, package_tar_file, upload_url, "application/gzip").await
+            upload_project_version_file(
+                &client,
+                package_tar_file,
+                &id,
+                Some("application/gzip"),
+                Some(upload_url),
+                &package_pb_cloned,
+            )
+            .await
         }
         .map(move |res| {
             if res.is_ok() {
@@ -884,8 +889,6 @@ Do you want to run the tests now?"#,
 
     use_case_pb.finish_with_message("Version updated");
 
-    let s3_client = reqwest::Client::new();
-
     let package_name = format!(
         "submission_{}_{}",
         competition_id.to_package_id(),
@@ -893,24 +896,10 @@ Do you want to run the tests now?"#,
     );
 
     let evaluation_fut = {
-        let upload_url = if let Some(url) = project_version
-            .files
-            .iter()
-            .find(|f| {
-                matches!(
-                    f.kind,
-                    update_submission_mutation::ProjectVersionFileKind::SUBMISSION_EVALUATION
-                )
-            })
-            .and_then(|f| f.upload_url.as_ref())
-        {
-            url
-        } else {
-            return Err(error::system(
-                "No upload URL found",
-                "This is a bug, please report it",
-            ));
-        };
+        let (id, upload_url) = get_submission_file(
+            &project_version.files,
+            update_submission_mutation::ProjectVersionFileKind::SUBMISSION_EVALUATION,
+        )?;
         let evaluation_tar_file = tempdir
             .path()
             .join(format!("{package_name}-{version}.evaluation.tar.gz"));
@@ -919,9 +908,9 @@ Do you want to run the tests now?"#,
         evaluation_pb = m.add(evaluation_pb);
 
         let evaluation_pb_cloned = evaluation_pb.clone();
-        let client = s3_client.clone();
+        let client = client.clone();
         async move {
-            compress(evaluation_path, &evaluation_tar_file)
+            compress(evaluation_path, &evaluation_tar_file, &evaluation_pb_cloned)
                 .await
                 .map_err(|err| {
                     error::system(
@@ -930,7 +919,15 @@ Do you want to run the tests now?"#,
                     )
                 })?;
             evaluation_pb_cloned.set_message("Uploading evaluation");
-            upload_file(&client, evaluation_tar_file, upload_url, "application/gzip").await
+            upload_project_version_file(
+                &client,
+                evaluation_tar_file,
+                &id,
+                Some("application/gzip"),
+                Some(upload_url),
+                &evaluation_pb_cloned,
+            )
+            .await
         }
         .map(move |res| {
             if res.is_ok() {
@@ -944,24 +941,10 @@ Do you want to run the tests now?"#,
     };
 
     let package_fut = {
-        let upload_url = if let Some(url) = project_version
-            .files
-            .iter()
-            .find(|f| {
-                matches!(
-                    f.kind,
-                    update_submission_mutation::ProjectVersionFileKind::PACKAGE
-                )
-            })
-            .and_then(|f| f.upload_url.as_ref())
-        {
-            url
-        } else {
-            return Err(error::system(
-                "No upload URL found",
-                "This is a bug, please report it",
-            ));
-        };
+        let (id, upload_url) = get_submission_file(
+            &project_version.files,
+            update_submission_mutation::ProjectVersionFileKind::PACKAGE,
+        )?;
         let package_build_path = tempdir.path().join("dist");
         let package_tar_file = package_build_path.join(format!("{package_name}-{version}.tar.gz"));
         let mut package_pb = ProgressBar::new_spinner().with_message("Building package");
@@ -969,7 +952,7 @@ Do you want to run the tests now?"#,
         package_pb = m.add(package_pb);
 
         let package_pb_cloned = package_pb.clone();
-        let client = s3_client.clone();
+        let client = client.clone();
         async move {
             let project_file = RevertFile::save(pyproject_path(&global.project))?;
             let mut new_project = project.clone();
@@ -986,7 +969,15 @@ Do you want to run the tests now?"#,
             project_file.revert()?;
 
             package_pb_cloned.set_message("Uploading package");
-            upload_file(&client, package_tar_file, upload_url, "application/gzip").await
+            upload_project_version_file(
+                &client,
+                package_tar_file,
+                &id,
+                Some("application/gzip"),
+                Some(upload_url),
+                &package_pb_cloned,
+            )
+            .await
         }
         .map(move |res| {
             if res.is_ok() {
