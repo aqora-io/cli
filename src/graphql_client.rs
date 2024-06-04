@@ -69,6 +69,11 @@ impl GraphQLClient {
             url: graphql_url(&url)?,
         })
     }
+
+    pub fn inner(&self) -> &reqwest::Client {
+        &self.client
+    }
+
     pub async fn send<Q: GraphQLQuery>(
         &self,
         variables: Q::Variables,

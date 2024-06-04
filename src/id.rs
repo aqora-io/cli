@@ -9,6 +9,7 @@ pub enum NodeType {
     User,
     Competition,
     Organization,
+    ProjectVersionFile,
 }
 
 impl FromStr for NodeType {
@@ -19,6 +20,7 @@ impl FromStr for NodeType {
             "User" => Ok(NodeType::User),
             "Competition" => Ok(NodeType::Competition),
             "Organization" => Ok(NodeType::Organization),
+            "ProjectVersionFile" => Ok(NodeType::ProjectVersionFile),
             _ => Err(format!("Unknown node kind: {}", s)),
         }
     }
@@ -30,6 +32,7 @@ impl fmt::Display for NodeType {
             NodeType::User => write!(f, "User"),
             NodeType::Competition => write!(f, "Competition"),
             NodeType::Organization => write!(f, "Organization"),
+            NodeType::ProjectVersionFile => write!(f, "ProjectVersionFile"),
         }
     }
 }

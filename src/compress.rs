@@ -9,6 +9,8 @@ use tokio::{
 };
 use tokio_tar::{Archive as TarArchive, Builder as TarBuilder};
 
+use crate::progress_bar::{self, TempProgressStyle};
+
 #[derive(Error, Debug)]
 pub enum CompressError {
     #[error(transparent)]
@@ -22,16 +24,22 @@ pub enum CompressError {
 pub async fn compress(
     input: impl AsRef<Path>,
     output: impl AsRef<Path>,
+    pb: &ProgressBar,
 ) -> Result<(), CompressError> {
     let mut builder = TarBuilder::new(GzipEncoder::new(BufWriter::new(
         File::create(output).await?,
     )));
-    for entry in ignore::WalkBuilder::new(&input)
+    let entries = ignore::WalkBuilder::new(&input)
         .hidden(false)
         .build()
         .skip(1)
-    {
-        let entry = entry?;
+        .collect::<Result<Vec<_>, _>>()?;
+    let _guard = TempProgressStyle::new(pb);
+    pb.reset();
+    pb.set_style(progress_bar::pretty());
+    pb.set_position(0);
+    pb.set_length(entries.len() as u64);
+    for entry in entries {
         let metadata = entry.metadata()?;
         let path = entry.path();
         let name = path.strip_prefix(&input)?;
@@ -40,6 +48,7 @@ pub async fn compress(
         } else {
             builder.append_path_with_name(path, name).await?;
         }
+        pb.inc(1);
     }
     builder.finish().await?;
     Ok(builder.into_inner().await?.shutdown().await?)

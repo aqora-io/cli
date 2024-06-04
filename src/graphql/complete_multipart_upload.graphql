@@ -1,0 +1,13 @@
+mutation CompleteMultipartUpload(
+  $id: String!
+  $uploadId: String!
+  $eTags: [String!]!
+) {
+  completeProjectVersionFileMultipartUpload(
+    id: $id
+    uploadId: $uploadId
+    eTags: $eTags
+  ) {
+    id
+  }
+}

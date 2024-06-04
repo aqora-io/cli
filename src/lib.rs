@@ -20,6 +20,7 @@ mod readme;
 mod revert_file;
 pub mod sentry;
 mod shutdown;
+mod upload;
 
 pub use commands::{Cli, CliExit};
 
