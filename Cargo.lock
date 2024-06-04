@@ -115,6 +115,7 @@ dependencies = [
  "mime",
  "open",
  "owo-colors",
+ "passterm",
  "pyo3",
  "pyo3-asyncio",
  "rand",
@@ -1482,6 +1483,15 @@ dependencies = [
  "redox_syscall 0.4.1",
  "smallvec",
  "windows-targets 0.48.5",
+]
+
+[[package]]
+name = "passterm"
+version = "2.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eea7e8981bca32c52230ca5f28b080dd5f28aed618a7bd12b5a382b234cd2b99"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

@@ -1,0 +1,7 @@
+mutation LoginPageUserMutation($input: LoginUserInput!) {
+    loginUser(input: $input) {
+        node {
+            id
+        }
+    }
+}

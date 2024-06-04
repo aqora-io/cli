@@ -1,0 +1,7 @@
+mutation Oauth2AuthorizePageMutation($input: Oauth2AuthorizeInput!) {
+    oauth2Authorize(input: $input) {
+        unauthorized
+        clientError
+        redirectUri
+    }
+}

@@ -613,7 +613,7 @@ type Mutation {
 	createCompetition(input: CreateCompetitionInput!): CompetitionEdge!
 	updateCompetition(id: ID!, input: UpdateCompetitionInput!): CompetitionEdge!
 	deleteCompetition(id: ID!): ID!
-	createSubmissionVersion(competitionId: ID!, input: UpdateSubmissionInput!, asEntity: ID): ProjectVersionEdge!
+	createSubmissionVersion(competitionId: ID!, input: UpdateSubmissionInput!): ProjectVersionEdge!
 	validateSubmissionVersion(projectVersionId: ID!): ProjectVersionEdge!
 	createTopicForCompetition(competitionId: ID!, input: CreateTopicInput!): TopicEdge!
 	updateTopic(id: ID!, input: UpdateTopicInput!): Topic!
