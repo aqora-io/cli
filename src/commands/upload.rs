@@ -256,56 +256,63 @@ pub struct UpdateSubmissionMutation;
 )]
 pub struct ValidateSubmissionMutation;
 
-fn get_use_case_file(
-    files: &[update_use_case_mutation::UpdateUseCaseMutationCreateUseCaseVersionNodeFiles],
-    kind: update_use_case_mutation::ProjectVersionFileKind,
-) -> Result<(Id, &Url)> {
-    if let Some(file) = files
-        .iter()
-        .find(|f| f.kind == kind)
-        .and_then(|f| f.upload_url.as_ref().map(|url| (&f.id, url)))
-        .map(|(id, url)| Id::parse_node_id(id).map(|id| (id, url)))
-        .transpose()
-        .map_err(|err| {
-            error::system(
-                &format!("Could not parse data file ID: {}", err),
-                "This is a bug, please report it",
-            )
-        })?
-    {
-        Ok(file)
-    } else {
-        Err(error::system(
-            "No upload URL found",
-            "This is a bug, please report it",
-        ))
+pub trait ProjectVersionFile {
+    type Kind: PartialEq + std::fmt::Debug;
+    fn id(&self) -> &str;
+    fn kind(&self) -> &Self::Kind;
+    fn upload_url(&self) -> Option<&Url>;
+}
+
+impl ProjectVersionFile
+    for update_use_case_mutation::UpdateUseCaseMutationCreateUseCaseVersionNodeFiles
+{
+    type Kind = update_use_case_mutation::ProjectVersionFileKind;
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn kind(&self) -> &Self::Kind {
+        &self.kind
+    }
+    fn upload_url(&self) -> Option<&Url> {
+        self.upload_url.as_ref()
     }
 }
 
-fn get_submission_file(
-    files: &[update_submission_mutation::UpdateSubmissionMutationCreateSubmissionVersionNodeFiles],
-    kind: update_submission_mutation::ProjectVersionFileKind,
-) -> Result<(Id, &Url)> {
-    if let Some(file) = files
-        .iter()
-        .find(|f| f.kind == kind)
-        .and_then(|f| f.upload_url.as_ref().map(|url| (&f.id, url)))
-        .map(|(id, url)| Id::parse_node_id(id).map(|id| (id, url)))
-        .transpose()
-        .map_err(|err| {
-            error::system(
-                &format!("Could not parse data file ID: {}", err),
-                "This is a bug, please report it",
-            )
-        })?
-    {
-        Ok(file)
-    } else {
-        Err(error::system(
-            "No upload URL found",
-            "This is a bug, please report it",
-        ))
+impl ProjectVersionFile
+    for update_submission_mutation::UpdateSubmissionMutationCreateSubmissionVersionNodeFiles
+{
+    type Kind = update_submission_mutation::ProjectVersionFileKind;
+    fn id(&self) -> &str {
+        &self.id
     }
+    fn kind(&self) -> &Self::Kind {
+        &self.kind
+    }
+    fn upload_url(&self) -> Option<&Url> {
+        self.upload_url.as_ref()
+    }
+}
+
+fn find_project_version_file<F: ProjectVersionFile>(
+    files: &[F],
+    kind: F::Kind,
+) -> Result<(Id, &Url)> {
+    let file = files.iter().find(|f| f.kind() == &kind).ok_or_else(|| {
+        error::system(
+            &format!("{kind:?} file not found in project version"),
+            "This is a bug, please report it",
+        )
+    })?;
+    let id = Id::parse_node_id(file.id()).map_err(|err| {
+        error::system(
+            &format!("Could not parse project version file ID: {}", err),
+            "This is a bug, please report it",
+        )
+    })?;
+    let url = file
+        .upload_url()
+        .ok_or_else(|| error::system("No upload URL found", "This is a bug, please report it"))?;
+    Ok((id, url))
 }
 
 fn increment_version(version: &Version) -> Version {
@@ -494,7 +501,7 @@ pub async fn upload_use_case(
     use_case_pb.finish_with_message("Version updated");
 
     let data_fut = {
-        let (id, upload_url) = get_use_case_file(
+        let (id, upload_url) = find_project_version_file(
             &project_version.files,
             update_use_case_mutation::ProjectVersionFileKind::DATA,
         )?;
@@ -540,7 +547,7 @@ pub async fn upload_use_case(
 
     let template_fut = {
         if let Some(template_path) = template_path {
-            let (id, upload_url) = get_use_case_file(
+            let (id, upload_url) = find_project_version_file(
                 &project_version.files,
                 update_use_case_mutation::ProjectVersionFileKind::TEMPLATE,
             )?;
@@ -588,7 +595,7 @@ pub async fn upload_use_case(
     };
 
     let package_fut = {
-        let (id, upload_url) = get_use_case_file(
+        let (id, upload_url) = find_project_version_file(
             &project_version.files,
             update_use_case_mutation::ProjectVersionFileKind::PACKAGE,
         )?;
@@ -896,7 +903,7 @@ Do you want to run the tests now?"#,
     );
 
     let evaluation_fut = {
-        let (id, upload_url) = get_submission_file(
+        let (id, upload_url) = find_project_version_file(
             &project_version.files,
             update_submission_mutation::ProjectVersionFileKind::SUBMISSION_EVALUATION,
         )?;
@@ -941,7 +948,7 @@ Do you want to run the tests now?"#,
     };
 
     let package_fut = {
-        let (id, upload_url) = get_submission_file(
+        let (id, upload_url) = find_project_version_file(
             &project_version.files,
             update_submission_mutation::ProjectVersionFileKind::PACKAGE,
         )?;
