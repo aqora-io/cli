@@ -20,7 +20,10 @@ venv = [
     "build >=1.2.0, <2.0.0",
     "setuptools >=61.0",
     "ujson >= 5.9.0, <6.0.0",
-    "jupyterlab ~= 4.2.1",
+    "jupyterlab >= 4.2.1, < 5.0.0",
+    "ipykernel >=6.29.4, <7.0.0",
+    "nbconvert >= 7.16.4, <8.0.0",
+    "nbformat >= 5.10.4, <6.0.0",
 ]
 
 [project.urls]

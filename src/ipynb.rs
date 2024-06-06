@@ -1,7 +1,7 @@
 use crate::error::{self, Error};
 use aqora_config::{AqoraConfig, AqoraSubmissionConfig, AqoraUseCaseConfig, PathStr};
 use aqora_runner::python::PyEnv;
-use pyo3::prelude::*;
+use pyo3::{prelude::*, types::PyDict};
 use serde::{de, Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -116,6 +116,10 @@ impl Cell {
 pub struct Ipynb {
     #[serde(default)]
     pub cells: Vec<Cell>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nbformat: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nbformat_minor: Option<usize>,
     #[serde(flatten)]
     pub rest: Option<serde_json::Value>,
 }
@@ -169,10 +173,8 @@ pub enum NotebookToPythonFunctionError {
     Write(PathBuf, #[source] std::io::Error),
     #[error("Could not find notebook {0}")]
     CouldNotFindNotebook(PathStr<'static>),
-    #[error("Failed to run `jupyter nbconvert` for {0}: {1}")]
-    CouldNotRunNbconvert(PathBuf, std::io::Error),
-    #[error("`jupyter nbconvert` failed for {0}: {1}")]
-    NbconvertFailed(PathBuf, String),
+    #[error("nbconvert failed for {0}: {1}")]
+    NbconvertFailed(PathBuf, #[source] PyErr),
     #[error(transparent)]
     Python(#[from] PyErr),
 }
@@ -205,7 +207,7 @@ fn notebook_path(env: &PyEnv, path: &PathStr) -> Result<PathBuf, NotebookToPytho
 }
 
 async fn notebook_to_script(
-    env: &PyEnv,
+    _env: &PyEnv,
     input_path: impl AsRef<Path>,
     output_path: impl AsRef<Path>,
 ) -> Result<(), NotebookToPythonFunctionError> {
@@ -237,7 +239,7 @@ async fn notebook_to_script(
 
     inject_parameters(&mut ipynb.cells);
 
-    let ipynb_json = serde_json::to_vec(&ipynb)
+    let ipynb_json = serde_json::to_string(&ipynb)
         .map_err(|e| NotebookToPythonFunctionError::Json(input_path.clone(), e))?;
 
     let output_dir = output_path.parent().ok_or_else(|| {
@@ -253,45 +255,30 @@ async fn notebook_to_script(
         .await
         .map_err(|e| NotebookToPythonFunctionError::Write(output_dir.to_path_buf(), e))?;
 
-    let generated_file = std::fs::File::create(&output_path)
+    let script = Python::with_gil(|py| {
+        let reads_kwargs = PyDict::new(py);
+        reads_kwargs.set_item(pyo3::intern!(py, "as_version"), ipynb.nbformat.unwrap_or(4))?;
+        let notebook = py.import(pyo3::intern!(py, "nbformat"))?.call_method(
+            pyo3::intern!(py, "reads"),
+            (ipynb_json,),
+            Some(reads_kwargs),
+        )?;
+
+        Ok(py
+            .import(pyo3::intern!(py, "nbconvert"))?
+            .call_method0(pyo3::intern!(py, "PythonExporter"))?
+            .call_method1(pyo3::intern!(py, "from_notebook_node"), (notebook,))?
+            .get_item(0)?
+            .extract::<String>())
+    })
+    .map_err(|err| NotebookToPythonFunctionError::NbconvertFailed(input_path.clone(), err))?
+    .map_err(|err| NotebookToPythonFunctionError::NbconvertFailed(input_path.clone(), err))?;
+
+    tokio::fs::write(&output_path, script)
+        .await
         .map_err(|e| NotebookToPythonFunctionError::Write(output_path.clone(), e))?;
 
-    let mut child = tokio::process::Command::new(env.bin_path().join("jupyter"))
-        .arg("nbconvert")
-        .arg("--to")
-        .arg("script")
-        .arg("--stdin")
-        .arg("--stdout")
-        .stdin(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .stdout(generated_file)
-        .spawn()
-        .map_err(|e| NotebookToPythonFunctionError::CouldNotRunNbconvert(input_path.clone(), e))?;
-
-    let mut stdin = child.stdin.take().ok_or_else(|| {
-        NotebookToPythonFunctionError::CouldNotRunNbconvert(
-            input_path.clone(),
-            std::io::Error::new(std::io::ErrorKind::BrokenPipe, "Could not open stdin"),
-        )
-    })?;
-    stdin
-        .write_all(&ipynb_json)
-        .await
-        .map_err(|e| NotebookToPythonFunctionError::CouldNotRunNbconvert(input_path.clone(), e))?;
-    drop(stdin);
-
-    let output = child
-        .wait_with_output()
-        .await
-        .map_err(|e| NotebookToPythonFunctionError::CouldNotRunNbconvert(input_path.clone(), e))?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(NotebookToPythonFunctionError::NbconvertFailed(
-            input_path.clone(),
-            String::from_utf8_lossy(&output.stderr).to_string(),
-        ))
-    }
+    Ok(())
 }
 
 struct NotebookMeta {
@@ -311,6 +298,14 @@ impl NotebookMeta {
                 ),
             )
         })
+    }
+
+    fn converted_path(&self) -> Result<PathBuf, NotebookToPythonFunctionError> {
+        Ok(self
+            .notebook_dir()?
+            .join("__aqora__")
+            .join("generated")
+            .join(format!("{}.converted.py", self.generated_name)))
     }
 
     fn script_path(&self) -> Result<PathBuf, NotebookToPythonFunctionError> {
@@ -336,17 +331,42 @@ impl NotebookMeta {
         generated_path
     }
 
-    fn function_def(&self) -> String {
+    fn script_function_def(&self) -> String {
         format!(
-            r#"async def {func}(*__aqora__args, **__aqora__kwargs):
-    path = dir_path / 'generated' / '{name}.py'
-    spec = importlib.util.spec_from_file_location('{module_name}', path)
-    module = importlib.util.module_from_spec(spec)
-    module.__aqora__args = __aqora__args
-    module.__aqora__kwargs = __aqora__kwargs
-    sys.modules['{module_name}'] = module
-    spec.loader.exec_module(module)
-    return module.output"#,
+            r#"import ast
+from pathlib import Path
+
+__aqora__path = Path(__file__).parent / '{name}.converted.py'
+with open(__aqora__path) as f:
+    __aqora__script = compile(f.read(), __aqora__path, 'exec', flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
+
+async def __aqora__(*__aqora__args, **__aqora__kwargs):
+    globals().update(locals())
+    coroutine = eval(__aqora__script, globals())
+    if coroutine is not None:
+        await coroutine
+    if 'output' in globals():
+        return globals()['output']
+    else:
+        raise NameError("No 'output' variable found in the notebook")
+"#,
+            name = self.generated_name
+        )
+    }
+
+    fn module_function_def(&self) -> String {
+        format!(
+            r#"
+spec_{name} = importlib.util.spec_from_file_location(
+    '{module_name}',
+    dir_path / 'generated' / '{name}.py')
+module_{name} = importlib.util.module_from_spec(spec_{name})
+sys.modules['{module_name}'] = module_{name}
+spec_{name}.loader.exec_module(module_{name})
+
+async def {func}(*__aqora__args, **__aqora__kwargs):
+    return await module_{name}.__aqora__(*__aqora__args, **__aqora__kwargs)
+"#,
             func = self.function_name(),
             module_name = self.path,
             name = self.generated_name
@@ -386,29 +406,33 @@ async fn convert_notebooks<'a, 'b: 'a>(
         .map(|path| get_meta(env, path).map(|meta| (path, meta)))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let mut to_convert = paths
-        .iter()
-        .map(|(_, meta)| {
-            meta.script_path()
-                .map(|output| (meta.notebook_path.clone(), output))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    to_convert.dedup();
+    let mut to_convert = paths.iter().collect::<Vec<_>>();
+    to_convert.dedup_by_key(|(path, _)| path);
 
-    futures::future::try_join_all(
-        to_convert
-            .into_iter()
-            .map(|(input, output)| notebook_to_script(env, input, output)),
-    )
-    .await?;
+    let converted =
+        futures::future::try_join_all(to_convert.into_iter().map(|(_, meta)| async move {
+            notebook_to_script(env, &meta.notebook_path, meta.converted_path()?).await?;
+            let script_path = meta.script_path()?;
+            tokio::fs::write(&script_path, meta.script_function_def())
+                .await
+                .map_err(|e| NotebookToPythonFunctionError::Read(script_path.clone(), e))?;
+            Result::<_, NotebookToPythonFunctionError>::Ok((
+                meta.aqora_module_path()?,
+                meta.module_function_def(),
+            ))
+        }))
+        .await?;
 
-    let mut generated = HashMap::new();
     for (path, meta) in paths {
         *path = meta.new_path();
+    }
+
+    let mut generated = HashMap::new();
+    for (module_path, function_def) in converted {
         generated
-            .entry(meta.aqora_module_path()?)
+            .entry(module_path)
             .or_insert_with(Vec::new)
-            .push(meta.function_def());
+            .push(function_def);
     }
 
     futures::future::try_join_all(generated.into_iter().map(
