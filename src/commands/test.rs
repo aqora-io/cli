@@ -163,7 +163,7 @@ pub async fn run_submission_tests(
     let modified_use_case = {
         let mut use_case = use_case.clone();
         let mut submission = submission.clone();
-        convert_submission_notebooks(&env, &mut submission)?;
+        convert_submission_notebooks(&env, &mut submission).await?;
         if let Err(err) = use_case.replace_refs(&submission.refs) {
             return Err(error::system(
                 &format!("Failed to import pipeline: {err}"),
@@ -607,7 +607,7 @@ async fn test_use_case(args: Test, global: GlobalArgs, project: PyProject) -> Re
     let env = init_venv(&global.project, global.uv.as_ref(), &venv_pb, global.color).await?;
 
     let mut use_case = use_case.clone();
-    convert_use_case_notebooks(&env, &mut use_case)?;
+    convert_use_case_notebooks(&env, &mut use_case).await?;
 
     venv_pb.finish_with_message("Virtual environment ready");
 

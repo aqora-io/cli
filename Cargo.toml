@@ -74,3 +74,6 @@ which = "6.0"
 [build-dependencies]
 toml_edit = "0.22"
 sentry-types = "0.32"
+
+[dev-dependencies]
+pretty_assertions = "1.4.0"
