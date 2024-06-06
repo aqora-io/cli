@@ -239,20 +239,24 @@ impl PyEnv {
         &self.venv_path
     }
 
+    pub fn bin_path(&self) -> PathBuf {
+        self.venv_path.join(BIN_PATH)
+    }
+
     pub fn cache_path(&self) -> Option<&Path> {
         self.cache_path.as_deref()
     }
 
     pub fn python_path(&self) -> PathBuf {
-        self.venv_path.join(BIN_PATH).join("python")
+        self.bin_path().join("python")
     }
 
     pub fn uv_path(&self) -> PathBuf {
-        self.venv_path.join(BIN_PATH).join("uv")
+        self.bin_path().join("uv")
     }
 
     pub fn activate_path(&self) -> PathBuf {
-        self.venv_path.join(BIN_PATH).join("activate")
+        self.bin_path().join("activate")
     }
 
     pub fn python_cmd(&self) -> Command {

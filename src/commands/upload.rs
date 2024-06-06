@@ -611,7 +611,7 @@ pub async fn upload_use_case(
             let project_file = RevertFile::save(pyproject_path(&global.project))?;
             let mut new_project = project.clone();
             new_project.set_name(package_name);
-            convert_project_notebooks(&env, new_project.aqora_mut().unwrap())?;
+            convert_project_notebooks(&env, new_project.aqora_mut().unwrap()).await?;
             std::fs::write(&project_file, new_project.toml()?)?;
             build_package(
                 &env,
@@ -964,7 +964,7 @@ Do you want to run the tests now?"#,
             let project_file = RevertFile::save(pyproject_path(&global.project))?;
             let mut new_project = project.clone();
             new_project.set_name(package_name);
-            convert_project_notebooks(&env, new_project.aqora_mut().unwrap())?;
+            convert_project_notebooks(&env, new_project.aqora_mut().unwrap()).await?;
             std::fs::write(&project_file, new_project.toml()?)?;
             build_package(
                 &env,

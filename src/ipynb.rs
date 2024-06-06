@@ -1,23 +1,23 @@
 use crate::error::{self, Error};
-use aqora_config::{AqoraConfig, AqoraSubmissionConfig, AqoraUseCaseConfig, FunctionDef, PathStr};
+use aqora_config::{AqoraConfig, AqoraSubmissionConfig, AqoraUseCaseConfig, PathStr};
 use aqora_runner::python::PyEnv;
 use pyo3::prelude::*;
-use serde::{de, Deserialize};
+use serde::{de, Deserialize, Serialize};
 use std::{
-    ffi::OsString,
+    collections::HashMap,
     fmt,
     path::{Path, PathBuf},
 };
 use thiserror::Error;
+use tokio::io::AsyncWriteExt;
 
 const PARAMETERS_TAG: &str = "parameters";
-const CODE_TYPE: &str = "code";
 
 const AQORA_PARAMETERS: &str = r#"input = __aqora__args[0]
 context = __aqora__kwargs.get("context")
 original_input = __aqora__kwargs.get("original_input")"#;
 
-#[derive(Default)]
+#[derive(Default, Serialize)]
 pub struct CellSource(Vec<String>);
 
 impl<'de> de::Deserialize<'de> for CellSource {
@@ -63,31 +63,61 @@ impl<'a> From<&'a str> for CellSource {
     }
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Serialize, Default)]
 pub struct Metadata {
-    #[serde(default)]
-    pub tags: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
+    #[serde(flatten)]
+    pub rest: Option<serde_json::Value>,
 }
 
-#[derive(Deserialize)]
-pub struct Cell {
-    pub cell_type: String,
-    #[serde(default)]
-    pub metadata: Metadata,
-    #[serde(default)]
-    pub source: CellSource,
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "cell_type", rename_all = "snake_case")]
+pub enum Cell {
+    Code {
+        #[serde(default)]
+        execution_count: Option<usize>,
+        #[serde(default)]
+        metadata: Metadata,
+        #[serde(default)]
+        source: CellSource,
+        #[serde(default)]
+        outputs: Vec<serde_json::Value>,
+        #[serde(flatten)]
+        rest: Option<serde_json::Value>,
+    },
+    Markdown {
+        #[serde(default)]
+        metadata: Metadata,
+        #[serde(default)]
+        source: CellSource,
+        #[serde(flatten)]
+        rest: Option<serde_json::Value>,
+    },
+    Raw {
+        #[serde(default)]
+        metadata: Metadata,
+        #[serde(flatten)]
+        rest: Option<serde_json::Value>,
+    },
 }
 
 impl Cell {
-    pub fn is_code(&self) -> bool {
-        self.cell_type == CODE_TYPE
+    fn metadata(&self) -> &Metadata {
+        match self {
+            Cell::Code { metadata, .. } => metadata,
+            Cell::Markdown { metadata, .. } => metadata,
+            Cell::Raw { metadata, .. } => metadata,
+        }
     }
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Serialize, Default)]
 pub struct Ipynb {
     #[serde(default)]
     pub cells: Vec<Cell>,
+    #[serde(flatten)]
+    pub rest: Option<serde_json::Value>,
 }
 
 fn inject_parameters(cells: &mut Vec<Cell>) {
@@ -95,7 +125,13 @@ fn inject_parameters(cells: &mut Vec<Cell>) {
         .iter()
         .enumerate()
         .filter_map(|(i, cell)| {
-            if cell.metadata.tags.contains(&PARAMETERS_TAG.to_string()) {
+            if cell
+                .metadata()
+                .tags
+                .as_ref()
+                .map(|tags| tags.contains(&PARAMETERS_TAG.to_string()))
+                .unwrap_or(false)
+            {
                 Some(i)
             } else {
                 None
@@ -111,43 +147,15 @@ fn inject_parameters(cells: &mut Vec<Cell>) {
     for i in parameter_indices {
         cells.insert(
             i + offset,
-            Cell {
-                cell_type: CODE_TYPE.to_string(),
-                metadata: Metadata::default(),
+            Cell::Code {
                 source: CellSource::from(AQORA_PARAMETERS),
+                execution_count: Default::default(),
+                metadata: Default::default(),
+                outputs: Default::default(),
+                rest: Default::default(),
             },
         );
         offset += 1;
-    }
-}
-
-impl Ipynb {
-    fn into_python_function(mut self) -> String {
-        inject_parameters(&mut self.cells);
-        let cells = self
-            .cells
-            .iter()
-            .filter_map(|cell| {
-                if cell.is_code() {
-                    let code = cell.source.0.join("").replace(r#"'''"#, r#"'\''"#);
-                    Some(format!("exec('''\n{code}\n''', globals())"))
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<String>>()
-            .join("\n\n    ");
-        format!(
-            r#"async def __aqora__(*__aqora__args, **__aqora__kwargs):
-    globals().update(locals())
-
-    {cells}
-
-    if 'output' in globals():
-        return globals()['output']
-    else:
-        raise NameError("No 'output' variable found in the notebook")"#
-        )
     }
 }
 
@@ -161,6 +169,10 @@ pub enum NotebookToPythonFunctionError {
     Write(PathBuf, #[source] std::io::Error),
     #[error("Could not find notebook {0}")]
     CouldNotFindNotebook(PathStr<'static>),
+    #[error("Failed to run `jupyter nbconvert` for {0}: {1}")]
+    CouldNotRunNbconvert(PathBuf, std::io::Error),
+    #[error("`jupyter nbconvert` failed for {0}: {1}")]
+    NbconvertFailed(PathBuf, String),
     #[error(transparent)]
     Python(#[from] PyErr),
 }
@@ -192,101 +204,441 @@ fn notebook_path(env: &PyEnv, path: &PathStr) -> Result<PathBuf, NotebookToPytho
     ))
 }
 
-fn convert_notebook(
+async fn notebook_to_script(
     env: &PyEnv,
-    function_def: &mut FunctionDef,
+    input_path: impl AsRef<Path>,
+    output_path: impl AsRef<Path>,
 ) -> Result<(), NotebookToPythonFunctionError> {
-    let path = match function_def {
-        FunctionDef {
-            path,
-            notebook: true,
-        } => path,
-        _ => return Ok(()),
-    };
+    let input_path = input_path.as_ref().to_path_buf();
+    let output_path = output_path.as_ref().to_path_buf();
 
-    let notebook_path = notebook_path(env, path)?;
-    let ipynb: Ipynb = serde_json::from_reader(
-        std::fs::File::open(&notebook_path)
-            .map_err(|e| NotebookToPythonFunctionError::Read(notebook_path.clone(), e))?,
+    if tokio::fs::try_exists(&output_path).await.is_ok() {
+        if let Ok((input_meta, output_meta)) = futures::future::try_join(
+            tokio::fs::metadata(&input_path),
+            tokio::fs::metadata(&output_path),
+        )
+        .await
+        {
+            if let (Ok(input_modified), Ok(output_modified)) =
+                (input_meta.modified(), output_meta.modified())
+            {
+                if input_modified <= output_modified {
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    let mut ipynb: Ipynb = serde_json::from_reader(
+        std::fs::File::open(&input_path)
+            .map_err(|e| NotebookToPythonFunctionError::Read(input_path.clone(), e))?,
     )
-    .map_err(|e| NotebookToPythonFunctionError::Json(notebook_path.clone(), e))?;
+    .map_err(|e| NotebookToPythonFunctionError::Json(input_path.clone(), e))?;
 
-    let python_path = {
-        let mut file_name = OsString::from("__generated__");
-        file_name.push(notebook_path.file_name().unwrap());
-        let mut python_path = notebook_path.clone();
-        python_path.set_file_name(file_name);
-        python_path.set_extension("py");
-        python_path
-    };
+    inject_parameters(&mut ipynb.cells);
 
-    std::fs::write(&python_path, ipynb.into_python_function())
-        .map_err(|e| NotebookToPythonFunctionError::Write(python_path.clone(), e))?;
+    let ipynb_json = serde_json::to_vec(&ipynb)
+        .map_err(|e| NotebookToPythonFunctionError::Json(input_path.clone(), e))?;
 
-    let generated_name = format!("__generated__{}", path.name());
-    let mut generated_path = path.module().into_owned();
-    generated_path.push(&generated_name);
-    generated_path.push("__aqora__");
+    let output_dir = output_path.parent().ok_or_else(|| {
+        NotebookToPythonFunctionError::Read(
+            output_path.clone(),
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Could not find parent directory",
+            ),
+        )
+    })?;
+    tokio::fs::create_dir_all(&output_dir)
+        .await
+        .map_err(|e| NotebookToPythonFunctionError::Write(output_dir.to_path_buf(), e))?;
 
-    function_def.path = generated_path;
-    function_def.notebook = false;
+    let generated_file = std::fs::File::create(&output_path)
+        .map_err(|e| NotebookToPythonFunctionError::Write(output_path.clone(), e))?;
+
+    let mut child = tokio::process::Command::new(env.bin_path().join("jupyter"))
+        .arg("nbconvert")
+        .arg("--to")
+        .arg("script")
+        .arg("--stdin")
+        .arg("--stdout")
+        .stdin(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .stdout(generated_file)
+        .spawn()
+        .map_err(|e| NotebookToPythonFunctionError::CouldNotRunNbconvert(input_path.clone(), e))?;
+
+    let mut stdin = child.stdin.take().ok_or_else(|| {
+        NotebookToPythonFunctionError::CouldNotRunNbconvert(
+            input_path.clone(),
+            std::io::Error::new(std::io::ErrorKind::BrokenPipe, "Could not open stdin"),
+        )
+    })?;
+    stdin
+        .write_all(&ipynb_json)
+        .await
+        .map_err(|e| NotebookToPythonFunctionError::CouldNotRunNbconvert(input_path.clone(), e))?;
+    drop(stdin);
+
+    let output = child
+        .wait_with_output()
+        .await
+        .map_err(|e| NotebookToPythonFunctionError::CouldNotRunNbconvert(input_path.clone(), e))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(NotebookToPythonFunctionError::NbconvertFailed(
+            input_path.clone(),
+            String::from_utf8_lossy(&output.stderr).to_string(),
+        ))
+    }
+}
+
+struct NotebookMeta {
+    path: PathStr<'static>,
+    notebook_path: PathBuf,
+    generated_name: String,
+}
+
+impl NotebookMeta {
+    fn notebook_dir(&self) -> Result<&Path, NotebookToPythonFunctionError> {
+        self.notebook_path.parent().ok_or_else(|| {
+            NotebookToPythonFunctionError::Read(
+                self.notebook_path.clone(),
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Could not find parent directory",
+                ),
+            )
+        })
+    }
+
+    fn script_path(&self) -> Result<PathBuf, NotebookToPythonFunctionError> {
+        Ok(self
+            .notebook_dir()?
+            .join("__aqora__")
+            .join("generated")
+            .join(format!("{}.py", self.generated_name)))
+    }
+
+    fn aqora_module_path(&self) -> Result<PathBuf, NotebookToPythonFunctionError> {
+        Ok(self.notebook_dir()?.join("__aqora__").join("__init__.py"))
+    }
+
+    fn function_name(&self) -> String {
+        format!("generated_{}", self.generated_name)
+    }
+
+    fn new_path(&self) -> PathStr<'static> {
+        let mut generated_path = self.path.module().into_owned();
+        generated_path.push("__aqora__");
+        generated_path.push(self.function_name());
+        generated_path
+    }
+
+    fn function_def(&self) -> String {
+        format!(
+            r#"async def {func}(*__aqora__args, **__aqora__kwargs):
+    path = dir_path / 'generated' / '{name}.py'
+    spec = importlib.util.spec_from_file_location('{module_name}', path)
+    module = importlib.util.module_from_spec(spec)
+    module.__aqora__args = __aqora__args
+    module.__aqora__kwargs = __aqora__kwargs
+    sys.modules['{module_name}'] = module
+    spec.loader.exec_module(module)
+    return module.output"#,
+            func = self.function_name(),
+            module_name = self.path,
+            name = self.generated_name
+        )
+    }
+}
+
+fn get_meta(env: &PyEnv, path: &PathStr) -> Result<NotebookMeta, NotebookToPythonFunctionError> {
+    let notebook_path = notebook_path(env, path)?;
+    let notebook_path = notebook_path.canonicalize().map_err(|e| {
+        NotebookToPythonFunctionError::Read(
+            notebook_path.clone(),
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Could not find notebook: {}", e),
+            ),
+        )
+    })?;
+    let generated_name = base32::encode(
+        base32::Alphabet::RFC4648 { padding: false },
+        path.name().as_bytes(),
+    )
+    .to_lowercase();
+    Ok(NotebookMeta {
+        path: path.clone().into_owned(),
+        notebook_path,
+        generated_name,
+    })
+}
+
+async fn convert_notebooks<'a, 'b: 'a>(
+    env: &PyEnv,
+    paths: impl IntoIterator<Item = &'a mut PathStr<'b>>,
+) -> Result<(), NotebookToPythonFunctionError> {
+    let paths = paths
+        .into_iter()
+        .map(|path| get_meta(env, path).map(|meta| (path, meta)))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut to_convert = paths
+        .iter()
+        .map(|(_, meta)| {
+            meta.script_path()
+                .map(|output| (meta.notebook_path.clone(), output))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    to_convert.dedup();
+
+    futures::future::try_join_all(
+        to_convert
+            .into_iter()
+            .map(|(input, output)| notebook_to_script(env, input, output)),
+    )
+    .await?;
+
+    let mut generated = HashMap::new();
+    for (path, meta) in paths {
+        *path = meta.new_path();
+        generated
+            .entry(meta.aqora_module_path()?)
+            .or_insert_with(Vec::new)
+            .push(meta.function_def());
+    }
+
+    futures::future::try_join_all(generated.into_iter().map(
+        |(module_path, functions)| async move {
+            let mut module = tokio::fs::File::create(&module_path)
+                .await
+                .map_err(|e| NotebookToPythonFunctionError::Write(module_path.clone(), e))?;
+            module
+                .write_all(
+                    [
+                        "import importlib.util",
+                        "import sys",
+                        "import os",
+                        "from pathlib import Path",
+                        "",
+                        "dir_path = Path(os.path.dirname(os.path.realpath(__file__)))",
+                        "",
+                        "",
+                    ]
+                    .join("\n")
+                    .as_bytes(),
+                )
+                .await
+                .map_err(|e| NotebookToPythonFunctionError::Write(module_path.clone(), e))?;
+            module
+                .write_all(functions.join("\n\n").as_bytes())
+                .await
+                .map_err(|e| NotebookToPythonFunctionError::Write(module_path.clone(), e))?;
+            module
+                .flush()
+                .await
+                .map_err(|e| NotebookToPythonFunctionError::Write(module_path.clone(), e))?;
+            Result::<_, NotebookToPythonFunctionError>::Ok(())
+        },
+    ))
+    .await?;
+
     Ok(())
 }
 
-pub fn convert_submission_notebooks(
+pub async fn convert_submission_notebooks(
     env: &PyEnv,
     submission: &mut AqoraSubmissionConfig,
 ) -> Result<(), NotebookToPythonFunctionError> {
-    for function in submission.refs.values_mut() {
-        convert_notebook(env, function)?;
-    }
-    Ok(())
+    convert_notebooks(
+        env,
+        submission
+            .refs
+            .values_mut()
+            .filter(|f| f.notebook)
+            .map(|f| &mut f.path),
+    )
+    .await
 }
 
-pub fn convert_use_case_notebooks(
+pub async fn convert_use_case_notebooks(
     env: &PyEnv,
     use_case: &mut AqoraUseCaseConfig,
 ) -> Result<(), NotebookToPythonFunctionError> {
+    let mut paths = Vec::new();
     for layer in &mut use_case.layers {
-        for function in [
-            &mut layer.transform,
-            &mut layer.context,
-            &mut layer.metric,
-            &mut layer.branch,
-        ]
-        .into_iter()
-        .flatten()
-        {
-            convert_notebook(env, function)?;
-        }
-    }
-    for test in use_case.tests.values_mut() {
-        for layer_override in test.overrides.values_mut() {
-            for function in [
-                &mut layer_override.transform,
-                &mut layer_override.context,
-                &mut layer_override.metric,
-                &mut layer_override.branch,
+        paths.extend(
+            [
+                &mut layer.transform,
+                &mut layer.context,
+                &mut layer.metric,
+                &mut layer.branch,
             ]
             .into_iter()
             .flatten()
-            {
-                convert_notebook(env, function)?;
-            }
-        }
-        for function in test.refs.values_mut() {
-            convert_notebook(env, function)?;
-        }
+            .filter(|f| f.notebook)
+            .map(|f| &mut f.path),
+        )
     }
-    Ok(())
+    for test in use_case.tests.values_mut() {
+        for layer_override in test.overrides.values_mut() {
+            paths.extend(
+                [
+                    &mut layer_override.transform,
+                    &mut layer_override.context,
+                    &mut layer_override.metric,
+                    &mut layer_override.branch,
+                ]
+                .into_iter()
+                .flatten()
+                .filter(|f| f.notebook)
+                .map(|f| &mut f.path),
+            )
+        }
+        paths.extend(
+            test.refs
+                .values_mut()
+                .filter(|f| f.notebook)
+                .map(|f| &mut f.path),
+        );
+    }
+    convert_notebooks(env, paths).await
 }
 
-pub fn convert_project_notebooks(
+pub async fn convert_project_notebooks(
     env: &PyEnv,
     config: &mut AqoraConfig,
 ) -> Result<(), NotebookToPythonFunctionError> {
     match config {
-        AqoraConfig::UseCase(use_case) => convert_use_case_notebooks(env, use_case),
-        AqoraConfig::Submission(submission) => convert_submission_notebooks(env, submission),
+        AqoraConfig::UseCase(use_case) => convert_use_case_notebooks(env, use_case).await,
+        AqoraConfig::Submission(submission) => convert_submission_notebooks(env, submission).await,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    const EXAMPLE_IPYNB: &str = r###"{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Hello world!\n"
+     ]
+    }
+   ],
+   "source": [
+    "# This is some example code\n",
+    "print(\"Hello world!\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "metadata": {
+    "tags": [
+     "parameters"
+    ]
+   },
+   "outputs": [],
+   "source": [
+    "# This block has parameters tag"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "This is a markdown block"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "/home/julian\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "/home/julian/Development/aqora/use-cases/h2-groundstate-energy/template/.venv/lib/python3.10/site-packages/IPython/core/magics/osm.py:393: UserWarning: This is now an optional IPython functionality, using bookmarks requires you to install the `pickleshare` library.\n",
+      "  bkms = self.shell.db.get('bookmarks', {})\n",
+      "/home/julian/Development/aqora/use-cases/h2-groundstate-energy/template/.venv/lib/python3.10/site-packages/IPython/core/magics/osm.py:428: UserWarning: This is now an optional IPython functionality, setting dhist requires you to install the `pickleshare` library.\n",
+      "  self.shell.db['dhist'] = compress_dhist(dhist)[-100:]\n"
+     ]
+    }
+   ],
+   "source": [
+    "# This one has a magic func\n",
+    "%cd"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "hello\n"
+     ]
+    }
+   ],
+   "source": [
+    "# And this one has a shell command\n",
+    "!echo \"hello\""
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": ".venv",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.10.12"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}"###;
+
+    #[test]
+    fn test_ipynb_deserialization() {
+        let ipynb: Ipynb = serde_json::from_str(EXAMPLE_IPYNB).unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(EXAMPLE_IPYNB).unwrap(),
+            serde_json::to_value(&ipynb).unwrap()
+        );
     }
 }
