@@ -1,3 +1,4 @@
+use crate::ipython::override_get_ipython;
 use aqora_config::{PackageName, PathStr};
 use futures::prelude::*;
 use pyo3::{
@@ -175,6 +176,7 @@ impl PyEnv {
             runpy
                 .getattr(intern!(py, "run_path"))?
                 .call1((venv_path.join(BIN_PATH).join("activate_this.py"),))?;
+            override_get_ipython(py)?;
             PyResult::Ok(())
         })?;
         Ok(Self {
