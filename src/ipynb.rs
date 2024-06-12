@@ -445,10 +445,9 @@ async fn convert_notebooks<'a, 'b: 'a>(
                     [
                         "import importlib.util",
                         "import sys",
-                        "import os",
                         "from pathlib import Path",
                         "",
-                        "dir_path = Path(os.path.dirname(os.path.realpath(__file__)))",
+                        "dir_path = Path(__file__).resolve().parent",
                         "",
                         "",
                     ]
