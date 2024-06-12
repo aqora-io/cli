@@ -55,22 +55,16 @@ pub async fn clean(_: Clean, global: GlobalArgs) -> crate::error::Result<()> {
                 && (entry.extension().map_or(false, |ext| ext == "egg-info")
                     || entry
                         .file_name()
-                        .map_or(false, |name| name == "__pycache__"))
+                        .map_or(false, |name| name == "__pycache__" || name == "__aqora__"))
             {
                 if let Err(err) = tokio::fs::remove_dir_all(&entry).await {
                     tracing::warn!("Failed to remove directory at {}: {}", entry.display(), err);
                 }
             } else if entry.is_file()
-                && (entry
+                && entry
                     .extension()
                     .and_then(|ext| ext.to_str())
                     .map_or(false, |ext| matches!(ext, "pyc" | "pyo" | "pyd" | "egg"))
-                    || entry
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .map_or(false, |name| {
-                            name.starts_with("__generated__") && name.ends_with(".py")
-                        }))
             {
                 if let Err(err) = tokio::fs::remove_file(&entry).await {
                     tracing::warn!("Failed to remove file at {}: {}", entry.display(), err);

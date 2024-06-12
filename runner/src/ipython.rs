@@ -1,4 +1,7 @@
-use pyo3::prelude::*;
+use pyo3::{
+    prelude::*,
+    types::{PyDict, PyTuple},
+};
 
 #[pyclass]
 struct IPython;
@@ -11,9 +14,33 @@ impl IPython {
         Ok(())
     }
 
+    #[pyo3(signature = (name, *_args, **_kwargs))]
+    fn run_line_magic(
+        &self,
+        name: &str,
+        _args: &PyTuple,
+        _kwargs: Option<&PyDict>,
+    ) -> PyResult<()> {
+        Err(pyo3::exceptions::PyAttributeError::new_err(format!(
+            "aqora's 'ipython' does not support '%{name}'",
+        )))
+    }
+
+    #[pyo3(signature = (name, *_args, **_kwargs))]
+    fn run_cell_magic(
+        &self,
+        name: &str,
+        _args: &PyTuple,
+        _kwargs: Option<&PyDict>,
+    ) -> PyResult<()> {
+        Err(pyo3::exceptions::PyAttributeError::new_err(format!(
+            "aqora's 'ipython' does not support '%%{name}'",
+        )))
+    }
+
     fn __getattr__(&self, name: &str) -> PyResult<PyObject> {
         Err(pyo3::exceptions::PyAttributeError::new_err(format!(
-            "aqora's 'ipython' does not support '{name}'",
+            "aqora's 'ipython' does not support function '{name}'",
         )))
     }
 }

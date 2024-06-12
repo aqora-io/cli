@@ -7,7 +7,7 @@ use crate::{
     error::{self, Result},
     evaluate::evaluate,
     ipynb::{convert_submission_notebooks, convert_use_case_notebooks},
-    print::override_print,
+    print::wrap_python_output,
     python::LastRunResult,
 };
 use aqora_config::{AqoraUseCaseConfig, PyProject};
@@ -176,13 +176,7 @@ pub async fn run_submission_tests(
         data: data_path.canonicalize()?,
     };
 
-    override_print(pipeline_pb.clone()).map_err(|err| {
-        pipeline_pb.suspend(|| {
-            Python::with_gil(|py| err.print_and_set_sys_last_vars(py));
-        });
-        pipeline_pb.finish_with_message("Failed to run tests");
-        error::system(&format!("Failed to setup print: {err}"), "")
-    })?;
+    wrap_python_output(&pipeline_pb)?;
 
     pipeline_pb.set_message("Importing pipeline..");
 
@@ -614,13 +608,7 @@ async fn test_use_case(args: Test, global: GlobalArgs, project: PyProject) -> Re
     let test_pb = m.add(ProgressBar::new_spinner().with_message("Running tests..."));
     test_pb.enable_steady_tick(std::time::Duration::from_millis(100));
 
-    override_print(test_pb.clone()).map_err(|err| {
-        test_pb.suspend(|| {
-            Python::with_gil(|py| err.print_and_set_sys_last_vars(py));
-        });
-        test_pb.finish_with_message("Failed to run tests");
-        error::system(&format!("Failed to setup print: {err}"), "")
-    })?;
+    wrap_python_output(&test_pb)?;
 
     let last_run_dir = project_last_run_dir(&global.project);
     for (name, indexes) in tests {
