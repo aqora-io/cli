@@ -40,3 +40,21 @@ aqora login
 ```
 
 Browse the competitions on [aqora.io](https://app.aqora.io) and climb the leaderboards!
+
+# Contributing
+
+We strongly recommend you to install a stable Rust toolchain using [Rustup](https://rustup.rs/), and a
+[stable Python](https://www.python.org/downloads/) runtime through official distributions.
+
+Our main branch is called `main`. Please open a pull-request up-to-date to that branch
+when you request our feedback.
+
+Please follow [Conventional
+Commits](https://www.conventionalcommits.org/en/v1.0.0/), which allows our
+project to have beautiful changelogs based on your commit messages. We strongly
+encourage you to install [Cocogitto](https://docs.cocogitto.io/):
+
+```bash
+$ cargo install cocogitto cargo-edit
+$ cog install-hook --all
+
