@@ -2,6 +2,25 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.1.16 - 2024-06-13
+#### Bug Fixes
+- fix versioning by using cargo.toml version - (7cdd3d5) - Julian Popescu
+- review suggestions - (b652952) - Julian Popescu
+- allow top level async statements in python notebooks - (e2b1569) - Julian Popescu
+- QoL improvements for python & shell commands - (4682050) - Antoine Chauvin
+- make find_project_version_file more clear - (5d3e5c4) - Julian Popescu
+#### Features
+- override ipython in runner - (532bedc) - Julian Popescu
+- basic ipynb conversion using jupyter nbconvert - (02c47d7) - Julian Popescu
+- add `aqora lab` command - (832b916) - Antoine Chauvin
+- browserless login - (68e764b) - Antoine Chauvin
+- add multipart upload - (aff1aec) - Julian Popescu
+#### Miscellaneous Chores
+- **(version)** 0.1.16 - (78b237c) - Julian Popescu
+- add contributing guidelines and make bumping versions easier - (f30e191) - Julian Popescu
+
+- - -
+
 ## 0.1.16 - 2024-06-13
 #### Bug Fixes
 - review suggestions - (b652952) - Julian Popescu
