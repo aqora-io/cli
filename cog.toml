@@ -3,6 +3,7 @@ ignore_merge_commits = true
 disable_changelog = false
 disable_bump_commit = false
 generate_mono_repository_global_tag = true
+tag_prefix = "v"
 branch_whitelist = ["main", "release/*"]
 skip_ci = "[skip ci]"
 skip_untracked = false
