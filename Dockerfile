@@ -1,13 +1,7 @@
-FROM python:3.11
-RUN pip3 install \
-    'jupyterhub==5.*' \
-    'notebook==7.*' \
-    "aqora-cli"
+FROM quay.io/jupyter/base-notebook
 
-# create a user, since we don't want to run as root
-RUN useradd -m jovyan
-ENV HOME=/home/jovyan
-WORKDIR $HOME
-USER jovyan
+# Install aqora-cli
+RUN pip install aqora-cli
 
-CMD ["jupyterhub-singleuser"]
+# Ensure the PATH is correct
+ENV PATH="${PATH}:/home/jovyan/.local/bin"
