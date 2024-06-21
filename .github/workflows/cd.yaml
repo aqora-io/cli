@@ -124,7 +124,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    #needs: linux # TODO: release
+    needs: release
     steps:
       - uses: actions/checkout@v3
       - name: Docker setup
