@@ -121,6 +121,9 @@ jobs:
   docker:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     #needs: linux # TODO: release
     steps:
       - uses: actions/checkout@v3
