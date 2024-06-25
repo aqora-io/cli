@@ -14,7 +14,6 @@ mod upload;
 mod version;
 
 use serde::Serialize;
-use std::process::Termination;
 
 pub use global_args::GlobalArgs;
 
@@ -44,43 +43,6 @@ pub struct Cli {
     global: GlobalArgs,
     #[command(subcommand)]
     commands: Commands,
-}
-
-pub struct CliExit(i32);
-
-impl CliExit {
-    const SUCCESS: CliExit = CliExit(0);
-    const FAILURE: CliExit = CliExit(1);
-}
-
-impl Termination for CliExit {
-    fn report(self) -> std::process::ExitCode {
-        match self.0 {
-            0 => std::process::ExitCode::SUCCESS,
-            _ => std::process::ExitCode::FAILURE,
-        }
-    }
-}
-
-impl From<i32> for CliExit {
-    fn from(value: i32) -> Self {
-        Self(value)
-    }
-}
-
-impl From<CliExit> for pyo3::PyErr {
-    fn from(value: CliExit) -> Self {
-        pyo3::exceptions::PySystemExit::new_err::<(i32,)>((value.0,))
-    }
-}
-
-impl From<CliExit> for pyo3::PyResult<()> {
-    fn from(value: CliExit) -> Self {
-        match value.0 {
-            0 => Ok(()),
-            _ => Err(value.into()),
-        }
-    }
 }
 
 #[derive(Subcommand, Debug, Serialize)]
@@ -134,48 +96,34 @@ impl Cli {
         }
     }
 
-    pub fn run(self, py: pyo3::Python<'_>) -> CliExit {
-        sentry::configure_scope(|scope| {
-            let mut map = std::collections::BTreeMap::new();
-            map.insert(
+    pub async fn run(self) {
+        let command_context =
+            sentry::protocol::Context::Other(std::collections::BTreeMap::from([(
                 "args".into(),
                 serde_json::to_value(&self).unwrap_or_default(),
-            );
-            scope.set_context("command", sentry::protocol::Context::Other(map));
-            scope.set_context(
-                "python",
-                sentry::protocol::RuntimeContext {
-                    name: Some("Python".into()),
-                    version: Some(py.version().into()),
-                    ..Default::default()
-                },
-            );
+            )]));
+
+        let runtime_context = pyo3::Python::with_gil(|py| sentry::protocol::RuntimeContext {
+            name: Some("Python".into()),
+            version: Some(py.version().into()),
+            ..Default::default()
         });
 
-        match pyo3_asyncio::tokio::run::<_, CliExit>(py, async move {
-            if let Err(run_error) = self.do_run().await {
-                if run_error.is_user() {
-                    tracing::error!(
-                        error = &run_error as &dyn std::error::Error,
-                        is_user = true,
-                        "{run_error}"
-                    );
-                } else {
-                    tracing::error!(error = &run_error as &dyn std::error::Error, "{run_error}");
-                }
-                Ok(CliExit::FAILURE)
-            } else {
-                Ok(CliExit::SUCCESS)
-            }
-        }) {
-            Err(asyncio_error) => {
+        sentry::configure_scope(move |scope| {
+            scope.set_context("command", command_context);
+            scope.set_context("python", runtime_context);
+        });
+
+        if let Err(run_error) = self.do_run().await {
+            if run_error.is_user() {
                 tracing::error!(
-                    error = &asyncio_error as &dyn std::error::Error,
-                    "{asyncio_error}"
+                    error = &run_error as &dyn std::error::Error,
+                    is_user = true,
+                    "{run_error}"
                 );
-                CliExit::FAILURE
+            } else {
+                tracing::error!(error = &run_error as &dyn std::error::Error, "{run_error}");
             }
-            Ok(exit_code) => exit_code,
         }
     }
 }
