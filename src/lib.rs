@@ -22,7 +22,7 @@ pub mod sentry;
 mod shutdown;
 mod upload;
 
-pub use commands::{Cli, CliExit};
+pub use commands::Cli;
 
 #[cfg(feature = "extension-module")]
 pub use module::*;
