@@ -31,16 +31,12 @@ fn insert_formatted(array: &mut toml_edit::Array, item: impl Into<toml_edit::Val
     let mut new_item = item.into();
     let trailing = array.trailing().as_str().unwrap_or_default().to_string();
     if let Some(last_item) = array.iter_mut().last() {
-        let indent = if let Some(end) = last_item
+        let indent = last_item
             .decor()
             .prefix()
             .and_then(|s| s.as_str())
             .and_then(|s| s.rsplit_terminator('\n').next())
-        {
-            end
-        } else {
-            ""
-        };
+            .unwrap_or_default();
         let end = if let Some(suffix) = last_item.decor().suffix().and_then(|s| s.as_str()) {
             format!("{suffix}{trailing}")
         } else {
