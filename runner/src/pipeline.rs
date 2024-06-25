@@ -8,6 +8,7 @@ use pyo3::{
     exceptions::PyValueError,
     intern,
     prelude::*,
+    pyclass,
     types::{PyDict, PyIterator, PyNone, PyTuple},
 };
 use serde::{Deserialize, Serialize};
