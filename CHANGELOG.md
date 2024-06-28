@@ -2,6 +2,19 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.2.0 - 2024-06-28
+#### Features
+- **(cli)** run aqora test asynchronously - (973682b) - Julian Popescu
+- load .venv by default when opening the project - (9d07f8d) - Angel Dijoux
+- operate from 'pyproject.toml' - (1a40ca3) - Angel Dijoux
+- open in vscode by default - (f0b2168) - Angel Dijoux
+#### Miscellaneous Chores
+- **(cli)** clippy lint - (9e9e769) - Julian Popescu
+#### Refactoring
+- simplify vs code opening and create virtual environment - (c4048e1) - Julian Popescu
+
+- - -
+
 ## v0.1.16 - 2024-06-13
 #### Bug Fixes
 - fix versioning by using cargo.toml version - (7cdd3d5) - Julian Popescu
