@@ -2,79 +2,84 @@ use std::{
     ffi::OsString,
     fs,
     path::{Path, PathBuf},
-    process::Command,
 };
 
+use aqora_runner::python::PyEnv;
 use clap::Args;
+use indicatif::ProgressBar;
 use serde::Serialize;
 use serde_json::json;
+use tokio::process::Command;
 
 use crate::{
-    dirs::{self, read_pyproject},
+    dirs::{init_venv, vscode_settings_path},
     error::{self, Result},
+    process::run_command,
 };
 
 use super::GlobalArgs;
 
 use crate::commands::python::{python, Python};
 
-const VS_CODE_NOT_FOUND_MSG: &str = "VS Code not found. You can install it from https://code.visualstudio.com/ or run `aqora lab -j` to open the lab without VS Code.";
-
-fn is_vscode_available() -> Result<(), String> {
-    match Command::new("code").arg("--version").output() {
-        Ok(output) => {
-            if output.status.success() {
-                Ok(())
-            } else {
-                Err(VS_CODE_NOT_FOUND_MSG.to_string())
-            }
-        }
-        Err(_) => Err(VS_CODE_NOT_FOUND_MSG.to_string()),
-    }
+async fn is_vscode_available(pb: &ProgressBar) -> Result<()> {
+    run_command(
+        Command::new("code").arg("--version"),
+        pb,
+        Some("Checking for VS Code"),
+    )
+    .await
+    .map_err(|_| {
+        error::user(
+            "VS Code not found 😞",
+            "You can install it from https://code.visualstudio.com/ or \
+            run `aqora lab -j` to open the lab without VS Code.",
+        )
+    })
 }
 
-fn install_extensions() -> Result<()> {
+async fn install_extensions(pb: &ProgressBar) -> Result<()> {
     let extensions = vec!["ms-python.python", "ms-toolsai.jupyter"];
 
+    pb.set_message("Checking installed VS Code extensions");
+    let installed_extensions =
+        if let Ok(output) = Command::new("code").arg("--list-extensions").output().await {
+            String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .map(|s| s.to_owned())
+                .collect::<Vec<_>>()
+        } else {
+            vec![]
+        };
+
     for extension in extensions {
-        Command::new("code")
-            .args(["--install-extension", extension, "--force"])
-            .spawn()?
-            .wait()?;
+        if installed_extensions.contains(&extension.to_string()) {
+            continue;
+        }
+        if run_command(
+            Command::new("code").args(["--install-extension", extension, "--force"]),
+            pb,
+            Some(&format!("Installing VS Code extension {extension}")),
+        )
+        .await
+        .is_err()
+        {
+            pb.println(format!(
+                "Warning: could not install extension {extension}: please install manually"
+            ));
+        }
     }
+
+    pb.set_message("VS Code extensions installed");
 
     Ok(())
 }
 
-fn open_vscode(path: PathBuf, module: String, name: String) -> Result<(), std::io::Error> {
-    let notebook_path = format!("{}/{}/{}.ipynb", path.display(), module, name);
-    run_vscode_with_args(&[
-        path.display().to_string(),
-        "--goto".to_string(),
-        notebook_path,
-    ])
+async fn open_vscode(path: PathBuf, pb: &ProgressBar) -> Result<(), std::io::Error> {
+    run_command(Command::new("code").arg(path), pb, Some("Opening VS Code")).await
 }
 
-fn open_vscode_pyproject(path: PathBuf) -> Result<(), std::io::Error> {
-    let toml_path = dirs::pyproject_path(path);
-    run_vscode_with_args(&[toml_path.display().to_string()])
-}
-
-fn run_vscode_with_args(args: &[String]) -> Result<(), std::io::Error> {
-    Command::new("code").args(args).spawn()?.wait()?;
-    Ok(())
-}
-
-fn get_interpreter_path(venv_path: PathBuf) -> PathBuf {
-    if cfg!(target_os = "windows") {
-        venv_path.join("Scripts").join("activate")
-    } else {
-        venv_path.join("bin").join("activate")
-    }
-}
-
-fn create_vscode_settings(path: &Path) -> Result<()> {
-    let vscode_dir = path.join(".vscode");
+fn create_vscode_settings(project_dir: &Path, env: &PyEnv) -> Result<()> {
+    let vscode_dir = vscode_settings_path(project_dir);
 
     if vscode_dir.exists() {
         Ok(())
@@ -82,7 +87,7 @@ fn create_vscode_settings(path: &Path) -> Result<()> {
         fs::create_dir_all(&vscode_dir)?;
 
         let settings_path = vscode_dir.join("settings.json");
-        let interpreter_path = get_interpreter_path(dirs::project_venv_dir(path));
+        let interpreter_path = env.python_path().to_string_lossy().to_string();
 
         let settings = json!({
             "python.defaultInterpreterPath": interpreter_path
@@ -93,32 +98,17 @@ fn create_vscode_settings(path: &Path) -> Result<()> {
     }
 }
 
-async fn handle_vscode_integration(global_args: GlobalArgs) -> Result<()> {
-    is_vscode_available().map_err(|err_msg| error::user("vscode not found 😞", &err_msg))?;
+async fn handle_vscode_integration(
+    global_args: GlobalArgs,
+    env: &PyEnv,
+    pb: &ProgressBar,
+) -> Result<()> {
+    is_vscode_available(pb).await?;
 
-    install_extensions()?;
-    create_vscode_settings(&global_args.project)?;
+    install_extensions(pb).await?;
+    create_vscode_settings(&global_args.project, env)?;
 
-    let project = read_pyproject(&global_args.project).await?;
-    let aqora = project.aqora().ok_or_else(|| {
-        error::user(
-            "No [tool.aqora] section found in pyproject.toml",
-            "Please make sure you are in the correct directory",
-        )
-    })?;
-
-    if let Some(submission) = aqora.as_submission() {
-        if let Some((_key, function_def)) = submission.refs.iter().next() {
-            let path = function_def.path.clone();
-            open_vscode(
-                global_args.project,
-                path.module().to_string(),
-                path.name().to_string(),
-            )?;
-        } else {
-            open_vscode_pyproject(global_args.project)?;
-        }
-    }
+    open_vscode(global_args.project, pb).await?;
 
     Ok(())
 }
@@ -131,8 +121,19 @@ pub struct Lab {
 }
 
 pub async fn lab(args: Lab, global_args: GlobalArgs) -> Result<()> {
+    let pb = ProgressBar::new_spinner().with_message("Setting up virtual environment");
+    pb.enable_steady_tick(std::time::Duration::from_millis(100));
+
+    let env = init_venv(
+        &global_args.project,
+        global_args.uv.as_ref(),
+        &pb,
+        global_args.color,
+    )
+    .await?;
+
     if !args.jupyter_notebook {
-        handle_vscode_integration(global_args).await
+        handle_vscode_integration(global_args, &env, &pb).await
     } else {
         let args = Python {
             module: Some("jupyterlab".into()),
