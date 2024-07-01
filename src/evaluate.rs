@@ -17,6 +17,7 @@ pub struct Test {
 pub fn evaluate(
     evaluator: Evaluator,
     inputs: impl Stream<Item = (usize, PyResult<PyObject>)>,
+    concurrency: usize,
     last_run_dir: Option<PathBuf>,
     label: Option<String>,
     pb: ProgressBar,
@@ -24,7 +25,7 @@ pub fn evaluate(
     let evaluator = Arc::new(evaluator);
     inputs
         .map(move |input| (input, evaluator.clone()))
-        .then(|((index, result), evaluator)| async move {
+        .map(|((index, result), evaluator)| async move {
             match result {
                 Ok(input) => match evaluator.evaluate(input.clone(), None).await {
                     Ok(result) => (
@@ -54,6 +55,7 @@ pub fn evaluate(
                 ),
             }
         })
+        .buffer_unordered(concurrency)
         .map(move |(index, item)| {
             let label = if let Some(label) = label.as_ref() {
                 format!("{}::{}", label, index + 1)

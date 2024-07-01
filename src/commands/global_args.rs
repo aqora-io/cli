@@ -4,6 +4,12 @@ use serde::Serialize;
 use std::path::PathBuf;
 use url::Url;
 
+lazy_static::lazy_static! {
+    static ref DEFAULT_PARALLELISM: usize = std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1);
+}
+
 /// Aqora respects your privacy and follows https://consoledonottrack.com/ :
 /// when $DO_NOT_TRACK environment variable is defined, Aqora will not
 /// record any statistics or report any incidents.
@@ -21,6 +27,8 @@ pub struct GlobalArgs {
     pub project: PathBuf,
     #[arg(long, global = true)]
     pub uv: Option<PathBuf>,
+    #[arg(long, default_value_t = *DEFAULT_PARALLELISM, global = true)]
+    pub max_concurrency: usize,
     #[arg(long, default_value_t = ColorChoice::Auto, global = true)]
     #[serde(serialize_with = "serialize_color_choice")]
     pub color: ColorChoice,

@@ -72,6 +72,10 @@ pub fn project_use_case_toml_path(project_dir: impl AsRef<Path>) -> PathBuf {
     project_data_dir(project_dir, USE_CASE_FILENAME)
 }
 
+pub fn vscode_settings_path(project_dir: impl AsRef<Path>) -> PathBuf {
+    project_dir.as_ref().join(".vscode")
+}
+
 pub async fn read_pyproject(project_dir: impl AsRef<Path>) -> Result<PyProject> {
     let path = pyproject_path(&project_dir);
     if !path.exists() {

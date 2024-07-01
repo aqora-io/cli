@@ -264,6 +264,7 @@ pub async fn run_submission_tests(
         .aggregate(evaluate(
             pipeline.evaluator(),
             generator,
+            global.max_concurrency,
             Some(last_run_dir.clone()),
             None,
             pipeline_pb.clone(),
@@ -357,6 +358,7 @@ pub async fn test_submission(args: Test, global: GlobalArgs, project: PyProject)
 async fn test_use_case_test(
     m: &MultiProgress,
     env: &PyEnv,
+    max_concurrency: usize,
     last_run_dir: &Path,
     use_case: &AqoraUseCaseConfig,
     name: &str,
@@ -450,6 +452,7 @@ async fn test_use_case_test(
         .aggregate(evaluate(
             pipeline.evaluator(),
             generator,
+            max_concurrency,
             Some(last_run_dir.clone()),
             Some(name.to_string()),
             pb.clone(),
@@ -613,12 +616,20 @@ async fn test_use_case(args: Test, global: GlobalArgs, project: PyProject) -> Re
     let last_run_dir = project_last_run_dir(&global.project);
     for (name, indexes) in tests {
         let indexes = indexes.unwrap_or_default();
-        test_use_case_test(&m, &env, &last_run_dir, &use_case, &name, indexes)
-            .await
-            .map_err(|e| {
-                test_pb.finish_with_message("Failed to run tests");
-                e
-            })?;
+        test_use_case_test(
+            &m,
+            &env,
+            global.max_concurrency,
+            &last_run_dir,
+            &use_case,
+            &name,
+            indexes,
+        )
+        .await
+        .map_err(|e| {
+            test_pb.finish_with_message("Failed to run tests");
+            e
+        })?;
     }
 
     test_pb.finish_with_message("All tests passed!");
