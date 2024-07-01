@@ -639,15 +639,32 @@ async fn test_use_case(args: Test, global: GlobalArgs, project: PyProject) -> Re
 
 pub async fn test(args: Test, global: GlobalArgs) -> Result<()> {
     let project = read_pyproject(&global.project).await?;
-    let aqora = project.aqora().ok_or_else(|| {
+    let aqora = project.aqora().cloned().ok_or_else(|| {
         error::user(
             "No [tool.aqora] section found in pyproject.toml",
             "Please make sure you are in the correct directory",
         )
     })?;
-    if aqora.is_submission() {
-        test_submission(args, global, project).await
-    } else {
-        test_use_case(args, global, project).await
-    }
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+
+    let _ = pyo3::Python::with_gil(move |py| {
+        pyo3_asyncio::tokio::run(py, async move {
+            let result = if aqora.is_submission() {
+                test_submission(args, global, PyProject::clone(&project)).await
+            } else {
+                test_use_case(args, global, PyProject::clone(&project)).await
+            };
+
+            tx.send(result).map_err(|_| {
+                pyo3::exceptions::PyRuntimeError::new_err((
+                    "Cannot pass test result back to CLI...",
+                ))
+            })?;
+
+            Ok(())
+        })
+    });
+
+    rx.await?
 }
