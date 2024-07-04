@@ -12,7 +12,7 @@ use serde_json::json;
 use tokio::process::Command;
 
 use crate::{
-    dirs::{init_venv, vscode_settings_path},
+    dirs::{init_venv, project_vscode_dir, vscode_settings_path},
     error::{self, Result},
     process::run_command,
 };
@@ -79,21 +79,18 @@ async fn open_vscode(path: PathBuf, pb: &ProgressBar) -> Result<(), std::io::Err
 }
 
 fn create_vscode_settings(project_dir: &Path, env: &PyEnv) -> Result<()> {
-    let vscode_dir = vscode_settings_path(project_dir);
+    let vscode_dir = project_vscode_dir(project_dir);
 
     if vscode_dir.exists() {
         Ok(())
     } else {
         fs::create_dir_all(&vscode_dir)?;
-
-        let settings_path = vscode_dir.join("settings.json");
-        let interpreter_path = env.python_path().to_string_lossy().to_string();
-
+        let interpreter_path = env.activate_path().to_string_lossy().to_string();
         let settings = json!({
             "python.defaultInterpreterPath": interpreter_path
         });
 
-        fs::write(settings_path, settings.to_string())?;
+        fs::write(vscode_settings_path(project_dir), settings.to_string())?;
         Ok(())
     }
 }
