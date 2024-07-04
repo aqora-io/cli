@@ -17,9 +17,11 @@ use std::{
 const AQORA_DIRNAME: &str = ".aqora";
 const DATA_DIRNAME: &str = "data";
 const VENV_DIRNAME: &str = ".venv";
+const VSCODE_DIRNAME: &str = ".vscode";
 const LAST_RUN_DIRNAME: &str = "last_run";
 const PYPROJECT_FILENAME: &str = "pyproject.toml";
 const USE_CASE_FILENAME: &str = "use_case.toml";
+const VSCODE_SETTINGS_FILENAME: &str = "settings.json";
 
 pub async fn config_dir() -> Result<PathBuf> {
     let mut path = dirs::data_dir().or_else(dirs::config_dir).ok_or_else(|| {
@@ -72,8 +74,12 @@ pub fn project_use_case_toml_path(project_dir: impl AsRef<Path>) -> PathBuf {
     project_data_dir(project_dir, USE_CASE_FILENAME)
 }
 
+pub fn project_vscode_dir(project_dir: impl AsRef<Path>) -> PathBuf {
+    project_dir.as_ref().join(VSCODE_DIRNAME)
+}
+
 pub fn vscode_settings_path(project_dir: impl AsRef<Path>) -> PathBuf {
-    project_dir.as_ref().join(".vscode")
+    project_vscode_dir(project_dir).join(VSCODE_SETTINGS_FILENAME)
 }
 
 pub async fn read_pyproject(project_dir: impl AsRef<Path>) -> Result<PyProject> {
