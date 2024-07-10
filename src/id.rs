@@ -2,7 +2,7 @@ use base64::prelude::*;
 use std::{fmt, str::FromStr};
 use uuid::Uuid;
 
-const BASE32_ALPHABET: base32::Alphabet = base32::Alphabet::RFC4648 { padding: false };
+const BASE32_ALPHABET: base32::Alphabet = base32::Alphabet::Rfc4648 { padding: false };
 
 #[derive(Debug, Clone, Copy)]
 pub enum NodeType {

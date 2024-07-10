@@ -76,7 +76,7 @@ pub async fn decompress(
     let output = output.as_ref().to_owned();
     tokio::fs::create_dir_all(&output).await?;
 
-    let inflated = async_tempfile::TempFile::new_in(&output)
+    let inflated = async_tempfile::TempFile::new_in(output.as_path())
         .await
         .map_err(async_tempfile_error)?;
 
