@@ -386,7 +386,7 @@ fn get_meta(env: &PyEnv, path: &PathStr) -> Result<NotebookMeta, NotebookToPytho
         )
     })?;
     let generated_name = base32::encode(
-        base32::Alphabet::RFC4648 { padding: false },
+        base32::Alphabet::Rfc4648 { padding: false },
         path.name().as_bytes(),
     )
     .to_lowercase();

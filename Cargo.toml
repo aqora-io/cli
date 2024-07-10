@@ -1,9 +1,6 @@
 [workspace]
 resolver = "2"
-members = [
-    "config",
-    "runner",
-]
+members = ["config", "runner"]
 
 [package]
 name = "aqora"
@@ -27,18 +24,18 @@ extension-module = ["pyo3/extension-module", "pyo3/abi3-py39", "pyo3/abi3"]
 aqora-config = { path = "config" }
 aqora-runner = { path = "runner" }
 async-compression = { version = "0.4", features = ["tokio", "gzip"] }
-async-tempfile = "0.5"
+async-tempfile = "0.6"
 axum = "0.7"
-base32 = "0.4"
-base64 = "0.21"
+base32 = "0.5"
+base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.4", features = ["derive", "cargo", "color", "env"] }
 dialoguer = "0.11.0"
 dirs = "5.0"
-fs4 = { version = "0.7", features = ["tokio"] }
+fs4 = { version = "0.8", features = ["tokio"] }
 futures = "0.3"
-graphql_client = { version = "0.13", features = ["reqwest-rustls"] }
-hostname = "0.3"
+graphql_client = { version = "0.14", features = ["reqwest-rustls"] }
+hostname = "0.4"
 human-errors = "0.1"
 ignore = "0.4"
 indicatif = "0.17"
@@ -50,15 +47,39 @@ passterm = "2.0"
 pyo3 = { version = "0.20", features = ["serde"] }
 pyo3-asyncio = { version = "0.20", features = ["attributes", "tokio-runtime"] }
 rand = "0.8"
-reqwest = { version = "0.11", default-features = false, features = ["stream", "rustls-tls"] }
+reqwest = { version = "0.11", default-features = false, features = [
+  "stream",
+  "rustls-tls",
+] }
 rmp-serde = "1.1.2"
-sentry = { version = "0.32", default-features = false, features = ["backtrace", "contexts", "debug-images", "panic", "reqwest", "rustls", "tower", "tracing"] }
+sentry = { version = "0.32", default-features = false, features = [
+  "backtrace",
+  "contexts",
+  "debug-images",
+  "panic",
+  "reqwest",
+  "rustls",
+  "tower",
+  "tracing",
+] }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0", features = ["preserve_order", "arbitrary_precision"] }
-supports-color = "2.1"
+serde_json = { version = "1.0", features = [
+  "preserve_order",
+  "arbitrary_precision",
+] }
+supports-color = "3.0"
 tempfile = "3.9"
 thiserror = "1.0"
-tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", "signal", "fs", "process", "io-util"] }
+tokio = { version = "1", features = [
+  "macros",
+  "rt",
+  "rt-multi-thread",
+  "sync",
+  "signal",
+  "fs",
+  "process",
+  "io-util",
+] }
 tokio-stream = { version = "0.1", features = ["io-util"] }
 tokio-tar = "0.3"
 tokio-util = { version = "0.7", features = ["io"] }
