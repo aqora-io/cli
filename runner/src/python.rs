@@ -146,6 +146,7 @@ impl PyEnv {
         uv_path: impl AsRef<Path>,
         venv_path: impl AsRef<Path>,
         cache_path: Option<impl AsRef<Path>>,
+        python: Option<impl AsRef<str>>,
         color: ColorChoice,
     ) -> Result<Self, EnvError> {
         let cache_path = if let Some(cache_path) = cache_path {
@@ -162,7 +163,7 @@ impl PyEnv {
             None
         };
         let venv_path = venv_path.as_ref();
-        Self::ensure_venv(&uv_path, &venv_path, cache_path.as_ref(), color).await?;
+        Self::ensure_venv(&uv_path, &venv_path, cache_path.as_ref(), python, color).await?;
         let venv_path = venv_path
             .canonicalize()
             .map_err(|err| EnvError::Io(venv_path.to_path_buf(), err))?;
@@ -189,6 +190,7 @@ impl PyEnv {
         uv_path: impl AsRef<Path>,
         venv_path: impl AsRef<Path>,
         cache_path: Option<impl AsRef<Path>>,
+        python: Option<impl AsRef<str>>,
         color: ColorChoice,
     ) -> Result<(), EnvError> {
         let uv_path = uv_path.as_ref();
@@ -197,7 +199,12 @@ impl PyEnv {
             let mut cmd = Command::new(uv_path);
             cmd.arg("venv")
                 .arg("--python")
-                .arg(PYTHON_VERSION.as_str())
+                .arg(
+                    python
+                        .as_ref()
+                        .map(|p| p.as_ref())
+                        .unwrap_or_else(|| PYTHON_VERSION.as_str()),
+                )
                 .arg(venv_path.as_ref());
             if let Some(cache_path) = cache_path.as_ref() {
                 cmd.arg("--cache-dir").arg(cache_path.as_ref());

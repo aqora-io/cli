@@ -124,6 +124,7 @@ pub async fn lab(args: Lab, global_args: GlobalArgs) -> Result<()> {
     let env = init_venv(
         &global_args.project,
         global_args.uv.as_ref(),
+        global_args.python.as_ref(),
         &pb,
         global_args.color,
     )

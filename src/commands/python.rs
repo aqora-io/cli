@@ -21,7 +21,14 @@ pub async fn python(args: Python, global: GlobalArgs) -> crate::error::Result<()
     let progress = ProgressBar::new_spinner();
     progress.set_message("Initializing virtual environment");
     progress.enable_steady_tick(Duration::from_millis(100));
-    let env = init_venv(&global.project, global.uv.as_ref(), &progress, global.color).await?;
+    let env = init_venv(
+        &global.project,
+        global.uv.as_ref(),
+        global.python.as_ref(),
+        &progress,
+        global.color,
+    )
+    .await?;
     progress.finish_and_clear();
     let mut cmd = env.python_cmd();
     cmd.current_dir(&global.project);

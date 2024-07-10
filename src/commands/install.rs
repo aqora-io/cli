@@ -112,7 +112,14 @@ pub async fn install_submission(
         })
         .transpose()?;
 
-    let env = init_venv(&global.project, global.uv.as_ref(), &venv_pb, global.color).await?;
+    let env = init_venv(
+        &global.project,
+        global.uv.as_ref(),
+        global.python.as_ref(),
+        &venv_pb,
+        global.color,
+    )
+    .await?;
 
     let use_case_package_name = competition.use_case.name.clone();
     let use_case_res = competition.use_case.latest.ok_or_else(|| {
@@ -244,7 +251,14 @@ pub async fn install_use_case(args: Install, global: GlobalArgs) -> Result<()> {
     pb.enable_steady_tick(std::time::Duration::from_millis(100));
     pb = m.add(pb);
 
-    let env = init_venv(&global.project, global.uv.as_ref(), &pb, global.color).await?;
+    let env = init_venv(
+        &global.project,
+        global.uv.as_ref(),
+        global.python.as_ref(),
+        &pb,
+        global.color,
+    )
+    .await?;
 
     pip_install(
         &env,

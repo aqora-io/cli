@@ -27,6 +27,8 @@ pub struct GlobalArgs {
     pub project: PathBuf,
     #[arg(long, global = true)]
     pub uv: Option<PathBuf>,
+    #[arg(long, default_value = ".", global = true)]
+    pub python: Option<String>,
     #[arg(long, default_value_t = *DEFAULT_PARALLELISM, global = true)]
     pub max_concurrency: usize,
     #[arg(long, default_value_t = ColorChoice::Auto, global = true)]
