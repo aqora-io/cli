@@ -225,13 +225,14 @@ async fn ensure_uv(
 pub async fn init_venv(
     project_dir: impl AsRef<Path>,
     uv_path: Option<impl AsRef<Path>>,
+    python: Option<impl AsRef<str>>,
     pb: &ProgressBar,
     color: ColorChoice,
 ) -> Result<PyEnv> {
     pb.set_message("Initializing the Python environment...");
     let uv_path = ensure_uv(uv_path, pb, color).await?;
     let venv_dir = project_venv_dir(&project_dir);
-    let env = PyEnv::init(uv_path, &venv_dir, None::<PathBuf>, color.pip())
+    let env = PyEnv::init(uv_path, &venv_dir, None::<PathBuf>, python, color.pip())
         .await
         .map_err(|e| {
             error::user(

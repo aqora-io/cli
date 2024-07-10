@@ -77,7 +77,14 @@ pub async fn remove(args: Remove, global: GlobalArgs) -> Result<()> {
     let progress = ProgressBar::new_spinner();
     progress.set_message("Initializing virtual environment");
     progress.enable_steady_tick(Duration::from_millis(100));
-    let env = init_venv(&global.project, global.uv.as_ref(), &progress, global.color).await?;
+    let env = init_venv(
+        &global.project,
+        global.uv.as_ref(),
+        global.python.as_ref(),
+        &progress,
+        global.color,
+    )
+    .await?;
     let project_file = RevertFile::save(pyproject_path(&global.project))?;
     let mut toml = fs::read_to_string(&project_file)
         .await?

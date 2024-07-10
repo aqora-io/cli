@@ -408,7 +408,14 @@ pub async fn upload_use_case(
     venv_pb.enable_steady_tick(std::time::Duration::from_millis(100));
     venv_pb = m.add(venv_pb);
 
-    let env = init_venv(&global.project, global.uv.as_ref(), &venv_pb, global.color).await?;
+    let env = init_venv(
+        &global.project,
+        global.uv.as_ref(),
+        global.python.as_ref(),
+        &venv_pb,
+        global.color,
+    )
+    .await?;
 
     venv_pb.finish_with_message("Virtual environment initialized");
 
@@ -688,7 +695,14 @@ pub async fn upload_submission(
     venv_pb.enable_steady_tick(std::time::Duration::from_millis(100));
     venv_pb = m.add(venv_pb);
 
-    let env = init_venv(&global.project, global.uv.as_ref(), &venv_pb, global.color).await?;
+    let env = init_venv(
+        &global.project,
+        global.uv.as_ref(),
+        global.python.as_ref(),
+        &venv_pb,
+        global.color,
+    )
+    .await?;
 
     venv_pb.finish_with_message("Virtual environment initialized");
 
@@ -1010,6 +1024,9 @@ Do you want to run the tests now?"#,
         .await?;
 
     validate_pb.finish_with_message("Done!");
+
+    tracing::warn!("Dropping {}", tempdir.path().display());
+    std::mem::forget(tempdir);
 
     Ok(())
 }
