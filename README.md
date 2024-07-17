@@ -39,7 +39,7 @@ Once the CLI has installed you can login to your account with the following comm
 aqora login
 ```
 
-Browse the competitions on [aqora.io](https://app.aqora.io) and climb the leaderboards!
+Browse the competitions on [aqora.io](https://aqora.io) and climb the leaderboards!
 
 # Contributing
 
