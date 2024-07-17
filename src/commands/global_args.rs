@@ -17,7 +17,7 @@ lazy_static::lazy_static! {
 pub struct GlobalArgs {
     #[arg(
         long,
-        default_value = "https://app.aqora.io",
+        default_value = "https://aqora.io",
         env = "AQORA_URL",
         global = true,
         hide = true
