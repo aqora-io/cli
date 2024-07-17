@@ -2,6 +2,15 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.2.1 - 2024-07-17
+#### Bug Fixes
+- **(cli)** loaded python kernel - (92d6b4d) - Angel Dijoux
+- build for aarch64 - (9161b61) - Angel Dijoux
+#### Miscellaneous Chores
+- Update simple deps - (ee9fdbe) - Julian Popescu
+
+- - -
+
 ## v0.2.0 - 2024-06-28
 #### Features
 - **(cli)** run aqora test asynchronously - (973682b) - Julian Popescu
