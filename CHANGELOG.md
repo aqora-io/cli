@@ -2,6 +2,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.2.1 - 2024-07-18
+#### Bug Fixes
+- **(cli)** loaded python kernel - (92d6b4d) - Angel Dijoux
+- build for aarch64 - (9161b61) - Angel Dijoux
+#### Miscellaneous Chores
+- **(version)** v0.2.1 - (6b2adf8) - Angel Dijoux
+- change endpoint - (90a1132) - Angel Dijoux
+- Update simple deps - (ee9fdbe) - Julian Popescu
+
+- - -
+
 ## v0.2.1 - 2024-07-17
 #### Bug Fixes
 - **(cli)** loaded python kernel - (92d6b4d) - Angel Dijoux
