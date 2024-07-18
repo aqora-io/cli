@@ -1,4 +1,5 @@
 use crate::{
+    cfg_file::read_cfg_file_key,
     colors::ColorChoiceExt,
     error::{self, Result},
     manifest::manifest_name,
@@ -222,6 +223,18 @@ async fn ensure_uv(
     }
 }
 
+async fn get_installed_python_version(
+    venv_dir: impl AsRef<Path>,
+) -> std::io::Result<Option<String>> {
+    let cfg_path = venv_dir.as_ref().join("pyvenv.cfg");
+    if tokio::fs::try_exists(&cfg_path).await? {
+        let file = tokio::fs::File::open(cfg_path).await?;
+        read_cfg_file_key(tokio::io::BufReader::new(file), "version_info").await
+    } else {
+        Ok(None)
+    }
+}
+
 pub async fn init_venv(
     project_dir: impl AsRef<Path>,
     uv_path: Option<impl AsRef<Path>>,
@@ -232,6 +245,18 @@ pub async fn init_venv(
     pb.set_message("Initializing the Python environment...");
     let uv_path = ensure_uv(uv_path, pb, color).await?;
     let venv_dir = project_venv_dir(&project_dir);
+    if let Some(python) = python.as_ref() {
+        if let Ok(Some(installed_python)) = get_installed_python_version(&venv_dir).await {
+            let python = python.as_ref();
+            if installed_python != python {
+                tracing::warn!(
+                    r#"Installed python version "{installed_python}" does not match requested version "{python}".
+Continuing with the installed version.
+If you would like to use the requested version run `aqora clean` and `aqora install --python "{python}"`"#
+                );
+            }
+        }
+    }
     let env = PyEnv::init(uv_path, &venv_dir, None::<PathBuf>, python, color.pip())
         .await
         .map_err(|e| {
