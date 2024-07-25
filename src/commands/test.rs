@@ -24,7 +24,7 @@ use pyo3::{exceptions::PyException, Python};
 use serde::Serialize;
 use std::{
     collections::HashMap,
-    path::Path,
+    path::{Path, PathBuf},
     pin::Pin,
     sync::{atomic::AtomicU32, Arc},
 };
@@ -64,6 +64,147 @@ fn last_run_items(
             Err(err) => Err((index, err)),
         }
     })
+}
+
+struct RunPipelineConfig {
+    use_case: AqoraUseCaseConfig,
+    pipeline_config: PipelineConfig,
+    last_run_dir: PathBuf,
+    tests: Vec<usize>,
+    max_concurrency: usize,
+}
+
+async fn do_run_pipeline(
+    env: PyEnv,
+    config: RunPipelineConfig,
+    name: Option<String>,
+    pb: ProgressBar,
+) -> Result<(u32, Result<Option<PyObject>, EvaluationError>)> {
+    let label = name
+        .as_ref()
+        .map(|name| format!(" for {name}"))
+        .unwrap_or_default();
+
+    pb.set_message("Importing pipeline..");
+
+    let pipeline = match Pipeline::import(&env, &config.use_case, config.pipeline_config) {
+        Ok(pipeline) => pipeline,
+        Err(err) => {
+            pb.suspend(|| {
+                Python::with_gil(|py| err.print_and_set_sys_last_vars(py));
+            });
+            pb.finish_with_message(format!("Failed to import pipeline{label}"));
+            return Err(error::user(
+                "Failed to import pipeline",
+                "Check the above error and try again",
+            ));
+        }
+    };
+
+    pb.set_message("Running tests...");
+
+    let (num_inputs, generator) = if config.tests.is_empty() {
+        match pipeline.generator() {
+            Ok(generator) => {
+                let num_inputs = Arc::new(AtomicU32::new(0));
+                let inputs_cloned = num_inputs.clone();
+                (
+                    num_inputs,
+                    Box::pin(
+                        generator
+                            .inspect(move |_| {
+                                inputs_cloned.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            })
+                            .enumerate(),
+                    )
+                        as Pin<Box<dyn Stream<Item = (usize, PyResult<PyObject>)> + Send + Sync>>,
+                )
+            }
+            Err(error) => {
+                pb.suspend(|| {
+                    Python::with_gil(|py| error.print_and_set_sys_last_vars(py));
+                });
+                pb.finish_with_message(format!("Failed to run pipeline{label}"));
+                return Err(error::user(
+                    &format!("Unable to generate an inputs{label}"),
+                    "Check the above error and try again",
+                ));
+            }
+        }
+    } else {
+        let inputs = last_run_items(&config.last_run_dir, config.tests)
+            .map_ok(move |(index, item)| {
+                if let Some(input) = item.input {
+                    (index, Ok(input))
+                } else if let Some(EvaluationError::Python(error)) = item.error {
+                    (index, Err(error))
+                } else {
+                    (index, Err(PyException::new_err("No input or error")))
+                }
+            })
+            .map_err(|(index, err)| {
+                error::user(
+                    &format!("Failed to read last run data{label} for {index}: {err}"),
+                    "Check the above error and try again",
+                )
+            })
+            .try_collect::<Vec<_>>()
+            .await?;
+        (
+            Arc::new(AtomicU32::new(inputs.len() as u32)),
+            Box::pin(futures::stream::iter(inputs)) as _,
+        )
+    };
+
+    let aggregated = pipeline
+        .aggregate(evaluate(
+            pipeline.evaluator(),
+            generator,
+            config.max_concurrency,
+            Some(config.last_run_dir),
+            name.map(|name| name.to_string()),
+            pb.clone(),
+        ))
+        .await;
+
+    Ok((
+        num_inputs.load(std::sync::atomic::Ordering::Relaxed),
+        aggregated,
+    ))
+}
+
+fn run_pipeline(
+    env: &PyEnv,
+    config: RunPipelineConfig,
+    name: Option<&str>,
+    pb: &ProgressBar,
+) -> Result<(u32, Result<Option<PyObject>, EvaluationError>)> {
+    let label = name
+        .as_ref()
+        .map(|name| format!(" for {name}"))
+        .unwrap_or_default();
+    let run_pb = pb.clone();
+    let run_env = env.clone();
+    let run_name = name.map(|n| n.to_string());
+    Ok(
+        match pyo3::Python::with_gil(move |py| {
+            pyo3_asyncio::tokio::run(py, async move {
+                Ok(do_run_pipeline(run_env, config, run_name, run_pb).await)
+            })
+        }) {
+            Ok(res) => res?,
+            Err(err) => {
+                pb.suspend(|| {
+                    Python::with_gil(|py| err.print_and_set_sys_last_vars(py));
+                });
+                pb.finish_with_message(format!("Failed to run pipeline{label}"));
+                return Err(error::system(
+                    &format!("Failed to run pipeline{label}"),
+                    "Check the above error and try again",
+                ));
+            }
+        },
+    )
 }
 
 pub async fn run_submission_tests(
@@ -178,99 +319,32 @@ pub async fn run_submission_tests(
 
     wrap_python_output(&pipeline_pb)?;
 
-    pipeline_pb.set_message("Importing pipeline..");
-
-    let pipeline = match Pipeline::import(&env, &modified_use_case, config) {
-        Ok(pipeline) => pipeline,
-        Err(err) => {
-            pipeline_pb.suspend(|| {
-                Python::with_gil(|py| err.print_and_set_sys_last_vars(py));
-            });
-            pipeline_pb.finish_with_message("Failed to import pipeline");
-            return Err(error::user(
-                "Failed to import pipeline",
-                "Check the above error and try again",
-            ));
-        }
-    };
-
-    pipeline_pb.set_message("Running tests...");
-
-    let (num_inputs, generator) = if tests.is_empty() {
-        match pipeline.generator() {
-            Ok(generator) => {
-                let num_inputs = Arc::new(AtomicU32::new(0));
-                let inputs_cloned = num_inputs.clone();
-                (
-                    num_inputs,
-                    Box::pin(
-                        generator
-                            .inspect(move |_| {
-                                inputs_cloned.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                            })
-                            .enumerate(),
-                    )
-                        as Pin<Box<dyn Stream<Item = (usize, PyResult<PyObject>)> + Send + Sync>>,
-                )
-            }
-            Err(error) => {
-                pipeline_pb.suspend(|| {
-                    Python::with_gil(|py| error.print_and_set_sys_last_vars(py));
-                });
-                pipeline_pb.finish_with_message("Failed to run pipeline");
-                return Err(error::user(
-                    "Unable to generate an inputs",
-                    "Check the above error and try again",
-                ));
-            }
-        }
-    } else {
-        let tests = tests
-            .iter()
-            .map(|test| {
-                test.parse::<usize>().map_err(|_| {
-                    error::user(
-                        &format!("Invalid test index: {test}"),
-                        "Please provide a valid test index",
-                    )
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let inputs = last_run_items(&last_run_dir, tests)
-            .map_ok(move |(index, item)| {
-                if let Some(input) = item.input {
-                    (index, Ok(input))
-                } else if let Some(EvaluationError::Python(error)) = item.error {
-                    (index, Err(error))
-                } else {
-                    (index, Err(PyException::new_err("No input or error")))
-                }
-            })
-            .map_err(|(index, err)| {
+    let tests = tests
+        .iter()
+        .map(|test| {
+            test.parse::<usize>().map_err(|_| {
                 error::user(
-                    &format!("Failed to read last run data for {index}: {err}"),
-                    "Check the above error and try again",
+                    &format!("Invalid test index: {test}"),
+                    "Please provide a valid test index",
                 )
             })
-            .try_collect::<Vec<_>>()
-            .await?;
-        (
-            Arc::new(AtomicU32::new(inputs.len() as u32)),
-            Box::pin(futures::stream::iter(inputs)) as _,
-        )
-    };
+        })
+        .collect::<Result<Vec<_>>>()?;
 
-    let result = match pipeline
-        .aggregate(evaluate(
-            pipeline.evaluator(),
-            generator,
-            global.max_concurrency,
-            Some(last_run_dir.clone()),
-            None,
-            pipeline_pb.clone(),
-        ))
-        .await
-    {
+    let (num_inputs, aggregated) = run_pipeline(
+        &env,
+        RunPipelineConfig {
+            use_case: modified_use_case,
+            pipeline_config: config,
+            tests: tests.clone(),
+            last_run_dir,
+            max_concurrency: global.max_concurrency,
+        },
+        None,
+        &pipeline_pb,
+    )?;
+
+    let result = match aggregated {
         Ok(Some(score)) => {
             pipeline_pb.println(format!(
                 "{}: {}",
@@ -328,7 +402,7 @@ pub async fn run_submission_tests(
                 } else {
                     None
                 },
-                num_inputs: num_inputs.load(std::sync::atomic::Ordering::Relaxed),
+                num_inputs,
             },
             time: chrono::Utc::now(),
             use_case_version: use_case_toml.version(),
@@ -395,70 +469,20 @@ async fn test_use_case_test(
         data: modified_use_case.data.clone(),
     };
 
-    let pipeline = match Pipeline::import(env, &modified_use_case, config) {
-        Ok(pipeline) => pipeline,
-        Err(err) => {
-            pb.suspend(|| {
-                Python::with_gil(|py| err.print_and_set_sys_last_vars(py));
-            });
-            pb.finish_with_message(format!("Failed to import pipeline for {name}"));
-            return Err(error::user(
-                "Failed to import pipeline",
-                "Check the above error and try again",
-            ));
-        }
-    };
-
-    let generator = if indexes.is_empty() {
-        pipeline
-            .generator()
-            .map(|generator| {
-                Box::pin(generator.enumerate())
-                    as Pin<Box<dyn Stream<Item = (usize, PyResult<PyObject>)> + Send + Sync>>
-            })
-            .map_err(|error| {
-                pb.suspend(|| {
-                    Python::with_gil(|py| error.print_and_set_sys_last_vars(py));
-                });
-                pb.finish_with_message(format!("Failed to run pipeline for {name}"));
-                error::user(
-                    &format!("Unable to generate an inputs for {name}"),
-                    "Check the above error and try again",
-                )
-            })?
-    } else {
-        let inputs = last_run_items(&last_run_dir, indexes.clone())
-            .map_ok(move |(index, item)| {
-                if let Some(input) = item.input {
-                    (index, Ok(input))
-                } else if let Some(EvaluationError::Python(error)) = item.error {
-                    (index, Err(error))
-                } else {
-                    (index, Err(PyException::new_err("No input or error")))
-                }
-            })
-            .map_err(|(index, err)| {
-                error::user(
-                    &format!("Failed to read last run data for {index}: {err}"),
-                    "Check the above error and try again",
-                )
-            })
-            .try_collect::<Vec<_>>()
-            .await?;
-        Box::pin(futures::stream::iter(inputs)) as _
-    };
-
-    let result = match pipeline
-        .aggregate(evaluate(
-            pipeline.evaluator(),
-            generator,
+    let (_, aggregated) = run_pipeline(
+        env,
+        RunPipelineConfig {
+            use_case: modified_use_case,
+            pipeline_config: config,
+            tests: indexes.clone(),
+            last_run_dir,
             max_concurrency,
-            Some(last_run_dir.clone()),
-            Some(name.to_string()),
-            pb.clone(),
-        ))
-        .await
-    {
+        },
+        Some(name),
+        &pb,
+    )?;
+
+    let result = match aggregated {
         Ok(Some(score)) => score,
         Ok(None) => {
             pb.finish_with_message(format!("Failed to run pipeline for {name}"));
@@ -646,25 +670,11 @@ pub async fn test(args: Test, global: GlobalArgs) -> Result<()> {
         )
     })?;
 
-    let (tx, rx) = tokio::sync::oneshot::channel();
+    if aqora.is_submission() {
+        test_submission(args, global, PyProject::clone(&project)).await?;
+    } else {
+        test_use_case(args, global, PyProject::clone(&project)).await?;
+    };
 
-    let _ = pyo3::Python::with_gil(move |py| {
-        pyo3_asyncio::tokio::run(py, async move {
-            let result = if aqora.is_submission() {
-                test_submission(args, global, PyProject::clone(&project)).await
-            } else {
-                test_use_case(args, global, PyProject::clone(&project)).await
-            };
-
-            tx.send(result).map_err(|_| {
-                pyo3::exceptions::PyRuntimeError::new_err((
-                    "Cannot pass test result back to CLI...",
-                ))
-            })?;
-
-            Ok(())
-        })
-    });
-
-    rx.await?
+    Ok(())
 }
