@@ -18,11 +18,13 @@ mod progress_bar;
 mod python;
 mod readme;
 mod revert_file;
+mod run;
 pub mod sentry;
 mod shutdown;
 mod upload;
 
 pub use commands::Cli;
+pub use run::run;
 
 #[cfg(feature = "extension-module")]
 pub use module::*;
