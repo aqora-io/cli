@@ -96,7 +96,7 @@ impl Cli {
         }
     }
 
-    pub async fn run(self) {
+    pub async fn run(self) -> bool {
         let command_context =
             sentry::protocol::Context::Other(std::collections::BTreeMap::from([(
                 "args".into(),
@@ -124,6 +124,9 @@ impl Cli {
             } else {
                 tracing::error!(error = &run_error as &dyn std::error::Error, "{run_error}");
             }
+            false
+        } else {
+            true
         }
     }
 }

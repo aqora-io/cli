@@ -6,13 +6,10 @@ use pyo3::prelude::*;
 #[pyfunction]
 pub fn main(py: Python<'_>) -> PyResult<()> {
     let _sentry = crate::sentry::setup();
-
-    let argv = py
-        .import("sys")?
-        .getattr("argv")?
-        .extract::<Vec<OsString>>()?;
-
-    crate::run(argv);
+    let sys = py.import("sys")?;
+    let argv = sys.getattr("argv")?.extract::<Vec<OsString>>()?;
+    let exit_code = crate::run(argv);
+    sys.getattr("exit")?.call1((exit_code,))?;
     Ok(())
 }
 

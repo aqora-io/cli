@@ -7,7 +7,7 @@ use crate::commands::Cli;
 
 static TOKIO: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
-pub fn run<I, T>(args: I)
+pub fn run<I, T>(args: I) -> u8
 where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
@@ -20,7 +20,10 @@ where
             .unwrap()
     });
     pyo3_asyncio::tokio::init_with_runtime(tokio).unwrap();
-    tokio.block_on(async {
-        cli.run().await;
-    });
+    let success = tokio.block_on(async { cli.run().await });
+    if success {
+        0
+    } else {
+        1
+    }
 }
