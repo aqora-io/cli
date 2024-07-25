@@ -6,7 +6,7 @@ use crate::{
     process::run_command,
 };
 use aqora_config::PyProject;
-use aqora_runner::python::PyEnv;
+use aqora_runner::python::{PyEnv, BIN_PATH};
 use clap::ColorChoice;
 use indicatif::ProgressBar;
 use serde::{Deserialize, Serialize};
@@ -51,6 +51,10 @@ pub fn project_config_dir(project_dir: impl AsRef<Path>) -> PathBuf {
 
 pub fn project_venv_dir(project_dir: impl AsRef<Path>) -> PathBuf {
     project_dir.as_ref().join(VENV_DIRNAME)
+}
+
+pub fn project_bin_dir(project_dir: impl AsRef<Path>) -> PathBuf {
+    project_venv_dir(project_dir).join(BIN_PATH)
 }
 
 pub fn project_last_run_dir(project_dir: impl AsRef<Path>) -> PathBuf {

@@ -29,6 +29,8 @@ pub struct GlobalArgs {
     pub uv: Option<PathBuf>,
     #[arg(long, global = true)]
     pub python: Option<String>,
+    #[arg(long, global = true, default_value = "false")]
+    pub ignore_venv_aqora: bool,
     #[arg(long, default_value_t = *DEFAULT_PARALLELISM, global = true)]
     pub max_concurrency: usize,
     #[arg(long, default_value_t = ColorChoice::Auto, global = true)]

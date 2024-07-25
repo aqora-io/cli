@@ -40,9 +40,9 @@ use clap::{CommandFactory, Parser, Subcommand};
 #[command(author, version = version(), about)]
 pub struct Cli {
     #[command(flatten)]
-    global: GlobalArgs,
+    pub global: GlobalArgs,
     #[command(subcommand)]
-    commands: Commands,
+    pub commands: Commands,
 }
 
 #[derive(Subcommand, Debug, Serialize)]
