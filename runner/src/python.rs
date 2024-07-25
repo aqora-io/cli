@@ -121,9 +121,9 @@ impl PipPackage {
 }
 
 #[cfg(not(target_os = "windows"))]
-const BIN_PATH: &str = "bin";
+pub const BIN_PATH: &str = "bin";
 #[cfg(target_os = "windows")]
-const BIN_PATH: &str = "Scripts";
+pub const BIN_PATH: &str = "Scripts";
 
 #[derive(Debug, Clone)]
 pub struct PyEnv {
