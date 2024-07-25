@@ -31,6 +31,7 @@ where
     let cli = Cli::parse_from(args.clone());
     let name = args.remove(0);
     if let Some(venv_aqora) = find_venv_aqora(name, &cli) {
+        args.push("--ignore-venv-aqora".into());
         let status = std::process::Command::new(venv_aqora)
             .args(args)
             .status()
