@@ -2,6 +2,20 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.3.0 - 2024-07-26
+#### Bug Fixes
+- **(cli)** Add warning for installed version differing from selected - (412f48e) - Julian Popescu
+- Prevent infinite loop on venv aqora search - (ccf7145) - Julian Popescu
+- Add exit code back in - (fb3b461) - Julian Popescu
+- sigsegv on low resource machines - (34105bf) - Antoine Chauvin
+#### Features
+- Use aqora in venv if available - (8e75c17) - Julian Popescu
+- Add ability to configure python - (1a4c055) - Julian Popescu
+#### Refactoring
+- Simplify and isolate asyncio run - (9a24d88) - Julian Popescu
+
+- - -
+
 ## v0.2.1 - 2024-07-18
 #### Bug Fixes
 - **(cli)** loaded python kernel - (92d6b4d) - Angel Dijoux
