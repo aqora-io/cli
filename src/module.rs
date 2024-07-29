@@ -8,7 +8,7 @@ pub fn main(py: Python<'_>) -> PyResult<()> {
     let _sentry = crate::sentry::setup();
     let sys = py.import("sys")?;
     let argv = sys.getattr("argv")?.extract::<Vec<OsString>>()?;
-    let exit_code = crate::run(argv);
+    let exit_code = py.allow_threads(|| crate::run(argv));
     sys.getattr("exit")?.call1((exit_code,))?;
     Ok(())
 }
