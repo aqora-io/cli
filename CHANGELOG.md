@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.3.1 - 2024-07-30
+#### Bug Fixes
+- Add allow threads in module call - (a1e54c8) - Julian Popescu
+
+- - -
+
 ## v0.3.0 - 2024-07-26
 #### Bug Fixes
 - **(cli)** Add warning for installed version differing from selected - (412f48e) - Julian Popescu
