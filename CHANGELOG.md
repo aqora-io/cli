@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.3.2 - 2024-08-01
+#### Bug Fixes
+- Properly dispose of temp directory - (a8391f1) - Julian Popescu
+
+- - -
+
 ## v0.3.1 - 2024-07-30
 #### Bug Fixes
 - Add allow threads in module call - (a1e54c8) - Julian Popescu
