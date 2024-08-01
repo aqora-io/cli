@@ -1025,9 +1025,6 @@ Do you want to run the tests now?"#,
 
     validate_pb.finish_with_message("Done!");
 
-    tracing::warn!("Dropping {}", tempdir.path().display());
-    std::mem::forget(tempdir);
-
     Ok(())
 }
 
