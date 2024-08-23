@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.3.3 - 2024-08-23
+#### Bug Fixes
+- Upgrade python dependencies - (e4fb124) - Julian Popescu
+
+- - -
+
 ## v0.3.2 - 2024-08-01
 #### Bug Fixes
 - Properly dispose of temp directory - (a8391f1) - Julian Popescu
