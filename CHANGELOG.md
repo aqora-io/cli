@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.3.4 - 2024-08-24
+#### Bug Fixes
+- Use custom template for python exporter - (d3d9ee4) - Julian Popescu
+
+- - -
+
 ## v0.3.3 - 2024-08-23
 #### Bug Fixes
 - Upgrade python dependencies - (e4fb124) - Julian Popescu
