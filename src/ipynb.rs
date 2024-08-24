@@ -1,7 +1,10 @@
 use crate::error::{self, Error};
 use aqora_config::{AqoraConfig, AqoraSubmissionConfig, AqoraUseCaseConfig, PathStr};
 use aqora_runner::python::PyEnv;
-use pyo3::{prelude::*, types::PyDict};
+use pyo3::{
+    prelude::*,
+    types::{PyDict, PyList},
+};
 use serde::{de, Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -206,6 +209,53 @@ fn notebook_path(env: &PyEnv, path: &PathStr) -> Result<PathBuf, NotebookToPytho
     ))
 }
 
+fn python_exporter(py: Python<'_>) -> PyResult<&PyAny> {
+    let templates = PyDict::new(py);
+    let template_name = pyo3::intern!(py, "aqora");
+    templates.set_item(
+        template_name,
+        pyo3::intern!(
+            py,
+            r#"
+{%- extends 'null.j2' -%}
+
+{%- block header -%}
+#!/usr/bin/env python
+# coding: utf-8
+{% endblock header %}
+
+{% block in_prompt %}
+{% if resources.global_content_filter.include_input_prompt -%}
+    # In[{{ cell.execution_count if cell.execution_count else ' ' }}]:
+{% endif %}
+{% endblock in_prompt %}
+
+{% block input %}
+{{ cell.source | ipython2python }}
+{% endblock input %}
+
+{% block markdowncell scoped %}
+{{ cell.source | comment_lines }}
+{% endblock markdowncell %}
+"#
+        ),
+    )?;
+    let loader = py
+        .import(pyo3::intern!(py, "jinja2"))?
+        .call_method1(pyo3::intern!(py, "DictLoader"), (templates,))?;
+    let kwargs = PyDict::new(py);
+    kwargs.set_item(
+        pyo3::intern!(py, "extra_loaders"),
+        PyList::new(py, [loader]),
+    )?;
+    kwargs.set_item(pyo3::intern!(py, "template_file"), template_name)?;
+    py.import(pyo3::intern!(py, "nbconvert"))?.call_method(
+        pyo3::intern!(py, "PythonExporter"),
+        (),
+        Some(kwargs),
+    )
+}
+
 async fn notebook_to_script(
     _env: &PyEnv,
     input_path: impl AsRef<Path>,
@@ -264,9 +314,7 @@ async fn notebook_to_script(
             Some(reads_kwargs),
         )?;
 
-        Ok(py
-            .import(pyo3::intern!(py, "nbconvert"))?
-            .call_method0(pyo3::intern!(py, "PythonExporter"))?
+        Ok(python_exporter(py)?
             .call_method1(pyo3::intern!(py, "from_notebook_node"), (notebook,))?
             .get_item(0)?
             .extract::<String>())
@@ -544,6 +592,7 @@ pub async fn convert_project_notebooks(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aqora_runner::python::ColorChoice;
     use pretty_assertions::assert_eq;
 
     const EXAMPLE_IPYNB: &str = r###"{
@@ -656,6 +705,47 @@ mod tests {
  "nbformat_minor": 2
 }"###;
 
+    const CONVERTED_SCRIPT: &str = r#"#!/usr/bin/env python
+# coding: utf-8
+
+# In[1]:
+
+
+# This is some example code
+print("Hello world!")
+
+
+# In[2]:
+
+
+# This block has parameters tag
+
+
+# In[ ]:
+
+
+input = __aqora__args[0]
+context = __aqora__kwargs.get("context")
+original_input = __aqora__kwargs.get("original_input")
+
+
+# This is a markdown block
+
+# In[3]:
+
+
+# This one has a magic func
+get_ipython().run_line_magic('cd', '')
+
+
+# In[4]:
+
+
+# And this one has a shell command
+get_ipython().system('echo "hello"')
+
+"#;
+
     #[test]
     fn test_ipynb_deserialization() {
         let ipynb: Ipynb = serde_json::from_str(EXAMPLE_IPYNB).unwrap();
@@ -663,5 +753,26 @@ mod tests {
             serde_json::from_str::<serde_json::Value>(EXAMPLE_IPYNB).unwrap(),
             serde_json::to_value(&ipynb).unwrap()
         );
+    }
+
+    #[tokio::test]
+    async fn test_notebook_to_script() {
+        pyo3::prepare_freethreaded_python();
+        let temp_dir = async_tempfile::TempDir::new().await.unwrap();
+        let env = PyEnv::init(
+            which::which("uv").unwrap(),
+            &temp_dir.dir_path().join(".venv"),
+            Option::<String>::None,
+            Option::<String>::None,
+            ColorChoice::Never,
+        )
+        .await
+        .unwrap();
+        let input = temp_dir.dir_path().join("input.ipynb");
+        let output = temp_dir.dir_path().join("output.py");
+        std::fs::write(&input, EXAMPLE_IPYNB).unwrap();
+        notebook_to_script(&env, &input, &output).await.unwrap();
+        let script = std::fs::read_to_string(output).unwrap();
+        assert_eq!(script, CONVERTED_SCRIPT);
     }
 }
