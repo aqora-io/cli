@@ -1,12 +1,14 @@
 use crate::{
     commands::{version::python_version, GlobalArgs},
-    dirs::{config_dir, locate_uv},
+    dirs::{config_dir, get_venv, locate_uv},
     error::Result,
     graphql_client::GraphQLClient,
     manifest::manifest_version,
 };
 use clap::Args;
 use graphql_client::GraphQLQuery;
+use indicatif::ProgressBar;
+use pyo3::Python;
 use serde::Serialize;
 use std::env::args;
 use which::which;
@@ -32,6 +34,19 @@ pub async fn get_viewer_info(global: &GlobalArgs) -> Result<viewer_info::ViewerI
 pub struct Info;
 
 pub async fn info(_: Info, global: GlobalArgs) -> Result<()> {
+    let _ = get_venv(
+        &global.project,
+        global.uv.as_ref(),
+        global.python.as_ref(),
+        &ProgressBar::hidden(),
+        global.color,
+    )
+    .await?;
+    let python_prefix = Python::with_gil(|py| {
+        py.import(pyo3::intern!(py, "sys"))
+            .and_then(|sys| sys.getattr(pyo3::intern!(py, "prefix")))
+            .and_then(|prefix| prefix.extract::<String>())
+    });
     let command = {
         let command = args().next().unwrap_or_else(|| "aqora".to_string());
         which(&command)
@@ -53,6 +68,10 @@ pub async fn info(_: Info, global: GlobalArgs) -> Result<()> {
     tracing::info!("Command {}", command);
     tracing::info!("Version {}", manifest_version());
     tracing::info!("Python {}", python_version());
+    tracing::info!(
+        "Python Prefix: {}",
+        python_prefix.unwrap_or_else(|err| format!("[error: {err}]"))
+    );
     tracing::info!(
         "UV Path {}",
         uv_path

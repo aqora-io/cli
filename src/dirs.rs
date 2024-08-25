@@ -239,6 +239,23 @@ async fn get_installed_python_version(
     }
 }
 
+pub async fn get_venv(
+    project_dir: impl AsRef<Path>,
+    uv_path: Option<impl AsRef<Path>>,
+    python: Option<impl AsRef<str>>,
+    pb: &ProgressBar,
+    color: ColorChoice,
+) -> Result<Option<PyEnv>> {
+    let venv_dir = project_venv_dir(&project_dir);
+    if tokio::fs::try_exists(venv_dir).await? {
+        Ok(Some(
+            init_venv(&project_dir, uv_path, python, pb, color).await?,
+        ))
+    } else {
+        Ok(None)
+    }
+}
+
 pub async fn init_venv(
     project_dir: impl AsRef<Path>,
     uv_path: Option<impl AsRef<Path>>,
