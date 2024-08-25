@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.4.0 - 2024-08-25
+#### Bug Fixes
+- Use dunce to canonicalize paths - (22d172e) - Julian Popescu
+#### Features
+- Add virtual environment info to aqora info - (5615e19) - Julian Popescu
+
+- - -
+
 ## v0.3.4 - 2024-08-24
 #### Bug Fixes
 - Use custom template for python exporter - (d3d9ee4) - Julian Popescu
