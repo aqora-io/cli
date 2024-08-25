@@ -18,3 +18,4 @@ thiserror = "1.0"
 tokio = { version = "1", features = ["sync", "signal", "process", "fs"] }
 split-stream-by = "0.1"
 serde = { version = "1.0", features = ["derive"] }
+dunce = "1.0"

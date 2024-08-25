@@ -1,6 +1,6 @@
 use crate::{
     commands::{version::python_version, GlobalArgs},
-    dirs::{config_dir, get_venv, locate_uv},
+    dirs::{config_dir, locate_uv, opt_init_venv},
     error::Result,
     graphql_client::GraphQLClient,
     manifest::manifest_version,
@@ -34,7 +34,7 @@ pub async fn get_viewer_info(global: &GlobalArgs) -> Result<viewer_info::ViewerI
 pub struct Info;
 
 pub async fn info(_: Info, global: GlobalArgs) -> Result<()> {
-    let _ = get_venv(
+    let _ = opt_init_venv(
         &global.project,
         global.uv.as_ref(),
         global.python.as_ref(),
@@ -69,7 +69,7 @@ pub async fn info(_: Info, global: GlobalArgs) -> Result<()> {
     tracing::info!("Version {}", manifest_version());
     tracing::info!("Python {}", python_version());
     tracing::info!(
-        "Python Prefix: {}",
+        "Python Prefix {}",
         python_prefix.unwrap_or_else(|err| format!("[error: {err}]"))
     );
     tracing::info!(
@@ -97,12 +97,11 @@ pub async fn info(_: Info, global: GlobalArgs) -> Result<()> {
             .unwrap_or_else(|err| format!("[error: {err}]"))
     );
     tracing::info!(
-        "Project {}",
-        global
-            .project
-            .canonicalize()
-            .unwrap_or(global.project)
-            .display()
+        "Project {} ({})",
+        global.project.display(),
+        dunce::canonicalize(&global.project)
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|err| format!("[error: {err}]"))
     );
     Ok(())
 }
