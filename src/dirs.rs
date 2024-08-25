@@ -239,7 +239,7 @@ async fn get_installed_python_version(
     }
 }
 
-pub async fn get_venv(
+pub async fn opt_init_venv(
     project_dir: impl AsRef<Path>,
     uv_path: Option<impl AsRef<Path>>,
     python: Option<impl AsRef<str>>,

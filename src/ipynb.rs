@@ -424,7 +424,7 @@ async def {func}(*__aqora__args, **__aqora__kwargs):
 
 fn get_meta(env: &PyEnv, path: &PathStr) -> Result<NotebookMeta, NotebookToPythonFunctionError> {
     let notebook_path = notebook_path(env, path)?;
-    let notebook_path = notebook_path.canonicalize().map_err(|e| {
+    let notebook_path = dunce::canonicalize(&notebook_path).map_err(|e| {
         NotebookToPythonFunctionError::Read(
             notebook_path.clone(),
             std::io::Error::new(

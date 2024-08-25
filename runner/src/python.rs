@@ -155,8 +155,7 @@ impl PyEnv {
                 .await
                 .map_err(|err| EnvError::Io(cache_path.to_path_buf(), err))?;
             Some(
-                cache_path
-                    .canonicalize()
+                dunce::canonicalize(cache_path)
                     .map_err(|err| EnvError::Io(cache_path.to_path_buf(), err))?,
             )
         } else {
@@ -164,8 +163,7 @@ impl PyEnv {
         };
         let venv_path = venv_path.as_ref();
         Self::ensure_venv(&uv_path, &venv_path, cache_path.as_ref(), python, color).await?;
-        let venv_path = venv_path
-            .canonicalize()
+        let venv_path = dunce::canonicalize(venv_path)
             .map_err(|err| EnvError::Io(venv_path.to_path_buf(), err))?;
         Python::with_gil(|py| {
             let sys = py.import(intern!(py, "sys"))?;

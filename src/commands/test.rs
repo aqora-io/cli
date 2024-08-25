@@ -315,7 +315,7 @@ pub async fn run_submission_tests(
         use_case
     };
     let config = PipelineConfig {
-        data: data_path.canonicalize()?,
+        data: dunce::canonicalize(data_path)?,
     };
 
     wrap_python_output(&pipeline_pb)?;
