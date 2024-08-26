@@ -1,7 +1,7 @@
 use crate::{
     commands::GlobalArgs,
     dirs::{
-        init_venv, project_data_dir, project_last_run_dir, project_last_run_result,
+        project_data_dir, project_last_run_dir, project_last_run_result,
         project_use_case_toml_path, read_pyproject,
     },
     error::{self, Result},
@@ -291,14 +291,7 @@ pub async fn run_submission_tests(
 
     pipeline_pb.set_message("Setting up virtual environment...");
 
-    let env = init_venv(
-        &global.project,
-        global.uv.as_ref(),
-        global.python.as_ref(),
-        &pipeline_pb,
-        global.color,
-    )
-    .await?;
+    let env = global.init_venv(&pipeline_pb).await?;
 
     pipeline_pb.set_message("Converting notebooks...");
 
@@ -626,14 +619,7 @@ async fn test_use_case(args: Test, global: GlobalArgs, project: PyProject) -> Re
         m.add(ProgressBar::new_spinner().with_message("Setting up virtual environment..."));
     venv_pb.enable_steady_tick(std::time::Duration::from_millis(100));
 
-    let env = init_venv(
-        &global.project,
-        global.uv.as_ref(),
-        global.python.as_ref(),
-        &venv_pb,
-        global.color,
-    )
-    .await?;
+    let env = global.init_venv(&venv_pb).await?;
 
     let mut use_case = use_case.clone();
     convert_use_case_notebooks(&env, &mut use_case).await?;

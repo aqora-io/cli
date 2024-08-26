@@ -12,7 +12,7 @@ use serde_json::json;
 use tokio::process::Command;
 
 use crate::{
-    dirs::{init_venv, project_vscode_dir, vscode_settings_path},
+    dirs::{project_vscode_dir, vscode_settings_path},
     error::{self, Result},
     process::run_command,
 };
@@ -121,14 +121,7 @@ pub async fn lab(args: Lab, global_args: GlobalArgs) -> Result<()> {
     let pb = ProgressBar::new_spinner().with_message("Setting up virtual environment");
     pb.enable_steady_tick(std::time::Duration::from_millis(100));
 
-    let env = init_venv(
-        &global_args.project,
-        global_args.uv.as_ref(),
-        global_args.python.as_ref(),
-        &pb,
-        global_args.color,
-    )
-    .await?;
+    let env = global_args.init_venv(&pb).await?;
 
     if !args.jupyter_notebook {
         handle_vscode_integration(global_args, &env, &pb).await

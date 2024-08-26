@@ -1,7 +1,4 @@
-use crate::{
-    commands::GlobalArgs,
-    dirs::{init_venv, read_pyproject},
-};
+use crate::{commands::GlobalArgs, dirs::read_pyproject};
 use clap::Args;
 use indicatif::ProgressBar;
 use serde::Serialize;
@@ -21,14 +18,7 @@ pub async fn python(args: Python, global: GlobalArgs) -> crate::error::Result<()
     let progress = ProgressBar::new_spinner();
     progress.set_message("Initializing virtual environment");
     progress.enable_steady_tick(Duration::from_millis(100));
-    let env = init_venv(
-        &global.project,
-        global.uv.as_ref(),
-        global.python.as_ref(),
-        &progress,
-        global.color,
-    )
-    .await?;
+    let env = global.init_venv(&progress).await?;
     progress.finish_and_clear();
     let mut cmd = env.python_cmd();
     cmd.current_dir(&global.project);

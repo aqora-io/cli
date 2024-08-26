@@ -1,7 +1,7 @@
 use crate::{
     colors::ColorChoiceExt,
     commands::GlobalArgs,
-    dirs::{init_venv, pyproject_path, read_pyproject},
+    dirs::{pyproject_path, read_pyproject},
     error::{self, Result},
     python::{pip_install, pip_uninstall},
     revert_file::RevertFile,
@@ -77,14 +77,7 @@ pub async fn remove(args: Remove, global: GlobalArgs) -> Result<()> {
     let progress = ProgressBar::new_spinner();
     progress.set_message("Initializing virtual environment");
     progress.enable_steady_tick(Duration::from_millis(100));
-    let env = init_venv(
-        &global.project,
-        global.uv.as_ref(),
-        global.python.as_ref(),
-        &progress,
-        global.color,
-    )
-    .await?;
+    let env = global.init_venv(&progress).await?;
     let project_file = RevertFile::save(pyproject_path(&global.project))?;
     let mut toml = fs::read_to_string(&project_file)
         .await?

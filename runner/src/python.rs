@@ -22,8 +22,9 @@ lazy_static::lazy_static! {
     });
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, Default)]
 pub enum ColorChoice {
+    #[default]
     Auto,
     Always,
     Never,
@@ -32,12 +33,6 @@ pub enum ColorChoice {
 impl ColorChoice {
     fn apply(&self, cmd: &mut Command) {
         cmd.arg("--color").arg(self);
-    }
-}
-
-impl Default for ColorChoice {
-    fn default() -> Self {
-        Self::Auto
     }
 }
 
@@ -141,16 +136,20 @@ pub enum EnvError {
     VenvFailed(String, String),
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct PyEnvOptions {
+    pub cache_path: Option<PathBuf>,
+    pub python: Option<String>,
+    pub color: ColorChoice,
+}
+
 impl PyEnv {
     pub async fn init(
         uv_path: impl AsRef<Path>,
         venv_path: impl AsRef<Path>,
-        cache_path: Option<impl AsRef<Path>>,
-        python: Option<impl AsRef<str>>,
-        color: ColorChoice,
+        options: PyEnvOptions,
     ) -> Result<Self, EnvError> {
-        let cache_path = if let Some(cache_path) = cache_path {
-            let cache_path = cache_path.as_ref();
+        let cache_path = if let Some(cache_path) = options.cache_path.as_ref() {
             tokio::fs::create_dir_all(&cache_path)
                 .await
                 .map_err(|err| EnvError::Io(cache_path.to_path_buf(), err))?;
@@ -162,7 +161,14 @@ impl PyEnv {
             None
         };
         let venv_path = venv_path.as_ref();
-        Self::ensure_venv(&uv_path, &venv_path, cache_path.as_ref(), python, color).await?;
+        Self::ensure_venv(
+            &uv_path,
+            &venv_path,
+            cache_path.as_ref(),
+            options.python,
+            options.color,
+        )
+        .await?;
         let venv_path = dunce::canonicalize(venv_path)
             .map_err(|err| EnvError::Io(venv_path.to_path_buf(), err))?;
         Python::with_gil(|py| {

@@ -592,7 +592,7 @@ pub async fn convert_project_notebooks(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aqora_runner::python::ColorChoice;
+    use aqora_runner::python::PyEnvOptions;
     use pretty_assertions::assert_eq;
 
     const EXAMPLE_IPYNB: &str = r###"{
@@ -762,9 +762,7 @@ get_ipython().system('echo "hello"')
         let env = PyEnv::init(
             which::which("uv").unwrap(),
             &temp_dir.dir_path().join(".venv"),
-            Option::<String>::None,
-            Option::<String>::None,
-            ColorChoice::Never,
+            PyEnvOptions::default(),
         )
         .await
         .unwrap();

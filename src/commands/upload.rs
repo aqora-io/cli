@@ -3,8 +3,8 @@ use crate::{
     commands::GlobalArgs,
     compress::compress,
     dirs::{
-        init_venv, project_last_run_dir, project_last_run_result, project_use_case_toml_path,
-        pyproject_path, read_pyproject,
+        project_last_run_dir, project_last_run_result, project_use_case_toml_path, pyproject_path,
+        read_pyproject,
     },
     error::{self, Result},
     graphql_client::{custom_scalars::*, GraphQLClient},
@@ -408,14 +408,7 @@ pub async fn upload_use_case(
     venv_pb.enable_steady_tick(std::time::Duration::from_millis(100));
     venv_pb = m.add(venv_pb);
 
-    let env = init_venv(
-        &global.project,
-        global.uv.as_ref(),
-        global.python.as_ref(),
-        &venv_pb,
-        global.color,
-    )
-    .await?;
+    let env = global.init_venv(&venv_pb).await?;
 
     venv_pb.finish_with_message("Virtual environment initialized");
 
@@ -695,14 +688,7 @@ pub async fn upload_submission(
     venv_pb.enable_steady_tick(std::time::Duration::from_millis(100));
     venv_pb = m.add(venv_pb);
 
-    let env = init_venv(
-        &global.project,
-        global.uv.as_ref(),
-        global.python.as_ref(),
-        &venv_pb,
-        global.color,
-    )
-    .await?;
+    let env = global.init_venv(&venv_pb).await?;
 
     venv_pb.finish_with_message("Virtual environment initialized");
 
