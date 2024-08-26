@@ -1,5 +1,4 @@
-use aqora_runner::python::ColorChoice as PipColorChoice;
-use clap::ColorChoice;
+use aqora_runner::python::ColorChoice;
 use dialoguer::theme::{ColorfulTheme, SimpleTheme};
 
 pub fn supports_color() -> bool {
@@ -11,7 +10,7 @@ pub fn supports_color() -> bool {
 
 pub trait ColorChoiceExt {
     fn should_use_color(self) -> bool;
-    fn pip(self) -> PipColorChoice;
+    fn forced(self) -> Self;
     fn set_override(self);
     fn dialoguer(self) -> Box<dyn dialoguer::theme::Theme>;
 }
@@ -25,11 +24,11 @@ impl ColorChoiceExt for ColorChoice {
         }
     }
 
-    fn pip(self) -> PipColorChoice {
+    fn forced(self) -> Self {
         if self.should_use_color() {
-            PipColorChoice::Always
+            ColorChoice::Always
         } else {
-            PipColorChoice::Never
+            ColorChoice::Never
         }
     }
 
@@ -47,16 +46,5 @@ impl ColorChoiceExt for ColorChoice {
             ColorChoice::Always => owo_colors::set_override(true),
             ColorChoice::Never => owo_colors::set_override(false),
         }
-    }
-}
-
-pub fn serialize_color_choice<S>(color: &ColorChoice, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    match color {
-        ColorChoice::Auto => serializer.serialize_str("auto"),
-        ColorChoice::Always => serializer.serialize_str("always"),
-        ColorChoice::Never => serializer.serialize_str("never"),
     }
 }

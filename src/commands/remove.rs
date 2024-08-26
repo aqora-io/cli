@@ -1,5 +1,4 @@
 use crate::{
-    colors::ColorChoiceExt,
     commands::GlobalArgs,
     dirs::{pyproject_path, read_pyproject},
     error::{self, Result},
@@ -7,7 +6,7 @@ use crate::{
     revert_file::RevertFile,
 };
 use aqora_config::{PackageName, Requirement};
-use aqora_runner::python::{PipOptions, PipPackage};
+use aqora_runner::python::PipPackage;
 use clap::Args;
 use indicatif::ProgressBar;
 use serde::Serialize;
@@ -122,10 +121,7 @@ pub async fn remove(args: Remove, global: GlobalArgs) -> Result<()> {
                 })?;
         }
     }
-    let pip_options = PipOptions {
-        color: global.color.pip(),
-        ..Default::default()
-    };
+    let pip_options = global.pip_options();
     pip_uninstall(&env, deps.clone(), &pip_options, &progress).await?;
     pip_install(
         &env,

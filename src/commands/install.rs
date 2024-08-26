@@ -1,5 +1,4 @@
 use crate::{
-    colors::ColorChoiceExt,
     commands::GlobalArgs,
     dirs::{project_config_dir, project_data_dir, project_use_case_toml_path, read_pyproject},
     download::download_tar_gz,
@@ -194,8 +193,7 @@ pub async fn install_submission(
         let cloned_pb = use_case_pb.clone();
         let options = PipOptions {
             upgrade: args.upgrade,
-            color: global.color.pip(),
-            ..Default::default()
+            ..global.pip_options()
         };
         let install_fut = pip_install(
             &env,
@@ -249,8 +247,7 @@ pub async fn install_use_case(args: Install, global: GlobalArgs) -> Result<()> {
         [PipPackage::editable(&global.project)],
         &PipOptions {
             upgrade: args.upgrade,
-            color: global.color.pip(),
-            ..Default::default()
+            ..global.pip_options()
         },
         &pb,
     )

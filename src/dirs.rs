@@ -6,8 +6,7 @@ use crate::{
     process::run_command,
 };
 use aqora_config::PyProject;
-use aqora_runner::python::{PyEnv, PyEnvOptions, BIN_PATH};
-use clap::ColorChoice;
+use aqora_runner::python::{ColorChoice, LinkMode, PyEnv, PyEnvOptions, BIN_PATH};
 use indicatif::ProgressBar;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -243,13 +242,14 @@ pub async fn opt_init_venv(
     project_dir: impl AsRef<Path>,
     uv_path: Option<impl AsRef<Path>>,
     python: Option<impl AsRef<str>>,
-    pb: &ProgressBar,
     color: ColorChoice,
+    link_mode: LinkMode,
+    pb: &ProgressBar,
 ) -> Result<Option<PyEnv>> {
     let venv_dir = project_venv_dir(&project_dir);
     if tokio::fs::try_exists(venv_dir).await? {
         Ok(Some(
-            init_venv(&project_dir, uv_path, python, pb, color).await?,
+            init_venv(&project_dir, uv_path, python, color, link_mode, pb).await?,
         ))
     } else {
         Ok(None)
@@ -260,8 +260,9 @@ pub async fn init_venv(
     project_dir: impl AsRef<Path>,
     uv_path: Option<impl AsRef<Path>>,
     python: Option<impl AsRef<str>>,
-    pb: &ProgressBar,
     color: ColorChoice,
+    link_mode: LinkMode,
+    pb: &ProgressBar,
 ) -> Result<PyEnv> {
     pb.set_message("Initializing the Python environment...");
     let uv_path = ensure_uv(uv_path, pb, color).await?;
@@ -284,7 +285,8 @@ If you would like to use the requested version run `aqora clean` and `aqora inst
         PyEnvOptions {
             cache_path: None,
             python: python.map(|p| p.as_ref().into()),
-            color: color.pip(),
+            color,
+            link_mode,
         },
     )
     .await

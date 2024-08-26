@@ -16,7 +16,8 @@ use crate::{
     upload::upload_project_version_file,
 };
 use aqora_config::{PyProject, Version};
-use clap::{Args, ColorChoice};
+use aqora_runner::python::ColorChoice;
+use clap::Args;
 use futures::prelude::*;
 use graphql_client::GraphQLQuery;
 use indicatif::{MultiProgress, ProgressBar};
