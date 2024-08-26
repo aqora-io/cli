@@ -2,6 +2,15 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.5.0 - 2024-08-26
+#### Features
+- Add link mode as option to CLI - (f42edf3) - Julian Popescu
+- Add link mode to PyEnvOptions and PipOptions - (8525753) - Julian Popescu
+#### Refactoring
+- Use options struct and short hand for env init - (0ccc23d) - Julian Popescu
+
+- - -
+
 ## v0.4.0 - 2024-08-25
 #### Bug Fixes
 - Use dunce to canonicalize paths - (22d172e) - Julian Popescu
