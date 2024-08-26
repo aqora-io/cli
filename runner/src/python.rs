@@ -46,11 +46,36 @@ impl AsRef<OsStr> for ColorChoice {
     }
 }
 
+#[derive(Copy, Clone, Debug, Default)]
+pub enum LinkMode {
+    #[default]
+    Copy,
+    Clone,
+    Hardlink,
+}
+
+impl LinkMode {
+    fn apply(&self, cmd: &mut Command) {
+        cmd.arg("--link-mode").arg(self);
+    }
+}
+
+impl AsRef<OsStr> for LinkMode {
+    fn as_ref(&self) -> &OsStr {
+        match self {
+            Self::Clone => OsStr::new("copy"),
+            Self::Copy => OsStr::new("auto"),
+            Self::Hardlink => OsStr::new("hardlink"),
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct PipOptions {
     pub upgrade: bool,
     pub no_deps: bool,
     pub color: ColorChoice,
+    pub link_mode: LinkMode,
 }
 
 pub enum PipPackage {
@@ -141,6 +166,7 @@ pub struct PyEnvOptions {
     pub cache_path: Option<PathBuf>,
     pub python: Option<String>,
     pub color: ColorChoice,
+    pub link_mode: LinkMode,
 }
 
 impl PyEnv {
@@ -164,9 +190,10 @@ impl PyEnv {
         Self::ensure_venv(
             &uv_path,
             &venv_path,
-            cache_path.as_ref(),
-            options.python,
-            options.color,
+            PyEnvOptions {
+                cache_path: cache_path.clone(),
+                ..options
+            },
         )
         .await?;
         let venv_path = dunce::canonicalize(venv_path)
@@ -193,9 +220,7 @@ impl PyEnv {
     async fn ensure_venv(
         uv_path: impl AsRef<Path>,
         venv_path: impl AsRef<Path>,
-        cache_path: Option<impl AsRef<Path>>,
-        python: Option<impl AsRef<str>>,
-        color: ColorChoice,
+        options: PyEnvOptions,
     ) -> Result<(), EnvError> {
         let uv_path = uv_path.as_ref();
         let path = venv_path.as_ref();
@@ -204,16 +229,18 @@ impl PyEnv {
             cmd.arg("venv")
                 .arg("--python")
                 .arg(
-                    python
+                    options
+                        .python
                         .as_ref()
                         .map(|p| p.as_ref())
                         .unwrap_or_else(|| PYTHON_VERSION.as_str()),
                 )
                 .arg(venv_path.as_ref());
-            if let Some(cache_path) = cache_path.as_ref() {
-                cmd.arg("--cache-dir").arg(cache_path.as_ref());
+            if let Some(cache_path) = options.cache_path.as_ref() {
+                cmd.arg("--cache-dir").arg(cache_path);
             }
-            color.apply(&mut cmd);
+            options.color.apply(&mut cmd);
+            options.link_mode.apply(&mut cmd);
             let output = cmd
                 .output()
                 .await
@@ -230,10 +257,11 @@ impl PyEnv {
             .arg("pip")
             .arg("install")
             .arg("aqora-cli[venv]");
-        if let Some(cache_path) = cache_path.as_ref() {
-            cmd.arg("--cache-dir").arg(cache_path.as_ref());
+        if let Some(cache_path) = options.cache_path.as_ref() {
+            cmd.arg("--cache-dir").arg(cache_path);
         }
-        color.apply(&mut cmd);
+        options.color.apply(&mut cmd);
+        options.link_mode.apply(&mut cmd);
         let output = cmd
             .output()
             .await
@@ -301,6 +329,7 @@ impl PyEnv {
             cmd.arg("--no-deps");
         }
         opts.color.apply(&mut cmd);
+        opts.link_mode.apply(&mut cmd);
         for module in modules {
             module.apply(&mut cmd);
         }
