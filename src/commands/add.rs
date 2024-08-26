@@ -1,5 +1,4 @@
 use crate::{
-    colors::ColorChoiceExt,
     commands::{remove::remove_matching_dependencies, GlobalArgs},
     dirs::{pyproject_path, read_pyproject},
     error::{self, Result},
@@ -287,8 +286,7 @@ pub async fn add(args: Add, global: GlobalArgs) -> Result<()> {
         [PipPackage::editable(&global.project)],
         &PipOptions {
             upgrade: args.upgrade,
-            color: global.color.pip(),
-            ..Default::default()
+            ..global.pip_options()
         },
         &progress,
     )

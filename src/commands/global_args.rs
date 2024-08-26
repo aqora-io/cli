@@ -1,11 +1,11 @@
 use crate::{
-    colors::serialize_color_choice,
+    colors::ColorChoiceExt,
     dirs::{init_venv, opt_init_venv},
     error::Result,
     graphql_client::graphql_url,
 };
-use aqora_runner::python::PyEnv;
-use clap::{Args, ColorChoice};
+use aqora_runner::python::{ColorChoice, LinkMode, PipOptions, PyEnv};
+use clap::Args;
 use indicatif::ProgressBar;
 use serde::Serialize;
 use std::path::PathBuf;
@@ -40,9 +40,10 @@ pub struct GlobalArgs {
     pub ignore_venv_aqora: bool,
     #[arg(long, default_value_t = *DEFAULT_PARALLELISM, global = true)]
     pub max_concurrency: usize,
-    #[arg(long, default_value_t = ColorChoice::Auto, global = true)]
-    #[serde(serialize_with = "serialize_color_choice")]
+    #[arg(value_enum, long, default_value_t = ColorChoice::Auto, global = true)]
     pub color: ColorChoice,
+    #[arg(value_enum, long, default_value_t = LinkMode::Copy, global = true)]
+    pub dep_link_mode: LinkMode,
 }
 
 impl GlobalArgs {
@@ -61,13 +62,22 @@ impl GlobalArgs {
         graphql_url(&self.aqora_url()?)
     }
 
+    pub fn pip_options(&self) -> PipOptions {
+        PipOptions {
+            color: self.color.forced(),
+            link_mode: self.dep_link_mode,
+            ..Default::default()
+        }
+    }
+
     pub async fn init_venv(&self, pb: &ProgressBar) -> Result<PyEnv> {
         init_venv(
             &self.project,
             self.uv.as_ref(),
             self.python.as_ref(),
+            self.color.forced(),
+            self.dep_link_mode,
             pb,
-            self.color,
         )
         .await
     }
@@ -77,8 +87,9 @@ impl GlobalArgs {
             &self.project,
             self.uv.as_ref(),
             self.python.as_ref(),
+            self.color.forced(),
+            self.dep_link_mode,
             pb,
-            self.color,
         )
         .await
     }

@@ -161,6 +161,7 @@ name = "aqora-runner"
 version = "0.4.0"
 dependencies = [
  "aqora-config",
+ "clap",
  "dunce",
  "futures",
  "lazy_static",

@@ -1,5 +1,7 @@
 use crate::ipython::override_get_ipython;
 use aqora_config::{PackageName, PathStr};
+#[cfg(feature = "clap")]
+use clap::{builder::PossibleValue, ValueEnum};
 use futures::prelude::*;
 use pyo3::{
     intern,
@@ -7,6 +9,7 @@ use pyo3::{
     pyclass::IterANextOutput,
     types::{PyString, PyType},
 };
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::{
     ffi::{OsStr, OsString},
@@ -22,7 +25,8 @@ lazy_static::lazy_static! {
     });
 }
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ColorChoice {
     #[default]
     Auto,
@@ -46,12 +50,29 @@ impl AsRef<OsStr> for ColorChoice {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default)]
+#[cfg(feature = "clap")]
+impl ValueEnum for ColorChoice {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self::Auto, Self::Always, Self::Never]
+    }
+
+    fn to_possible_value(&self) -> Option<PossibleValue> {
+        Some(match self {
+            Self::Auto => PossibleValue::new("auto"),
+            Self::Always => PossibleValue::new("always"),
+            Self::Never => PossibleValue::new("never"),
+        })
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum LinkMode {
     #[default]
     Copy,
     Clone,
     Hardlink,
+    Symlink,
 }
 
 impl LinkMode {
@@ -63,10 +84,27 @@ impl LinkMode {
 impl AsRef<OsStr> for LinkMode {
     fn as_ref(&self) -> &OsStr {
         match self {
-            Self::Clone => OsStr::new("copy"),
-            Self::Copy => OsStr::new("auto"),
+            Self::Copy => OsStr::new("copy"),
+            Self::Clone => OsStr::new("clone"),
             Self::Hardlink => OsStr::new("hardlink"),
+            Self::Symlink => OsStr::new("symlink"),
         }
+    }
+}
+
+#[cfg(feature = "clap")]
+impl ValueEnum for LinkMode {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self::Copy, Self::Clone, Self::Hardlink]
+    }
+
+    fn to_possible_value(&self) -> Option<PossibleValue> {
+        Some(match self {
+            Self::Copy => PossibleValue::new("copy"),
+            Self::Clone => PossibleValue::new("clone"),
+            Self::Hardlink => PossibleValue::new("hardlink"),
+            Self::Symlink => PossibleValue::new("symlink"),
+        })
     }
 }
 
