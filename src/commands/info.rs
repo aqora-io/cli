@@ -1,6 +1,6 @@
 use crate::{
     commands::{version::python_version, GlobalArgs},
-    dirs::{config_dir, locate_uv, opt_init_venv},
+    dirs::{config_dir, locate_uv},
     error::Result,
     graphql_client::GraphQLClient,
     manifest::manifest_version,
@@ -34,14 +34,7 @@ pub async fn get_viewer_info(global: &GlobalArgs) -> Result<viewer_info::ViewerI
 pub struct Info;
 
 pub async fn info(_: Info, global: GlobalArgs) -> Result<()> {
-    let _ = opt_init_venv(
-        &global.project,
-        global.uv.as_ref(),
-        global.python.as_ref(),
-        &ProgressBar::hidden(),
-        global.color,
-    )
-    .await?;
+    let _ = global.opt_init_venv(&ProgressBar::hidden()).await?;
     let python_prefix = Python::with_gil(|py| {
         py.import(pyo3::intern!(py, "sys"))
             .and_then(|sys| sys.getattr(pyo3::intern!(py, "prefix")))

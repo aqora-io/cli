@@ -6,7 +6,7 @@ use crate::{
     process::run_command,
 };
 use aqora_config::PyProject;
-use aqora_runner::python::{PyEnv, BIN_PATH};
+use aqora_runner::python::{PyEnv, PyEnvOptions, BIN_PATH};
 use clap::ColorChoice;
 use indicatif::ProgressBar;
 use serde::{Deserialize, Serialize};
@@ -278,16 +278,24 @@ If you would like to use the requested version run `aqora clean` and `aqora inst
             }
         }
     }
-    let env = PyEnv::init(uv_path, &venv_dir, None::<PathBuf>, python, color.pip())
-        .await
-        .map_err(|e| {
-            error::user(
-                &format!("Failed to setup virtualenv: {}", e),
-                &format!(
-                    "Please make sure you have permissions to write to {}",
-                    venv_dir.display()
-                ),
-            )
-        })?;
+    let env = PyEnv::init(
+        uv_path,
+        &venv_dir,
+        PyEnvOptions {
+            cache_path: None,
+            python: python.map(|p| p.as_ref().into()),
+            color: color.pip(),
+        },
+    )
+    .await
+    .map_err(|e| {
+        error::user(
+            &format!("Failed to setup virtualenv: {}", e),
+            &format!(
+                "Please make sure you have permissions to write to {}",
+                venv_dir.display()
+            ),
+        )
+    })?;
     Ok(env)
 }

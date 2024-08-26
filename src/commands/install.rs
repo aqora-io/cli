@@ -1,9 +1,7 @@
 use crate::{
     colors::ColorChoiceExt,
     commands::GlobalArgs,
-    dirs::{
-        init_venv, project_config_dir, project_data_dir, project_use_case_toml_path, read_pyproject,
-    },
+    dirs::{project_config_dir, project_data_dir, project_use_case_toml_path, read_pyproject},
     download::download_tar_gz,
     error::{self, Result},
     graphql_client::{custom_scalars::*, GraphQLClient},
@@ -112,14 +110,7 @@ pub async fn install_submission(
         })
         .transpose()?;
 
-    let env = init_venv(
-        &global.project,
-        global.uv.as_ref(),
-        global.python.as_ref(),
-        &venv_pb,
-        global.color,
-    )
-    .await?;
+    let env = global.init_venv(&venv_pb).await?;
 
     let use_case_package_name = competition.use_case.name.clone();
     let use_case_res = competition.use_case.latest.ok_or_else(|| {
@@ -251,14 +242,7 @@ pub async fn install_use_case(args: Install, global: GlobalArgs) -> Result<()> {
     pb.enable_steady_tick(std::time::Duration::from_millis(100));
     pb = m.add(pb);
 
-    let env = init_venv(
-        &global.project,
-        global.uv.as_ref(),
-        global.python.as_ref(),
-        &pb,
-        global.color,
-    )
-    .await?;
+    let env = global.init_venv(&pb).await?;
 
     pip_install(
         &env,

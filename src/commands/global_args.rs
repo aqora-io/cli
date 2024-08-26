@@ -1,5 +1,12 @@
-use crate::{colors::serialize_color_choice, error::Result, graphql_client::graphql_url};
+use crate::{
+    colors::serialize_color_choice,
+    dirs::{init_venv, opt_init_venv},
+    error::Result,
+    graphql_client::graphql_url,
+};
+use aqora_runner::python::PyEnv;
 use clap::{Args, ColorChoice};
+use indicatif::ProgressBar;
 use serde::Serialize;
 use std::path::PathBuf;
 use url::Url;
@@ -52,5 +59,27 @@ impl GlobalArgs {
 
     pub fn graphql_url(&self) -> Result<Url> {
         graphql_url(&self.aqora_url()?)
+    }
+
+    pub async fn init_venv(&self, pb: &ProgressBar) -> Result<PyEnv> {
+        init_venv(
+            &self.project,
+            self.uv.as_ref(),
+            self.python.as_ref(),
+            pb,
+            self.color,
+        )
+        .await
+    }
+
+    pub async fn opt_init_venv(&self, pb: &ProgressBar) -> Result<Option<PyEnv>> {
+        opt_init_venv(
+            &self.project,
+            self.uv.as_ref(),
+            self.python.as_ref(),
+            pb,
+            self.color,
+        )
+        .await
     }
 }
