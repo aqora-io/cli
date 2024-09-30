@@ -644,9 +644,8 @@ async fn test_use_case(args: Test, global: GlobalArgs, project: PyProject) -> Re
             indexes,
         )
         .await
-        .map_err(|e| {
+        .inspect_err(|_| {
             test_pb.finish_with_message("Failed to run tests");
-            e
         })?;
     }
 
