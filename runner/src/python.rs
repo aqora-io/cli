@@ -601,17 +601,54 @@ pub mod serde_pickle_opt {
     {
         let bytes = deserializer.deserialize_option(MaybeBytesVisitor)?;
         if let Some(bytes) = bytes {
-            Python::with_gil(|py| {
+            let result = Python::with_gil(|py| {
                 let out = py
                     .import("pickle")?
                     .getattr("loads")?
                     .call1((bytes.as_ref(),))?;
                 FromPyObject::extract(out)
-            })
-            .map_err(serde::de::Error::custom)
-            .map(Some)
+            });
+            Ok(result.ok())
         } else {
             Ok(None)
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) mod tests {
+        use base64::prelude::*;
+
+        const WINDOWS_PAYLOAD: &str = "k8SGgASVewAAAAAAAACMB3BhdGhsaWKUjAtXaW5kb3dzUGF0aJSTlCiMA0M6XJSMBVVzZXJzlIwFYWRtaW6UjAlEb2N1bWVudHOUjBVoMi1ncm91bmRzdGF0ZS1lbmVyZ3mUjAYuYXFvcmGUjARkYXRhlGgJjAN4eXqUjAZIMi54eXqUdJRSlC6CqXJlYWRfZmlsZZGUxDaABJUrAAAAAAAAAIwnMgpIMgpIIDAuMzcxMCAwLjAgMC4wCkggLTAuMzcxMCAwLjAgMC4wlC7EBIAETi7AwLJncm91bmRzdGF0ZV9lbmVyZ3mRlMQVgASVCgAAAAAAAABHv+FTsAxFkjYuxASABE4uxAWABEs3LsDA";
+        const UNIX_PAYLOAD: &str = "k8SjgASVmAAAAAAAAACMB3BhdGhsaWKUjAlQb3NpeFBhdGiUk5QojAEvlIwHcHJpdmF0ZZSMA3ZhcpSMB2ZvbGRlcnOUjAIzMJSMHmZ3andwd2g1MXFxZndmYjVqY25wZGhoYzAwMDBnbpSMAVSUjA50bXAuYnBnNWZKSXE1VJSMBi5hcW9yYZSMBGRhdGGUaAyMA3h5epSMBkgyLnh5epR0lFKULoKyZ3JvdW5kc3RhdGVfZW5lcmd5kZTEFYAElQoAAAAAAAAAR7/hU7AMRZI1LsQEgAROLsQFgARLNy7AqXJlYWRfZmlsZZGUxDaABJUrAAAAAAAAAIwnMgpIMgpIIDAuMzcxMCAwLjAgMC4wCkggLTAuMzcxMCAwLjAgMC4wlC7EBIAETi7AwMA=";
+
+        #[test]
+        fn test_working() {
+            pyo3::prepare_freethreaded_python();
+            let payload = BASE64_STANDARD
+                .decode(if cfg!(unix) {
+                    UNIX_PAYLOAD
+                } else {
+                    WINDOWS_PAYLOAD
+                })
+                .expect("Cannot decode payload");
+            let result = rmp_serde::from_slice::<crate::pipeline::EvaluateInputInfo>(&payload[..])
+                .expect("Cannot decode struct");
+            assert!(result.input.is_some());
+        }
+
+        #[test]
+        fn test_faulty() {
+            pyo3::prepare_freethreaded_python();
+            let payload = BASE64_STANDARD
+                .decode(if cfg!(unix) {
+                    WINDOWS_PAYLOAD
+                } else {
+                    UNIX_PAYLOAD
+                })
+                .expect("Cannot decode payload");
+            let result = rmp_serde::from_slice::<crate::pipeline::EvaluateInputInfo>(&payload[..])
+                .expect("Cannot decode struct");
+            assert!(result.input.is_none());
         }
     }
 }

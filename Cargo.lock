@@ -161,12 +161,14 @@ name = "aqora-runner"
 version = "0.5.0"
 dependencies = [
  "aqora-config",
+ "base64 0.22.0",
  "clap",
  "dunce",
  "futures",
  "lazy_static",
  "pyo3",
  "pyo3-asyncio",
+ "rmp-serde",
  "serde",
  "split-stream-by",
  "thiserror",

@@ -20,3 +20,7 @@ split-stream-by = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 dunce = "1.0"
 clap = { version = "4.4", optional = true }
+
+[dev-dependencies]
+base64 = "0.22"
+rmp-serde = "1.1.2"
