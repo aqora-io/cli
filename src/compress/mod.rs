@@ -147,3 +147,32 @@ pub async fn decompress(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use indicatif::ProgressBar;
+    use tempfile::NamedTempFile;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_two_concurrent_compress() {
+        let in_path = std::env::current_dir()
+            .expect("cannot get cwd")
+            .join("src")
+            .join("compress")
+            .join("test_file.txt");
+        let out_a = NamedTempFile::new()
+            .expect("cannot create temp file")
+            .into_temp_path();
+        let out_b = NamedTempFile::new()
+            .expect("cannot create temp file")
+            .into_temp_path();
+        let pb = ProgressBar::hidden();
+
+        let (a, b) = tokio::join!(
+            super::compress(&in_path, out_a, &pb),
+            super::compress(&in_path, out_b, &pb),
+        );
+        a.expect("cannot compress");
+        b.expect("cannot compress");
+    }
+}
