@@ -1,4 +1,5 @@
-use async_compression::tokio::write::GzipEncoder;
+mod parallel_gzip;
+
 use futures::StreamExt;
 use indicatif::ProgressBar;
 use std::path::Path;
@@ -26,32 +27,37 @@ pub async fn compress(
     output: impl AsRef<Path>,
     pb: &ProgressBar,
 ) -> Result<(), CompressError> {
-    let mut builder = TarBuilder::new(GzipEncoder::new(BufWriter::new(
-        File::create(output).await?,
-    )));
-    let entries = ignore::WalkBuilder::new(&input)
+    let _guard = TempProgressStyle::new(pb);
+    let input = input.as_ref();
+
+    let entries = ignore::WalkBuilder::new(input)
         .hidden(false)
         .build()
         .skip(1)
         .collect::<Result<Vec<_>, _>>()?;
-    let _guard = TempProgressStyle::new(pb);
     pb.reset();
     pb.set_style(progress_bar::pretty());
     pb.set_position(0);
     pb.set_length(entries.len() as u64);
+
+    let mut builder = TarBuilder::new(parallel_gzip::Encoder::new(BufWriter::new(
+        File::create(output).await?,
+    )));
     for entry in entries {
         let metadata = entry.metadata()?;
         let path = entry.path();
-        let name = path.strip_prefix(&input)?;
+        let name = path.strip_prefix(input)?.to_path_buf();
         if metadata.is_dir() {
-            builder.append_dir(name, path).await?;
+            builder.append_dir(name, &path).await?;
         } else {
-            builder.append_path_with_name(path, name).await?;
+            builder.append_path_with_name(&path, name).await?;
         }
         pb.inc(1);
     }
     builder.finish().await?;
-    Ok(builder.into_inner().await?.shutdown().await?)
+    builder.into_inner().await?.shutdown().await?;
+
+    Ok(())
 }
 
 fn async_tempfile_error(error: async_tempfile::Error) -> std::io::Error {
@@ -140,4 +146,33 @@ pub async fn decompress(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use indicatif::ProgressBar;
+    use tempfile::NamedTempFile;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_two_concurrent_compress() {
+        let in_path = std::env::current_dir()
+            .expect("cannot get cwd")
+            .join("src")
+            .join("compress")
+            .join("test_file.txt");
+        let out_a = NamedTempFile::new()
+            .expect("cannot create temp file")
+            .into_temp_path();
+        let out_b = NamedTempFile::new()
+            .expect("cannot create temp file")
+            .into_temp_path();
+        let pb = ProgressBar::hidden();
+
+        let (a, b) = tokio::join!(
+            super::compress(&in_path, out_a, &pb),
+            super::compress(&in_path, out_b, &pb),
+        );
+        a.expect("cannot compress");
+        b.expect("cannot compress");
+    }
 }
