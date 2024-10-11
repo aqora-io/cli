@@ -91,7 +91,7 @@ dependencies = [
 
 [[package]]
 name = "aqora"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "aqora-config",
  "aqora-runner",
@@ -147,7 +147,7 @@ dependencies = [
 
 [[package]]
 name = "aqora-config"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "pep440_rs",
  "pep508_rs",
@@ -159,7 +159,7 @@ dependencies = [
 
 [[package]]
 name = "aqora-runner"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "aqora-config",
  "clap",

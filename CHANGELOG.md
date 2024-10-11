@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.5.1 - 2024-10-11
+#### Continuous Integration
+- add bin in release details - (a193d1b) - Angel Dijoux
+#### Features
+- parallel gzip (#88) - (3a7a522) - Antoine Chauvin
+
+- - -
+
 ## v0.5.0 - 2024-08-26
 #### Features
 - Add link mode as option to CLI - (f42edf3) - Julian Popescu
