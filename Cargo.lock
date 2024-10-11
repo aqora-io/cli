@@ -95,6 +95,7 @@ version = "0.5.2"
 dependencies = [
  "aqora-config",
  "aqora-runner",
+ "aqora-template",
  "async-compression",
  "async-tempfile",
  "axum",

@@ -8,18 +8,14 @@ use serde::Serialize;
 use crate::registry::REGISTRY;
 
 const DEFAULT_PYTHON_VERSION: &str = "3.8";
-lazy_static::lazy_static! {
-    static ref CLI_VERSION_STR: String = toml::from_str::<toml::Value>(include_str!("../Cargo.toml")).unwrap().as_table().unwrap().get("package").unwrap().as_table().unwrap().get("version").unwrap().as_str().unwrap().to_string();
-    static ref SEMVER_REGEX: Regex = Regex::new(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$").unwrap();
-    static ref SLUG_REGEX: Regex = Regex::new(r"^[-a-zA-Z0-9_]*$").unwrap();
-}
+const DEFAULT_CLI_VERSION_STR: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Builder, Serialize, Debug)]
 #[builder(build_fn(validate = "Self::validate"))]
 pub struct UseCaseTemplate {
     #[builder(setter(into), default = "DEFAULT_PYTHON_VERSION.to_string()")]
     python_version: String,
-    #[builder(setter(into), default = "CLI_VERSION_STR.to_string()")]
+    #[builder(setter(into), default = "DEFAULT_CLI_VERSION_STR.to_string()")]
     cli_version: String,
     #[builder(setter(into))]
     competition: String,
@@ -39,6 +35,11 @@ impl UseCaseTemplate {
 
 impl UseCaseTemplateBuilder {
     fn validate(&self) -> Result<(), String> {
+        lazy_static::lazy_static! {
+            static ref SEMVER_REGEX: Regex = Regex::new(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$").unwrap();
+            static ref SLUG_REGEX: Regex = Regex::new(r"^[-a-zA-Z0-9_]*$").unwrap();
+        }
+
         if let Some(python_version) = self.python_version.as_ref() {
             if !SEMVER_REGEX.is_match(python_version) {
                 return Err(format!("Invalid Python version: {}", python_version));
