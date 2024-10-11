@@ -6,20 +6,25 @@ requires-python = ">={{ python_version }}"
 dependencies = ["aqora-cli>={{ cli_version }}"]
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = [
+  "uv>=0.4.20",
+  "setuptools>=75",
+  "wheel>=0.44",
+]
+build-backend = "setuptools.build_meta"
 
-[tool.hatch.build.targets.sdist]
-include = ["use_case"]
-exclude = ["data", "template"]
+[tool.setuptools.packages.find]
+where = ["."]
+[tool.setuptools.package-data]
+use_case = ["*"]
 
 [tool.aqora]
 type = "use_case"
 data = "data"
 competition = "{{ competition }}"
 template = "template"
-generator = "use_case.run.generator"
-aggregator = "use_case.run.aggregate"
+generator = "use_case.use_case.generator"
+aggregator = "use_case.use_case.aggregate"
 
 [[tool.aqora.layers]]
 name = "solution"

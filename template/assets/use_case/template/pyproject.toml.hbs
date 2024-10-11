@@ -7,15 +7,21 @@ requires-python = ">={{ python_version }}"
 dependencies = []
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = [
+  "uv>=0.4.20",
+  "setuptools>=75",
+  "wheel>=0.44",
+]
+build-backend = "setuptools.build_meta"
 
-[tool.hatch.build.targets.sdist]
-include = ["submission"]
+[tool.setuptools.packages.find]
+where = ["."]
+[tool.setuptools.package-data]
+submission = ["*"]
 
 [tool.aqora]
 type = "submission"
 competition = "{{ competition }}"
 
 [tool.aqora.refs]
-solution = { path = "submission.notebook", notebook = true }
+solution = { path = "submission.solution", notebook = true }
