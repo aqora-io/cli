@@ -2,6 +2,10 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.5.2 - 2024-10-14
+
+- - -
+
 ## v0.5.1 - 2024-10-11
 #### Continuous Integration
 - add bin in release details - (a193d1b) - Angel Dijoux
