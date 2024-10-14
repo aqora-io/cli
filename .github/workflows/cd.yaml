@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   SENTRY_DSN: ${{ vars.SENTRY_DSN }}
@@ -32,17 +32,36 @@ jobs:
         with:
           target: ${{ matrix.target }}
           args: --release --out dist
-          sccache: "true"
           manylinux: auto
           docker-options: -e SENTRY_DSN
         env:
           # Workaround ring 0.17 build issue
           CFLAGS_aarch64_unknown_linux_gnu: "-D__ARM_ARCH=8"
-      - name: Upload wheels
-        uses: actions/upload-artifact@v3
+      - name: Publish to PyPI
+        uses: PyO3/maturin-action@v1
+        if: "startsWith(github.ref, 'refs/tags/')"
+        env:
+          MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         with:
-          name: wheels
-          path: dist
+          command: upload
+          args: --non-interactive --skip-existing dist/*
+      - name: Get version
+        uses: SebRollen/toml-action@v1.0.2
+        id: cargo_version
+        with:
+          file: "Cargo.toml"
+          field: "package.version"
+      - name: Build executable
+        run: |
+          cargo build --release
+          mv target/release/aqora target/release/aqora-v${{ steps.cargo_version.outputs.value }}-${{ runner.os }}-${{ matrix.target }}
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        # if: "startsWith(github.ref, 'refs/tags/')"
+        with:
+          # token: ${{ secrets.GITHUB_TOKEN }}
+          files: target/release/aqora-v*
+          tag_name: v${{ steps.cargo_version.outputs.value }}
 
   windows:
     runs-on: windows-latest
@@ -60,12 +79,31 @@ jobs:
         with:
           target: ${{ matrix.target }}
           args: --release --out dist
-          sccache: "true"
-      - name: Upload wheels
-        uses: actions/upload-artifact@v3
+      - name: Publish to PyPI
+        uses: PyO3/maturin-action@v1
+        if: "startsWith(github.ref, 'refs/tags/')"
+        env:
+          MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         with:
-          name: wheels
-          path: dist
+          command: upload
+          args: --non-interactive --skip-existing dist/*
+      - name: Get version
+        uses: SebRollen/toml-action@v1.0.2
+        id: cargo_version
+        with:
+          file: "Cargo.toml"
+          field: "package.version"
+      - name: Build executable
+        run: |
+          cargo build --release
+          mv target/release/aqora target/release/aqora-v${{ steps.cargo_version.outputs.value }}-${{ runner.os }}-${{ matrix.target }}
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        # if: "startsWith(github.ref, 'refs/tags/')"
+        with:
+          # token: ${{ secrets.GITHUB_TOKEN }}
+          files: target/release/aqora-v*
+          tag_name: v${{ steps.cargo_version.outputs.value }}
 
   macos:
     runs-on: macos-latest
@@ -82,12 +120,31 @@ jobs:
         with:
           target: ${{ matrix.target }}
           args: --release --out dist
-          sccache: "true"
-      - name: Upload wheels
-        uses: actions/upload-artifact@v3
+      - name: Publish to PyPI
+        uses: PyO3/maturin-action@v1
+        if: "startsWith(github.ref, 'refs/tags/')"
+        env:
+          MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         with:
-          name: wheels
-          path: dist
+          command: upload
+          args: --non-interactive --skip-existing dist/*
+      - name: Get version
+        uses: SebRollen/toml-action@v1.0.2
+        id: cargo_version
+        with:
+          file: "Cargo.toml"
+          field: "package.version"
+      - name: Build executable
+        run: |
+          cargo build --release
+          mv target/release/aqora target/release/aqora-v${{ steps.cargo_version.outputs.value }}-${{ runner.os }}-${{ matrix.target }}
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        # if: "startsWith(github.ref, 'refs/tags/')"
+        with:
+          # token: ${{ secrets.GITHUB_TOKEN }}
+          files: target/release/aqora-v*
+          tag_name: v${{ steps.cargo_version.outputs.value }}
 
   sdist:
     runs-on: ubuntu-latest
@@ -98,36 +155,14 @@ jobs:
         with:
           command: sdist
           args: --out dist
-      - name: Upload sdist
-        uses: actions/upload-artifact@v3
-        with:
-          name: wheels
-          path: dist
-
-  release:
-    name: Release
-    runs-on: ubuntu-latest
-    if: "startsWith(github.ref, 'refs/tags/')"
-    needs: [linux, windows, macos, sdist]
-    steps:
-      - uses: actions/download-artifact@v3
-        with:
-          name: wheels
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          files: |
-            dist/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish to PyPI
         uses: PyO3/maturin-action@v1
+        if: "startsWith(github.ref, 'refs/tags/')"
         env:
           MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         with:
           command: upload
-          args: --non-interactive --skip-existing *
+          args: --non-interactive --skip-existing dist/*
 
   docker:
     name: Build and Push Docker Image
@@ -135,7 +170,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    needs: release
+    if: "startsWith(github.ref, 'refs/tags/')"
     steps:
       - uses: actions/checkout@v3
       - name: Docker setup
