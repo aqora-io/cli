@@ -62,6 +62,9 @@ pub async fn use_case(args: UseCase, global: GlobalArgs) -> Result<()> {
                 ),
             )
         })?;
-    pb.finish_with_message(format!("Created use case at '{}'", dest.display()));
+    pb.finish_with_message(format!(
+        "Created use case in directory '{}'",
+        dest.display()
+    ));
     Ok(())
 }
