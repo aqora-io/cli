@@ -38,7 +38,11 @@ async fn is_vscode_available(pb: &ProgressBar) -> Result<()> {
 }
 
 async fn install_extensions(pb: &ProgressBar) -> Result<()> {
-    let extensions = vec!["ms-python.python", "ms-toolsai.jupyter"];
+    let extensions = vec![
+        "ms-python.python",
+        "ms-toolsai.jupyter",
+        "aqora-quantum.aqora",
+    ];
 
     pb.set_message("Checking installed VS Code extensions");
     let installed_extensions =
