@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.6.0 - 2024-10-17
+#### Features
+- aqora new (#90) - (420f622) - Julian Popescu
+
+- - -
+
 ## v0.5.2 - 2024-10-14
 
 - - -
