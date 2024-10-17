@@ -8,7 +8,7 @@ use indicatif::ProgressBar;
 use std::path::Path;
 use url::Url;
 
-pub async fn download_tar_gz(url: Url, dir: impl AsRef<Path>, pb: &ProgressBar) -> Result<()> {
+pub async fn download_archive(url: Url, dir: impl AsRef<Path>, pb: &ProgressBar) -> Result<()> {
     let _guard = TempProgressStyle::new(pb);
 
     tokio::fs::create_dir_all(&dir).await.map_err(|e| {

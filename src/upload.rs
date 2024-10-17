@@ -179,9 +179,10 @@ async fn multipart_upload(
     Ok(())
 }
 
+#[tracing::instrument(ret, err, skip(client, pb))]
 pub async fn upload_project_version_file(
     client: &GraphQLClient,
-    path: impl AsRef<Path>,
+    path: impl AsRef<Path> + std::fmt::Debug,
     id: &Id,
     content_type: Option<&str>,
     upload_url: Option<&Url>,
