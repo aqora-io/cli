@@ -1,0 +1,11 @@
+query UseCaseTemplateInfo($slug: String!) {
+  competitionBySlug(slug: $slug) {
+    id
+    title
+    useCase {
+      latest {
+        version
+      }
+    }
+  }
+}

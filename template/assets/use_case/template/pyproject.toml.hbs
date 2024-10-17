@@ -1,0 +1,27 @@
+[project]
+name = "submission"
+version = "0.1.0"
+requires-python = ">={{ python_version }}"
+
+# You can add dependencies with `aqora add`
+dependencies = []
+
+[build-system]
+requires = [
+  "uv>=0.4.20",
+  "setuptools>=75",
+  "wheel>=0.44",
+]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+[tool.setuptools.package-data]
+submission = ["*"]
+
+[tool.aqora]
+type = "submission"
+competition = "{{ competition }}"
+
+[tool.aqora.refs]
+solution = { path = "submission.solution", notebook = true }

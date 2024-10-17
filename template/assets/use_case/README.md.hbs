@@ -1,0 +1,40 @@
+## {{title}}
+
+If this is your first competition on Aqora, we highly recommend you follow the
+[H2 Groundstate Energy Tutorial](https://aqora.io/competitions/h2-groundstate-energy)
+to get familar with the platform and the CLI.
+
+### Downloading the template
+
+To download the template for this use case, you can run the following command in the terminal
+
+```bash
+aqora template {{competition}}
+```
+
+This will download the template into a folder called `{{competition}}`.
+
+You can then open the folder in Visual Studio Code by running the following command in the terminal
+
+```bash
+aqora lab -p {{competition}}
+```
+
+This should open the folder in Visual Studio Code. If you receive a 
+prompt, you can click on "Yes, I trust the authors".
+
+### Getting Started
+
+You can find a template notebook in `submission/solution.ipynb`.
+Fill in your solution. You can run the notebook locally to test your
+solution by running the following in the terminal
+
+```bash
+aqora test
+```
+
+And when you are ready to submit run
+
+```bash
+aqora upload
+```

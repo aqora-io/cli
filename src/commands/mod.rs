@@ -5,6 +5,7 @@ mod info;
 mod install;
 mod lab;
 mod login;
+mod new;
 mod python;
 mod remove;
 mod shell;
@@ -23,6 +24,7 @@ use info::{info, Info};
 use install::{install, Install};
 use lab::{lab, Lab};
 use login::{login, Login};
+use new::{new, New};
 use python::{python, Python};
 use remove::{remove, Remove};
 use shell::{shell, Shell};
@@ -48,6 +50,10 @@ pub struct Cli {
 #[derive(Subcommand, Debug, Serialize)]
 pub enum Commands {
     Install(Install),
+    New {
+        #[command(subcommand)]
+        args: New,
+    },
     Login(Login),
     Python(Python),
     Shell(Shell),
@@ -73,6 +79,7 @@ impl Cli {
         let run = async move {
             match self.commands {
                 Commands::Install(args) => install(args, global).await,
+                Commands::New { args } => new(args, global).await,
                 Commands::Login(args) => login(args, global).await,
                 Commands::Python(args) => python(args, global).await,
                 Commands::Shell(args) => shell(args, global).await,

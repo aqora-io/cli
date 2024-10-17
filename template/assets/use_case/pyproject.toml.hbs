@@ -1,0 +1,31 @@
+[project]
+name = "use-case"
+version = "0.1.0"
+requires-python = ">={{ python_version }}"
+
+dependencies = ["aqora-cli>={{ cli_version }}"]
+
+[build-system]
+requires = [
+  "uv>=0.4.20",
+  "setuptools>=75",
+  "wheel>=0.44",
+]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+[tool.setuptools.package-data]
+use_case = ["*"]
+
+[tool.aqora]
+type = "use_case"
+data = "data"
+competition = "{{ competition }}"
+template = "template"
+generator = "use_case.use_case.generator"
+aggregator = "use_case.use_case.aggregate"
+
+[[tool.aqora.layers]]
+name = "solution"
+transform = "$solution"
