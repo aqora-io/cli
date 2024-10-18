@@ -25,6 +25,47 @@ pub struct Credentials {
     pub expires_at: DateTime<Utc>,
 }
 
+impl Credentials {
+    pub async fn refresh(self, url: &Url) -> error::Result<Option<Self>> {
+        if (self.expires_at - Duration::try_seconds(EXPIRATION_PADDING_SEC).unwrap()) > Utc::now() {
+            return Ok(Some(self));
+        }
+
+        let client = reqwest::Client::new();
+        let issued = graphql_client::reqwest::post_graphql::<Oauth2RefreshMutation, _>(
+            &client,
+            graphql_url(url)?,
+            oauth2_refresh_mutation::Variables {
+                client_id: self.client_id.clone(),
+                refresh_token: self.refresh_token,
+            },
+        )
+        .await?
+        .data
+        .ok_or_else(|| {
+            error::system(
+                "GraphQL response missing data",
+                "This is a bug, please report it",
+            )
+        })?
+        .oauth2_refresh
+        .issued
+        .ok_or_else(|| {
+            error::system(
+                "GraphQL response missing issued",
+                "This is a bug, please report it",
+            )
+        })?;
+
+        Ok(Some(Credentials {
+            client_id: self.client_id,
+            access_token: issued.access_token,
+            refresh_token: issued.refresh_token,
+            expires_at: Utc::now() + Duration::try_seconds(issued.expires_in).unwrap(),
+        }))
+    }
+}
+
 #[derive(GraphQLQuery)]
 #[graphql(
     query_path = "src/graphql/oauth2_token.graphql",
@@ -155,55 +196,21 @@ where
 )]
 pub struct Oauth2RefreshMutation;
 
-pub async fn get_access_token(url: Url) -> Result<Option<String>> {
+pub async fn get_credentials(url: Url) -> Result<Option<Credentials>> {
     let credentials = with_locked_credentials(|file| {
         async move {
             let credentials = match file.credentials.get(&url).cloned() {
                 Some(credentials) => credentials,
                 None => return Ok(None),
             };
-            if (credentials.expires_at - Duration::try_seconds(EXPIRATION_PADDING_SEC).unwrap())
-                > Utc::now()
-            {
-                return Ok(Some(credentials));
-            }
-            let client = reqwest::Client::new();
-            let result = graphql_client::reqwest::post_graphql::<Oauth2RefreshMutation, _>(
-                &client,
-                graphql_url(&url)?,
-                oauth2_refresh_mutation::Variables {
-                    client_id: credentials.client_id.clone(),
-                    refresh_token: credentials.refresh_token,
-                },
-            )
-            .await?
-            .data
-            .ok_or_else(|| {
-                error::system(
-                    "GraphQL response missing data",
-                    "This is a bug, please report it",
-                )
-            })?
-            .oauth2_refresh;
-            let credentials = if let Some(issued) = result.issued {
-                let credentials = Credentials {
-                    client_id: credentials.client_id,
-                    access_token: issued.access_token,
-                    refresh_token: issued.refresh_token,
-                    expires_at: Utc::now() + Duration::try_seconds(issued.expires_in).unwrap(),
-                };
+            let credentials = credentials.refresh(&url).await?;
+            if let Some(credentials) = &credentials {
                 file.credentials.insert(url.clone(), credentials.clone());
-                credentials
-            } else {
-                return Err(error::system(
-                    "GraphQL response missing issued",
-                    "This is a bug, please report it",
-                ));
-            };
-            Ok(Some(credentials))
+            }
+            Ok(credentials)
         }
         .boxed()
     })
     .await?;
-    Ok(credentials.map(|credentials| credentials.access_token))
+    Ok(credentials)
 }
