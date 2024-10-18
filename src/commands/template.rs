@@ -3,7 +3,7 @@ use crate::{
         install::{install, Install},
         GlobalArgs,
     },
-    download::download_tar_gz,
+    download::download_archive,
     error::{self, Result},
     graphql_client::GraphQLClient,
 };
@@ -98,7 +98,7 @@ pub async fn template(args: Template, global: GlobalArgs) -> Result<()> {
         .download_url;
 
     pb.set_message("Downloading competition template...");
-    match download_tar_gz(download_url, &destination, &pb).await {
+    match download_archive(download_url, &destination, &pb).await {
         Ok(_) => pb.finish_with_message(format!(
             "Competition template downloaded to {}",
             destination.display()

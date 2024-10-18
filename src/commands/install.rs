@@ -1,7 +1,7 @@
 use crate::{
     commands::GlobalArgs,
     dirs::{project_config_dir, project_data_dir, project_use_case_toml_path, read_pyproject},
-    download::download_tar_gz,
+    download::download_archive,
     error::{self, Result},
     graphql_client::{custom_scalars::*, GraphQLClient},
     python::pip_install,
@@ -173,7 +173,7 @@ pub async fn install_submission(
             .clone();
 
         download_pb.set_message("Downloading use case data");
-        let download_fut = download_tar_gz(
+        let download_fut = download_archive(
             use_case_data_url,
             project_data_dir(&global.project, "data"),
             &download_pb,

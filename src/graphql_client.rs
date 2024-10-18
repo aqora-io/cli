@@ -1,7 +1,9 @@
-use crate::credentials::get_access_token;
-use crate::error::{self, Error, Result};
-use graphql_client::{reqwest::post_graphql, GraphQLQuery};
-use reqwest::header::{AUTHORIZATION, USER_AGENT};
+use crate::{
+    credentials::{get_credentials, Credentials},
+    error::{self, Error, Result},
+};
+use graphql_client::GraphQLQuery;
+use reqwest::header::{HeaderMap, AUTHORIZATION, USER_AGENT};
 use thiserror::Error;
 use url::Url;
 
@@ -15,8 +17,12 @@ pub enum GraphQLError {
     Request(#[from] reqwest::Error),
     #[error("GraphQL response contained errors: {0:?}")]
     Response(Vec<graphql_client::Error>),
+    #[error(transparent)]
+    InvalidHeaderValue(#[from] reqwest::header::InvalidHeaderValue),
     #[error("GraphQL response contained no data")]
     NoData,
+    #[error(transparent)]
+    Other(#[from] Error),
 }
 
 impl From<GraphQLError> for Error {
@@ -35,6 +41,10 @@ impl From<GraphQLError> for Error {
                 "Check your arguments and try again",
             ),
             GraphQLError::NoData => error::system("Invalid response received from server", ""),
+            GraphQLError::Other(other) => other,
+            GraphQLError::InvalidHeaderValue(_) => {
+                error::system("Invalid header value from client", "")
+            }
         }
     }
 }
@@ -43,6 +53,7 @@ impl From<GraphQLError> for Error {
 pub struct GraphQLClient {
     client: reqwest::Client,
     url: Url,
+    credentials: Option<Credentials>,
 }
 
 pub fn graphql_url(url: &Url) -> Result<Url> {
@@ -51,22 +62,15 @@ pub fn graphql_url(url: &Url) -> Result<Url> {
 
 impl GraphQLClient {
     pub async fn new(url: Url) -> Result<Self> {
-        let headers = if let Some(access_token) = get_access_token(url.clone()).await? {
-            [
-                (AUTHORIZATION, format!("Bearer {}", access_token).parse()?),
-                (USER_AGENT, "aqora".parse()?),
-            ]
-            .into_iter()
-            .collect()
-        } else {
-            Default::default()
-        };
+        let mut headers = HeaderMap::new();
+        headers.insert(USER_AGENT, "aqora".parse()?);
         let client = reqwest::Client::builder()
             .default_headers(headers)
             .build()?;
         Ok(Self {
             client,
             url: graphql_url(&url)?,
+            credentials: get_credentials(url.clone()).await?,
         })
     }
 
@@ -78,7 +82,7 @@ impl GraphQLClient {
         &self,
         variables: Q::Variables,
     ) -> Result<Q::ResponseData, GraphQLError> {
-        let response = post_graphql::<Q, _>(&self.client, self.url.clone(), variables).await?;
+        let response = self.post_graphql::<Q>(variables).await?;
         if let Some(data) = response.data {
             Ok(data)
         } else if let Some(errors) = response.errors {
@@ -86,5 +90,32 @@ impl GraphQLClient {
         } else {
             Err(GraphQLError::NoData)
         }
+    }
+
+    async fn post_graphql<Q: GraphQLQuery>(
+        &self,
+        variables: Q::Variables,
+    ) -> Result<graphql_client::Response<Q::ResponseData>, GraphQLError> {
+        let mut headers = HeaderMap::new();
+
+        if let Some(credentials) = &self.credentials {
+            if let Some(credentials) = credentials.clone().refresh(&self.url).await? {
+                headers.insert(
+                    AUTHORIZATION,
+                    format!("Bearer {}", credentials.access_token).parse()?,
+                );
+            }
+        }
+
+        let body = Q::build_query(variables);
+        let reqwest_response = self
+            .client
+            .post(self.url.clone())
+            .headers(headers)
+            .json(&body)
+            .send()
+            .await?;
+
+        Ok(reqwest_response.json().await?)
     }
 }
