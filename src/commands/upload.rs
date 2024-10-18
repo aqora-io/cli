@@ -496,6 +496,7 @@ pub async fn upload_use_case(
             competition_id: competition.id.to_node_id(),
             pyproject_toml,
             readme,
+            compression: update_use_case_mutation::ProjectVersionCompressor::ZSTANDARD,
         })
         .await?
         .create_use_case_version
@@ -898,6 +899,7 @@ Do you want to run the tests now?"#,
             pyproject_toml,
             readme,
             entity_id: entity_id.to_node_id(),
+            compression: update_submission_mutation::ProjectVersionCompressor::ZSTANDARD,
         })
         .await?
         .create_submission_version
