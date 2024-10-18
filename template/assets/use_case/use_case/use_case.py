@@ -7,9 +7,11 @@ Output = Any
 EvaluationResults = Dict[str, List[LayerEvaluation]]
 
 
-async def generator(config: PipelineConfig) -> AsyncIterator[Input]:
+async def generator(_: PipelineConfig) -> AsyncIterator[Input]:
     yield None
 
 
 async def aggregate(outputs: AsyncIterator[EvaluationResults]) -> float:
+    async for _ in outputs:
+        pass
     return 0
