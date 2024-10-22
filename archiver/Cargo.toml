@@ -1,0 +1,32 @@
+[package]
+name = "aqora-archiver"
+version = "0.6.0"
+edition = "2021"
+publish = false
+
+[features]
+default = []
+indicatif = ["dep:indicatif"]
+tokio = ["dep:tokio"]
+tracing = ["dep:tracing"]
+
+[dependencies]
+ignore = "0.4"
+flate2 = { version = "1.0", default-features = false, features = ["zlib-ng"] }
+tar = "0.4"
+tempfile = "3.9"
+thiserror = "1.0"
+zstd = { version = "0.13", default-features = false, features = ["zstdmt"] }
+
+indicatif = { version = "0.17", optional = true }
+tokio = { version = "^1", optional = true }
+tracing = { version = "0.1", optional = true }
+
+[dev-dependencies]
+base64 = "0.22"
+crc32fast = "1.4"
+pretty_assertions = "1.4.0"
+rand = "0.8"
+rayon = "1.10"
+tracing = { version = "0.1", optional = false }
+tracing-subscriber = { version = "0.3" }

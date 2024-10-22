@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["config", "runner", "template"]
+members = ["archiver", "config", "runner", "template"]
 
 [package]
 name = "aqora"
@@ -21,6 +21,7 @@ default = []
 extension-module = ["pyo3/extension-module", "pyo3/abi3-py39", "pyo3/abi3"]
 
 [dependencies]
+aqora-archiver = { path = "archiver", features = ["indicatif", "tokio", "tracing"] }
 aqora-config = { path = "config" }
 aqora-runner = { path = "runner", features = ["clap"] }
 aqora-template = { path = "template" }
@@ -33,7 +34,6 @@ clap = { version = "4.4", features = ["derive", "cargo", "color", "env"] }
 dialoguer = "0.11.0"
 dirs = "5.0"
 dunce = "1.0"
-flate2 = { version = "1.0", default-features = false, features = ["zlib-ng"] }
 fs4 = { version = "0.8", features = ["tokio"] }
 futures = "0.3"
 graphql_client = { version = "0.14", features = ["reqwest-rustls"] }
@@ -70,7 +70,6 @@ serde_json = { version = "1.0", features = [
   "arbitrary_precision",
 ] }
 supports-color = "3.0"
-tar = "0.4"
 tempfile = "3.9"
 thiserror = "1.0"
 tokio = { version = "1", features = [
@@ -93,7 +92,6 @@ tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 url = { version = "2.5", features = ["serde"] }
 uuid = "1.7"
 which = "6.0"
-zstd = { version = "0.13", default-features = false, features = ["zstdmt"] }
 
 [build-dependencies]
 toml_edit = "0.22"
@@ -101,6 +99,3 @@ sentry-types = "0.32"
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"
-sha2 = "0.10.8"
-crc32fast = "1.4"
-rayon = "1.10"
