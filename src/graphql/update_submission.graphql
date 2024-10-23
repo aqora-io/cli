@@ -3,10 +3,15 @@ mutation UpdateSubmissionMutation(
   $pyprojectToml: String!
   $readme: String
   $entityId: String!
+  $compression: ProjectVersionCompressor!
 ) {
   createSubmissionVersion(
     competitionId: $competition_id
-    input: { pyprojectToml: $pyprojectToml, readme: $readme }
+    input: {
+      pyprojectToml: $pyprojectToml
+      readme: $readme
+      compression: $compression
+    }
     asEntity: $entityId
   ) {
     node {
@@ -19,4 +24,3 @@ mutation UpdateSubmissionMutation(
     }
   }
 }
-

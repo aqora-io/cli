@@ -3,67 +3,153 @@ enum Action {
 	ADD_EVENT_COMPETITION
 	ADD_EVENT_MEMBER
 	AWARD_BADGE
+	CREATE_TAG
 	CREATE_COMMENT
 	CREATE_COMPETITION
 	CREATE_COMPETITION_RULE_AGREEMENT
 	CREATE_EVENT
+	CREATE_FORUM
 	CREATE_ORGANIZATION
+	CREATE_PROJECT_VERSION_APPROVAL
+	CREATE_SUBJECT_SUBSCRIPTION
 	CREATE_SUBMISSION_VERSION
 	CREATE_TOPIC
 	CREATE_USE_CASE_VERSION
 	DELETE_COMMENT
 	DELETE_COMPETITION
 	DELETE_EVENT
+	DELETE_FORUM
 	DELETE_ORGANIZATION
+	DELETE_PROJECT_VERSION_APPROVAL
+	DELETE_SUBJECT_SUBSCRIPTION
 	DELETE_TOPIC
 	DELETE_USER
+	DELETE_TAG
+	FETCH_WEBSITE_METADATA
+	PUBLISH_VOTE
 	READ_COMMENT
 	READ_COMPETITION
 	READ_COMPETITION_MEMBERSHIP
 	READ_COMPETITION_RULE
 	READ_COMPETITION_RULE_AGREEMENT
+	READ_SUBJECT_SUBSCRIPTION
 	READ_EVENT
 	READ_EVENT_COMPETITION
 	READ_EVENT_MEMBERSHIP
 	READ_PROJECT_VERSION
+	READ_PROJECT_VERSION_APPROVAL
 	READ_PROJECT_VERSION_EVALUATION
 	READ_PROJECT_VERSION_FILE
 	READ_TOPIC
 	READ_USER_EMAIL
+	READ_USER_NOTIFICATIONS
 	READ_USER_PERMISSIONS
 	REMOVE_COMPETITION_MEMBER
 	REMOVE_EVENT_COMPETITION
 	REMOVE_EVENT_MEMBER
 	REMOVE_ORGANIZATION_MEMBER
+	SET_COMPETITION_ORDERING_PRIORITY
 	TRANSFER_COMPETITION_OWNERSHIP
 	TRANSFER_EVENT_OWNERSHIP
 	TRANSFER_ORGANIZATION_OWNERSHIP
+	UPDATE_COMMENT
 	UPDATE_COMPETITION
 	UPDATE_EVENT
+	UPDATE_AGENDA
+	UPDATE_FORUM
 	UPDATE_ORGANIZATION
 	UPDATE_ORGANIZATION_MEMBERSHIP
 	UPDATE_PROJECT_VERSION
 	UPDATE_PROJECT_VERSION_FILE
 	UPDATE_TOPIC
 	UPDATE_USER
+	UPLOAD_FILES
+}
+
+enum ArchiveKind {
+	TAR
+	ZIP
 }
 
 enum Badge {
 	TEST
+	"""
+	Clinical Trial Optimization Competition 2024 by Ingenii First Prize
+	"""
+	INGENII_2024_FIRST
+	"""
+	Clinical Trial Optimization Competition 2024 by Ingenii Second Prize
+	"""
+	INGENII_2024_SECOND
+	"""
+	Clinical Trial Optimization Competition 2024 by Ingenii Third Prize
+	"""
+	INGENII_2024_THIRD
+	"""
+	Clinical Trial Optimization Competition 2024 by Ingenii Participant
+	"""
+	INGENII_2024_OTHERS
+	"""
+	Clinical Trial Optimization Competition 2024 by Ingenii Special Prize
+	"""
+	INGENII_2024_SPECIAL
+	"""
+	BIG Quantum Hackathon Sports Edition by QuantX & Aqora, May 2024, Paris (FR)
+	"""
+	PARIS_2024_WINNERS
+	"""
+	BIG Quantum Hackathon Sports Edition by QuantX & Aqora, May 2024, Paris (FR)
+	"""
+	PARIS_2024_HACKERS
+	"""
+	BIG Quantum Hackathon by the Chicago Quantum Exchange & QuantX, Sept 2023, Chicago (USA)
+	"""
+	CHICAGO_2023
+	"""
+	ICTP - Quantinuum Quantum Hackathon, April 2023, Trieste (IT)
+	"""
+	TRIESTE_2023
+	"""
+	BIG QC-AI-HPC Hackathon by QuantX, March 2023, Paris (FR)
+	"""
+	PARIS_2023
+	"""
+	Quantum Hackathon by QuantX, October 2022, Grenoble (FR)
+	"""
+	GRENOBLE_2022
+	"""
+	Quantum Hackathon by Québec Quantique & QuantX, June 2022, Montreal (CAN)
+	"""
+	MONTREAL_2022
+	"""
+	BIG Quantum Hackathon by QuantX, October 2021, Paris (FR)
+	"""
+	BIG_PARIS_2021
+	"""
+	Quantum hackathon by QuantX, March 2021, Paris (FR)
+	"""
+	PARIS_2021
+	"""
+	Badge awarded upon first submission
+	"""
+	QUANTUM_PIONEER
 	UNKNOWN
 }
 
 
-type Comment implements Node {
-	content: String!
+type Comment implements Votable & Node {
+	votes: Int!
 	createdAt: DateTime!
+	edited: Boolean!
 	id: ID!
+	content: String!
 	author: User!
 	topic: Topic!
 	parent: Comment
 	numChildren: Int!
-	children(after: String, before: String, first: Int, last: Int): CommentConnection!
-	viewerCan(action: Action!, asEntity: ID): Boolean!
+	voted: EntityVote
+	children(after: String, before: String, first: Int, last: Int, order: VotableOrder): CommentConnection!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 }
 
 type CommentConnection {
@@ -89,32 +175,36 @@ type CommentEdge {
 	The item at the end of the edge
 	"""
 	node: Comment!
+	hotness: Float!
 	"""
 	A cursor for use in pagination
 	"""
 	cursor: String!
 }
 
-type Competition implements Node {
+type Competition implements ForumOwner & Node {
 	slug: String!
 	title: String!
 	shortDescription: String!
-	description: String
 	createdAt: DateTime!
 	isPrivate: Boolean!
+	requiresApproval: Boolean!
 	id: ID!
-	viewerCan(action: Action!, asEntity: ID): Boolean!
+	description: String
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	host: Entity!
 	useCase: UseCase!
 	latestRule: CompetitionRule!
 	rules(after: String, before: String, first: Int, last: Int): CompetitionRuleConnection!
-	entityRuleAgreements(after: String, before: String, first: Int, last: Int, entity: ID): CompetitionRuleAgreementConnection!
+	entityRuleAgreements(after: String, before: String, first: Int, last: Int, entity: UsernameOrID): CompetitionRuleAgreementConnection!
 	banner: Url
 	thumbnail: Url
 	leaderboard(after: String, before: String, first: Int, last: Int): ProjectVersionEvaluationConnection!
-	submissions(after: String, before: String, first: Int, last: Int, entityId: ID): SubmissionConnection!
-	topics(after: String, before: String, first: Int, last: Int): TopicConnection!
+	submissions(after: String, before: String, first: Int, last: Int, entityId: ID, needsApproval: Boolean): SubmissionConnection!
+	submission(entity: UsernameOrID): Submission
+	forum: Forum!
 	members(after: String, before: String, first: Int, last: Int): CompetitionMembershipConnection!
+	tags(after: String, before: String, first: Int, last: Int): TagConnection!
 }
 
 type CompetitionConnection {
@@ -151,7 +241,7 @@ type CompetitionMembership implements Node {
 	id: ID!
 	entity: Entity!
 	competition: Competition!
-	viewerCan(action: Action!, asEntity: ID): Boolean!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 }
 
 type CompetitionMembershipConnection {
@@ -193,7 +283,7 @@ type CompetitionRule implements Node {
 	createdAt: DateTime!
 	id: ID!
 	competition: Competition!
-	entityAgreement(entity: ID): CompetitionRuleAgreement
+	entityAgreement(entity: UsernameOrID): CompetitionRuleAgreement
 }
 
 type CompetitionRuleAgreement implements Node {
@@ -273,6 +363,8 @@ input CreateCompetitionInput {
 	banner: Upload
 	thumbnail: Upload
 	isPrivate: Boolean!
+	requiresApproval: Boolean
+	tagIds: [ID]
 }
 
 input CreateEventInput {
@@ -283,6 +375,16 @@ input CreateEventInput {
 	banner: Upload
 	thumbnail: Upload
 	isPrivate: Boolean!
+}
+
+input CreateForumInput {
+	slug: String!
+	title: String!
+	shortDescription: String!
+	description: String
+	guidelines: String
+	icon: Upload
+	orderingPriority: Int
 }
 
 type CreateMultipartUploadResponse {
@@ -305,8 +407,13 @@ input CreatePasswordResetInput {
 	usernameOrEmail: String!
 }
 
+input CreateTagInput {
+	name: String!
+}
+
 input CreateTopicInput {
 	title: String!
+	url: Url
 	description: String
 }
 
@@ -316,6 +423,12 @@ Implement the DateTime<FixedOffset> scalar
 The input/output is a string in RFC3339 format.
 """
 scalar DateTime
+
+type DeletedComment {
+	topicId: ID!
+	parentId: ID
+	commentId: ID!
+}
 
 interface Entity {
 	id: ID!
@@ -330,9 +443,11 @@ interface Entity {
 	website: String
 	bio: String
 	createdAt: DateTime!
-	viewerCan(action: Action!, asEntity: ID): Boolean!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID): SubmissionConnection!
 	badges(after: String, before: String, first: Int, last: Int): EntityBadgeConnection!
+	subjectSubscriptions(kinds: [SubjectKind!], after: String, before: String, first: Int, last: Int): SubjectSubscriptionConnection!
+	projectVersionApprovals(projectVersionId: UUID, after: String, before: String, first: Int, last: Int): ProjectVersionApprovalConnection!
 }
 
 type EntityBadge implements Node {
@@ -404,16 +519,24 @@ enum EntityKind {
 	ORGANIZATION
 }
 
-type Event implements Node {
+type EntityVote {
+	score: Int!
+	votedAt: DateTime!
+	subject: VotableEdge!
+}
+
+type Event implements ForumOwner & Node {
 	slug: String!
 	title: String!
 	shortDescription: String!
-	description: String
 	createdAt: DateTime!
 	isPrivate: Boolean!
 	id: ID!
-	viewerCan(action: Action!, asEntity: ID): Boolean!
+	description: String
+	agenda: JSON
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	host: Entity!
+	forum: Forum!
 	banner: Url
 	thumbnail: Url
 	members(after: String, before: String, first: Int, last: Int, userIsOrgMember: ID): EventMembershipConnection!
@@ -424,7 +547,7 @@ type EventCompetition implements Node {
 	id: ID!
 	competition: Competition!
 	event: Event!
-	viewerCan(action: Action!, asEntity: ID): Boolean!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 }
 
 type EventCompetitionConnection {
@@ -490,7 +613,7 @@ type EventMembership implements Node {
 	id: ID!
 	entity: Entity!
 	event: Event!
-	viewerCan(action: Action!, asEntity: ID): Boolean!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 }
 
 type EventMembershipConnection {
@@ -528,74 +651,158 @@ enum EventMembershipKind {
 }
 
 type FileBrowser {
-	"""
-	List direct descendants of a directory.
-	Each item in [`directory`] is a part of the path to be listed.
-	"""
-	readDir(directory: [String!]!): [FileBrowserEntry!]!
-	"""
-	Read contents of a file.
-	Each item in [`path`] is a part of the path to be read.
-	"""
-	readFile(path: [String!]!): FileBrowserResult!
+	readDir(path: String, first: Int, after: String): FileBrowserEntryConnection!
+	readMeta(path: String): FileBrowserEntry
 }
 
-type FileBrowserEntry {
-	parents: [String!]!
+type FileBrowserDirectoryEntry implements FileBrowserEntry {
 	name: String!
-	fileType: FileBrowserEntryType!
-	mimeType: String!
-	mode: Int!
-	size: Int!
+	kind: FileBrowserEntryKind!
 }
 
-enum FileBrowserEntryType {
-	REGULAR
+interface FileBrowserEntry {
+	name: String!
+	kind: FileBrowserEntryKind!
+}
+
+type FileBrowserEntryConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [FileBrowserEntryEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [FileBrowserEntry!]!
+}
+
+"""
+An edge in a connection.
+"""
+type FileBrowserEntryEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: FileBrowserEntry!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+enum FileBrowserEntryKind {
+	FILE
 	DIRECTORY
-	UNKNOWN
 }
 
-interface FileBrowserResult {
-	entry: FileBrowserEntry!
-	contents: String!
-	encoding: String!
+type FileBrowserFileEntry implements FileBrowserEntry {
+	name: String!
+	contentType: String!
+	mode: Int!
+	contentLength: Int!
+	kind: FileBrowserEntryKind!
+	downloadUrl: Url!
 }
 
-type FileBrowserResultAsBinary implements FileBrowserResult {
-	"""
-	Metadata of the file that has been read.
-	"""
-	entry: FileBrowserEntry!
-	"""
-	Contents of the file that has been read.
-	"""
-	contents: String!
-	encoding: String!
+type FinishUploadFile {
+	downloadUrl: Url!
 }
 
-type FileBrowserResultAsText implements FileBrowserResult {
-	"""
-	Metadata of the file that has been read.
-	"""
-	entry: FileBrowserEntry!
-	"""
-	Contents of the file that has been read.
-	"""
-	contents: String!
-	encoding: String!
-}
-
-type FileBrowserResultTooLarge implements FileBrowserResult {
-	"""
-	Metadata of the file that has been read.
-	"""
-	entry: FileBrowserEntry!
-	contents: String!
-	encoding: String!
+input FinishUploadFileInput {
+	key: String!
 }
 
 
+type Forum implements ForumOwner & Subscribable & Node {
+	ownerKind: ForumOwnerKind!
+	slug: String!
+	title: String!
+	shortDescription: String!
+	guidelines: String
+	orderingPriority: Int!
+	createdAt: DateTime!
+	id: ID!
+	owner: ForumOwner!
+	forum: Forum!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	icon: Url
+	topics(after: String, before: String, first: Int, last: Int, order: VotableOrder): TopicConnection!
+	entitySubscription(entity: UsernameOrID): SubjectSubscription
+}
 
+type ForumConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [ForumEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Forum!]!
+}
+
+"""
+An edge in a connection.
+"""
+type ForumEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Forum!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+interface ForumOwner {
+	id: ID!
+	slug: String!
+	forum: Forum!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+}
+
+enum ForumOwnerKind {
+	TOP_LEVEL
+	COMPETITION
+	EVENT
+}
+
+type ForumSubscription implements SubjectSubscription & Node {
+	createdAt: DateTime!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	id: ID!
+	entity: Entity!
+	kind: SubjectKind!
+	forum: Forum!
+	subject: Subscribable!
+}
+
+
+type InitUploadFile {
+	key: String!
+	uploadUrl: Url!
+}
+
+input InitUploadFileInput {
+	filename: String!
+	contentType: String!
+	contentLength: Int!
+}
+
+
+"""
+A scalar that can represent any JSON value.
+"""
+scalar JSON
 
 input LoginUserInput {
 	usernameOrEmail: String!
@@ -613,14 +820,16 @@ type Mutation {
 	createCompetition(input: CreateCompetitionInput!): CompetitionEdge!
 	updateCompetition(id: ID!, input: UpdateCompetitionInput!): CompetitionEdge!
 	deleteCompetition(id: ID!): ID!
-	createSubmissionVersion(competitionId: ID!, input: UpdateSubmissionInput!): ProjectVersionEdge!
+	setCompetitionOrderingPriority(id: ID!, priority: Int!): CompetitionEdge!
+	createSubmissionVersion(competitionId: ID!, input: UpdateSubmissionInput!, asEntity: UsernameOrID): ProjectVersionEdge!
 	validateSubmissionVersion(projectVersionId: ID!): ProjectVersionEdge!
-	createTopicForCompetition(competitionId: ID!, input: CreateTopicInput!): TopicEdge!
+	createTopic(forumId: ID!, input: CreateTopicInput!): TopicEdge!
 	updateTopic(id: ID!, input: UpdateTopicInput!): Topic!
 	deleteTopic(id: ID!): ID!
 	createCommentForTopic(topicId: ID!, input: CreateCommentInput!): CommentEdge!
 	createCommentForComment(commentId: ID!, input: CreateCommentInput!): CommentEdge!
 	deleteComment(id: ID!): ID!
+	updateComment(id: ID!, input: UpdateCommentInput!): CommentEdge!
 	createOrganization(input: CreateOrganizationInput!): OrganizationEdge!
 	deleteOrganization(id: ID!): ID!
 	updateOrganization(id: ID!, input: UpdateOrganizationInput!): OrganizationEdge!
@@ -634,13 +843,17 @@ type Mutation {
 	validateUseCaseVersion(projectVersionId: ID!): ProjectVersionEdge!
 	awardBadge(entityId: ID!, badge: Badge!): EntityBadgeEdge!
 	withdrawBadge(id: ID!): ID!
-	agreeToCompetitionRule(competition: ID!, asEntity: ID): CompetitionRuleAgreement!
+	agreeToCompetitionRule(competition: ID!, asEntity: UsernameOrID): CompetitionRuleAgreement!
 	addCompetitionMember(competitionId: ID!, entityId: ID!): CompetitionMembershipEdge!
 	removeCompetitionMember(id: ID!): ID!
 	transferCompetitionOwnership(competitionId: ID!, toEntityId: ID!): [CompetitionMembershipEdge!]!
+	setUserNotificationSubscription(notification: NotificationKind!, subscribe: Boolean!): UserEdge!
+	unsubscribeFromAllNotifications: UserEdge!
+	unsubscribeNotificationForToken(token: String!): NotificationKind
 	createEvent(input: CreateEventInput!): EventEdge!
 	updateEvent(id: ID!, input: UpdateEventInput!): EventEdge!
 	deleteEvent(id: ID!): ID!
+	updateEventAgenda(input: UpdateAgendaInput!, eventId: ID!): EventEdge!
 	addEventMember(eventId: ID!, entityId: ID!): EventMembershipEdge!
 	removeEventMember(id: ID!): ID!
 	transferEventOwnership(eventId: ID!, toEntityId: ID!): [EventMembershipEdge!]!
@@ -648,10 +861,33 @@ type Mutation {
 	removeEventCompetition(id: ID!): ID!
 	createProjectVersionFileMultipartUpload(id: ID!, chunks: [Int!]!, contentType: String): CreateMultipartUploadResponse!
 	completeProjectVersionFileMultipartUpload(id: ID!, uploadId: String!, eTags: [String!]!): ProjectVersionFile!
+	createTag(input: CreateTagInput!, entityId: ID!): TagEdge!
+	deleteTag(tagId: ID!): ID!
+	initUploadFile(input: InitUploadFileInput!): InitUploadFile!
+	finishUploadFile(input: FinishUploadFileInput!): FinishUploadFile!
+	publishVote(id: ID!, kind: VoteKind!): VotableEdge!
+	resetVote(id: ID!): VotableEdge!
+	createForum(input: CreateForumInput!): ForumEdge!
+	updateForum(id: ID!, input: UpdateForumInput!): ForumEdge!
+	deleteForum(id: ID!): ID!
+	subscribeToSubject(subject: ID!, asEntity: UsernameOrID): SubjectSubscriptionEdge!
+	unsubscribeFromSubject(subscription: ID!): ID!
+	createProjectVersionApproval(projectVersionId: ID!): ProjectVersionApprovalEdge!
+	deleteProjectVersionApproval(projectVersionApprovalId: ID!): ID!
+	fetchWebsiteMetadata(url: Url!): WebsiteMetadata!
 }
 
 interface Node {
 	id: ID!
+}
+
+enum NotificationKind {
+	AWARD_BADGE
+	CREATE_SUBMISSION
+	CREATE_TOPIC
+	REPLY_TOPIC
+	CONTENT_MENTIONED
+	SYSTEM
 }
 
 input Oauth2AuthorizeInput {
@@ -705,9 +941,11 @@ type Organization implements Entity & Node {
 	imageThumbnail: Url
 	users(after: String, before: String, first: Int, last: Int): OrganizationMembershipConnection!
 	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID): SubmissionConnection!
-	viewerCan(action: Action!, asEntity: ID): Boolean!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	badges(after: String, before: String, first: Int, last: Int): EntityBadgeConnection!
-	userMembership(user: ID): OrganizationMembership
+	userMembership(user: UsernameOrID): OrganizationMembership
+	subjectSubscriptions(kinds: [SubjectKind!], after: String, before: String, first: Int, last: Int): SubjectSubscriptionConnection!
+	projectVersionApprovals(projectVersionId: UUID, after: String, before: String, first: Int, last: Int): ProjectVersionApprovalConnection!
 }
 
 """
@@ -729,7 +967,7 @@ type OrganizationMembership implements Node {
 	id: ID!
 	user: User!
 	organization: Organization!
-	viewerCan(action: Action!, asEntity: ID): Boolean!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 }
 
 type OrganizationMembershipConnection {
@@ -793,14 +1031,17 @@ type PageInfo {
 input Permission {
 	to: Action!
 	on: ID
-	actingAs: ID
+	actingAs: UsernameOrID
 }
 
 interface Project {
 	id: ID!
 	competition: Competition!
 	name: String!
-	viewerCan(action: Action!, asEntity: ID): Boolean!
+	latest: ProjectVersion
+	version(version: Semver): ProjectVersion
+	versions(after: String, before: String, first: Int, last: Int): ProjectVersionConnection!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 }
 
 type ProjectVersion implements Node {
@@ -812,11 +1053,72 @@ type ProjectVersion implements Node {
 	validatedAt: DateTime
 	createdAt: DateTime!
 	id: ID!
-	viewerCan(action: Action!, asEntity: ID): Boolean!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	entity: Entity!
 	project: Project!
 	files: [ProjectVersionFile!]!
+	fileByKind(kind: ProjectVersionFileKind!): ProjectVersionFile
 	evaluation: ProjectVersionEvaluation
+	approval(entity: UsernameOrID): ProjectVersionApproval
+	approvals(after: String, before: String, first: Int, last: Int): ProjectVersionApprovalConnection!
+	status: ProjectVersionStatus!
+}
+
+type ProjectVersionApproval implements Node {
+	createdAt: DateTime!
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	projectVersion: ProjectVersion!
+	entity: Entity!
+}
+
+type ProjectVersionApprovalConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [ProjectVersionApprovalEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [ProjectVersionApproval!]!
+}
+
+"""
+An edge in a connection.
+"""
+type ProjectVersionApprovalEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: ProjectVersionApproval!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+enum ProjectVersionCompressor {
+	GZIP
+	ZSTANDARD
+}
+
+type ProjectVersionConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [ProjectVersionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [ProjectVersion!]!
 }
 
 """
@@ -841,7 +1143,7 @@ type ProjectVersionEvaluation implements Node {
 	finalizedAt: DateTime
 	createdAt: DateTime!
 	id: ID!
-	viewerCan(action: Action!, asEntity: ID): Boolean!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	projectVersion: ProjectVersion!
 	submission: Submission!
 }
@@ -878,9 +1180,10 @@ type ProjectVersionEvaluationEdge {
 type ProjectVersionFile implements Node {
 	kind: ProjectVersionFileKind!
 	id: ID!
-	viewerCan(action: Action!, asEntity: ID): Boolean!
+	extension: String
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	projectVersion: ProjectVersion!
-	downloadUrl: Url!
+	downloadUrl(archKind: ArchiveKind! = TAR): Url!
 	uploadUrl: Url
 	browse: FileBrowser!
 }
@@ -892,6 +1195,14 @@ enum ProjectVersionFileKind {
 	SUBMISSION_EVALUATION
 }
 
+enum ProjectVersionStatus {
+	AWAITING_VALIDATION
+	AWAITING_EVALUATION
+	AWAITING_APPROVAL
+	ERROR
+	OK
+}
+
 type Query {
 	node(id: ID!): Node!
 	viewer: User!
@@ -901,6 +1212,10 @@ type Query {
 	entityByUsername(username: String!): Entity
 	events(after: String, before: String, first: Int, last: Int, search: String): EventConnection!
 	eventBySlug(slug: String!): Event
+	version: Version!
+	tags(after: String, before: String, first: Int, last: Int): TagConnection!
+	forums(after: String, before: String, first: Int, last: Int, search: String): ForumConnection!
+	forumBySlug(slug: String!): Forum
 }
 
 input ResetPasswordInput {
@@ -924,10 +1239,56 @@ input SignupUserInput {
 }
 
 
+enum SubjectKind {
+	TOPIC
+	FORUM
+}
+
+interface SubjectSubscription {
+	id: ID!
+	entity: Entity!
+	kind: SubjectKind!
+	subject: Subscribable!
+	createdAt: DateTime!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+}
+
+type SubjectSubscriptionConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [SubjectSubscriptionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [SubjectSubscription!]!
+}
+
+"""
+An edge in a connection.
+"""
+type SubjectSubscriptionEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: SubjectSubscription!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
 type Submission implements Project & Node {
 	id: ID!
-	viewerCan(action: Action!, asEntity: ID): Boolean!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	latest: ProjectVersion
+	version(version: Semver): ProjectVersion
+	versions(after: String, before: String, first: Int, last: Int): ProjectVersionConnection!
+	maxEvaluation: ProjectVersionEvaluation
 	competition: Competition!
 	entity: Entity!
 	name: String!
@@ -962,16 +1323,68 @@ type SubmissionEdge {
 	cursor: String!
 }
 
-type Topic implements Node {
+interface Subscribable {
+	id: ID!
+	entitySubscription(entity: UsernameOrID): SubjectSubscription
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+}
+
+type Subscription {
+	newComments(topicId: ID): CommentEdge!
+	deletedComments(topicId: ID): DeletedComment!
+	updatedComments(topicId: ID): CommentEdge!
+	projectVersionStatusUpdate(competitionId: ID, entityId: ID, projectId: ID, projectVersionId: ID): ProjectVersion!
+}
+
+type Tag implements Node {
+	name: String!
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+}
+
+type TagConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [TagEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Tag!]!
+}
+
+"""
+An edge in a connection.
+"""
+type TagEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Tag!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+type Topic implements Votable & Subscribable & Node {
 	title: String!
-	description: String
+	url: String
+	votes: Int!
 	createdAt: DateTime!
 	id: ID!
-	viewerCan(action: Action!, asEntity: ID): Boolean!
+	description: String
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	author: Entity!
-	competition: Competition
-	numComments: Int!
-	comments(after: String, before: String, first: Int, last: Int): CommentConnection!
+	forum: Forum!
+	commentCount: Int!
+	voted: EntityVote
+	comments(after: String, before: String, first: Int, last: Int, order: VotableOrder): CommentConnection!
+	entitySubscription(entity: UsernameOrID): SubjectSubscription
 }
 
 type TopicConnection {
@@ -997,10 +1410,41 @@ type TopicEdge {
 	The item at the end of the edge
 	"""
 	node: Topic!
+	hotness: Float!
 	"""
 	A cursor for use in pagination
 	"""
 	cursor: String!
+}
+
+type TopicSubscription implements SubjectSubscription & Node {
+	createdAt: DateTime!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	id: ID!
+	entity: Entity!
+	kind: SubjectKind!
+	topic: Topic!
+	subject: Subscribable!
+}
+
+"""
+A UUID is a unique 128-bit number, stored as 16 octets. UUIDs are parsed as
+Strings within GraphQL. UUIDs are used to assign unique identifiers to
+entities without requiring a central allocating authority.
+
+# References
+
+* [Wikipedia: Universally Unique Identifier](http://en.wikipedia.org/wiki/Universally_unique_identifier)
+* [RFC4122: A Universally Unique IDentifier (UUID) URN Namespace](http://tools.ietf.org/html/rfc4122)
+"""
+scalar UUID
+
+input UpdateAgendaInput {
+	agenda: JSON
+}
+
+input UpdateCommentInput {
+	content: String!
 }
 
 input UpdateCompetitionInput {
@@ -1012,6 +1456,8 @@ input UpdateCompetitionInput {
 	thumbnail: Upload
 	rules: String
 	isPrivate: Boolean
+	requiresApproval: Boolean
+	tagIds: [ID]
 }
 
 input UpdateEventInput {
@@ -1022,6 +1468,16 @@ input UpdateEventInput {
 	banner: Upload
 	thumbnail: Upload
 	isPrivate: Boolean
+}
+
+input UpdateForumInput {
+	slug: String
+	title: String
+	shortDescription: String
+	description: String
+	guidelines: String
+	icon: Upload
+	orderingPriority: Int
 }
 
 input UpdateOrganizationInput {
@@ -1038,6 +1494,7 @@ input UpdateOrganizationInput {
 input UpdateSubmissionInput {
 	pyprojectToml: String!
 	readme: String
+	compression: ProjectVersionCompressor
 }
 
 input UpdateTopicInput {
@@ -1048,6 +1505,7 @@ input UpdateTopicInput {
 input UpdateUseCaseInput {
 	pyprojectToml: String!
 	readme: String
+	compression: ProjectVersionCompressor
 }
 
 input UpdateUserInput {
@@ -1075,8 +1533,10 @@ scalar Url
 
 type UseCase implements Project & Node {
 	id: ID!
-	viewerCan(action: Action!, asEntity: ID): Boolean!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	latest: ProjectVersion
+	version(version: Semver): ProjectVersion
+	versions(after: String, before: String, first: Int, last: Int): ProjectVersionConnection!
 	competition: Competition!
 	name: String!
 }
@@ -1100,14 +1560,18 @@ type User implements Entity & Node {
 	"""
 	can this user perform the action on the given resource
 	"""
-	can(action: Action!, on: ID, actingAs: ID): Boolean!
+	can(action: Action!, on: ID, actingAs: UsernameOrID): Boolean!
 	organizations(after: String, before: String, first: Int, last: Int): OrganizationMembershipConnection!
 	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID): SubmissionConnection!
-	topics(after: String, before: String, first: Int, last: Int): TopicConnection!
-	comments(after: String, before: String, first: Int, last: Int): CommentConnection!
-	viewerCan(action: Action!, asEntity: ID): Boolean!
+	topics(after: String, before: String, first: Int, last: Int, order: VotableOrder): TopicConnection!
+	comments(after: String, before: String, first: Int, last: Int, order: VotableOrder): CommentConnection!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	badges(after: String, before: String, first: Int, last: Int): EntityBadgeConnection!
 	entities(permission: Permission, search: String, after: String, before: String, first: Int, last: Int): EntityConnection!
+	notifications: UserNotifications!
+	subjectSubscriptions(kinds: [SubjectKind!], after: String, before: String, first: Int, last: Int): SubjectSubscriptionConnection!
+	projectVersionApprovals(projectVersionId: UUID, after: String, before: String, first: Int, last: Int): ProjectVersionApprovalConnection!
+	karma: Int!
 }
 
 """
@@ -1124,11 +1588,62 @@ type UserEdge {
 	cursor: String!
 }
 
+type UserNotifications {
+	enabled: [NotificationKind!]!
+	disabled: [NotificationKind!]!
+}
+
+scalar UsernameOrID
+
+type Version {
+	current: String!
+	gitCommit: String
+}
+
+interface Votable {
+	id: ID!
+	votes: Int!
+	voted: EntityVote
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+}
+
+"""
+An edge in a connection.
+"""
+type VotableEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Votable!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+enum VotableOrder {
+	OLDEST
+	NEWEST
+	HOT
+}
+
+enum VoteKind {
+	UPVOTE
+	DOWNVOTE
+}
+
+type WebsiteMetadata {
+	title: String
+	description: String
+}
+
 directive @include(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
 directive @skip(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+directive @specifiedBy(url: String!) on SCALAR
 schema {
 	query: Query
 	mutation: Mutation
+	subscription: Subscription
 }
 
 directive @ifAllowed on FIELD
