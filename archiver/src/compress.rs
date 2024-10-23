@@ -124,7 +124,20 @@ impl Archiver {
                 }
             }
 
-            Some(ArchiveKind::Zip) => todo!(),
+            Some(ArchiveKind::Zip) => {
+                let output_file = File::create(&self.output)?;
+                let mut zip = zip::write::ZipWriter::new(output_file);
+                let zip_opts = zip::write::SimpleFileOptions::default();
+                for input_path in self.input_paths()? {
+                    let arch_name = input_path
+                        .strip_prefix(&self.input)
+                        .expect("not a prefix")
+                        .to_string_lossy();
+                    zip.start_file(arch_name, zip_opts)?;
+                    io::copy(&mut File::open(input_path)?, &mut zip)?;
+                }
+                Ok(zip.finish()?.flush()?)
+            }
         }
     }
 

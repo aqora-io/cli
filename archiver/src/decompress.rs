@@ -3,8 +3,8 @@ use crate::{
     utils::{ArchiveKind, Compression, PathExt},
 };
 use std::{
-    fs::File,
-    io::{self, Read},
+    fs::{self, File},
+    io::{self, Read, Seek},
     path::PathBuf,
 };
 
@@ -56,8 +56,25 @@ impl Unarchiver {
         }
     }
 
+    #[cfg(feature = "indicatif")]
+    fn create_readseeker(&self) -> io::Result<Box<dyn ReadSeek>> {
+        if let Some(pb) = &self.progress_bar {
+            Ok(Box::new(crate::indicatif::IndicatifReader::for_file(
+                File::open(&self.input)?,
+                pb.clone(),
+            )?))
+        } else {
+            Ok(Box::new(File::open(&self.input)?))
+        }
+    }
+
     #[cfg(not(feature = "indicatif"))]
     fn create_reader(&self) -> io::Result<Box<dyn Read>> {
+        Ok(Box::new(File::open(&self.input)?))
+    }
+
+    #[cfg(not(feature = "indicatif"))]
+    fn create_readseeker(&self) -> io::Result<Box<dyn ReadSeek>> {
         Ok(Box::new(File::open(&self.input)?))
     }
 
@@ -66,7 +83,7 @@ impl Unarchiver {
             None => Err(Error::UnsupportedCompression),
 
             Some(ArchiveKind::Tar(compression)) => {
-                let input_file: Box<dyn std::io::Read> = match compression {
+                let input_file: Box<dyn Read> = match compression {
                     None => self.create_reader()?,
                     Some(Compression::Gzip) => {
                         Box::new(flate2::read::MultiGzDecoder::new(self.create_reader()?))
@@ -89,7 +106,17 @@ impl Unarchiver {
                 Ok(())
             }
 
-            Some(ArchiveKind::Zip) => todo!(),
+            Some(ArchiveKind::Zip) => {
+                let mut zip = zip::read::ZipArchive::new(self.create_readseeker()?)?;
+                for i in 0..zip.len() {
+                    let mut src_file = zip.by_index(i)?;
+                    let dst_path = self.output.join(src_file.mangled_name());
+                    fs::create_dir_all(dst_path.parent().expect("dest path had no parent"))?;
+                    let mut dst_file = File::create(dst_path)?;
+                    io::copy(&mut src_file, &mut dst_file)?;
+                }
+                Ok(())
+            }
         }
     }
 
@@ -98,3 +125,6 @@ impl Unarchiver {
         runtime.spawn_blocking(move || self.synchronously()).await?
     }
 }
+
+pub trait ReadSeek: Read + Seek {}
+impl<T: Read + Seek> ReadSeek for T {}

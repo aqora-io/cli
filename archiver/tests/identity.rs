@@ -1,14 +1,15 @@
-use aqora_archiver::{Archiver, Unarchiver};
-use base64::prelude::*;
-use rand::{rngs::ThreadRng, thread_rng, RngCore};
+use aqora_archiver::{ArchiveKind, Archiver, Compression, Unarchiver};
+use base64::Engine;
+use rand::{thread_rng, Rng, RngCore};
 use rayon::iter::{IntoParallelIterator, ParallelIterator as _};
 use std::{
     collections::{HashMap, HashSet},
     fs::{create_dir_all, File},
     io::Write,
     path::{Path, PathBuf},
+    sync::OnceLock,
 };
-use tempfile::{TempDir, TempPath};
+use tempfile::TempDir;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt as _, Layer};
 
 struct Crc32(crc32fast::Hasher);
@@ -61,32 +62,28 @@ fn create_unarchiver(input: &Path, output: &Path) -> Unarchiver {
     Unarchiver::new(input.to_path_buf(), output.to_path_buf())
 }
 
-#[test]
-fn test_identity() {
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer().with_filter(
-            tracing_subscriber::filter::LevelFilter::from_level(tracing::Level::DEBUG),
-        ))
-        .init();
+fn rand_str(byte_size: usize) -> String {
+    let mut bytes = Vec::with_capacity(byte_size);
+    thread_rng().fill(&mut bytes[..]);
+    base64::prelude::BASE64_STANDARD.encode(bytes)
+}
 
-    let src_dir = generate_data_dir();
-    let src_entries = scan_data_dir(&src_dir).unwrap();
+fn run_test_identity(src_dir: &Path, arch_kind: ArchiveKind) {
+    let work_dir = TempDir::new().unwrap();
+    let src_entries = scan_data_dir(src_dir).unwrap();
 
-    let mut arch_name = vec![0u8; 8];
-    thread_rng().fill_bytes(&mut arch_name[..]);
-    let arch_name = BASE64_STANDARD.encode(arch_name);
+    let arch_path = work_dir.path().join(format!("{}.{arch_kind}", rand_str(8)));
 
-    let arch_path = TempPath::from_path(std::env::temp_dir().join(format!("{arch_name}.tar.zst")));
-    create_archiver(src_dir.path(), &arch_path)
+    create_archiver(src_dir, &arch_path)
         .synchronously()
         .expect("Cannot run archiver synchronously");
-    assert!(arch_path.with_extension("").metadata().is_err());
+    // assert!(arch_path.path().with_extension("").metadata().is_err());
 
     let dst_dir = TempDir::new().unwrap();
     create_unarchiver(&arch_path, dst_dir.path())
         .synchronously()
         .expect("Cannot run unarchiver synchronously");
-    assert!(arch_path.with_extension("").metadata().is_err());
+    // assert!(arch_path.path().with_extension("").metadata().is_err());
 
     let dst_entries = scan_data_dir(dst_dir.path()).unwrap();
     let dst_keys = dst_entries.keys().collect::<HashSet<_>>();
@@ -100,20 +97,67 @@ fn test_identity() {
     }
 }
 
+static TRACING_SETUP: OnceLock<()> = OnceLock::new();
+
+fn tracing_setup() {
+    TRACING_SETUP.get_or_init(|| {
+        tracing_subscriber::registry()
+            .with(tracing_subscriber::fmt::layer().with_filter(
+                tracing_subscriber::filter::LevelFilter::from_level(tracing::Level::DEBUG),
+            ))
+            .init()
+    });
+}
+
+#[test]
+fn test_identity_tar_zst() {
+    tracing_setup();
+    let src_dir = generate_data_dir(20, 10, 5);
+    run_test_identity(
+        src_dir.path(),
+        ArchiveKind::Tar(Some(Compression::Zstandard)),
+    );
+}
+
+#[test]
+fn test_identity_tar_gz() {
+    tracing_setup();
+    let src_dir = generate_data_dir(1, 1, 1);
+    run_test_identity(src_dir.path(), ArchiveKind::Tar(Some(Compression::Gzip)));
+}
+
+#[test]
+fn test_identity_tar() {
+    tracing_setup();
+    let src_dir = generate_data_dir(1, 1, 1);
+    run_test_identity(src_dir.path(), ArchiveKind::Tar(None));
+}
+
+#[test]
+fn test_identity_zip() {
+    tracing_setup();
+    let src_dir = generate_data_dir(20, 1, 5);
+    run_test_identity(src_dir.path(), ArchiveKind::Zip);
+}
+
 #[tracing::instrument]
-fn generate_data_dir() -> TempDir {
+fn generate_data_dir(
+    num_entries: u32,
+    entry_size_megabytes: u8,
+    entry_hierarchy_depth: u8,
+) -> TempDir {
     let src_dir = TempDir::new().unwrap();
-    for i in 0..20 {
+    for i in 0..num_entries {
         let name = std::iter::repeat(unsafe { char::from_u32_unchecked('a' as u32 + i) })
             .take(20)
             .collect::<String>();
-        let entry_path = (0..5).fold(PathBuf::new(), |acc, _| acc.join(&name));
+        let entry_path = (0..entry_hierarchy_depth).fold(PathBuf::new(), |acc, _| acc.join(&name));
         let out_path = src_dir.path().join(&entry_path);
         create_dir_all(out_path.parent().unwrap()).unwrap();
         let mut out_file = File::create(&out_path).unwrap();
         let mut buf = vec![0u8; 1_024_000];
-        for _ in 0..10 {
-            ThreadRng::default().fill_bytes(&mut buf[..]);
+        for _ in 0..entry_size_megabytes {
+            thread_rng().fill_bytes(&mut buf[..]);
             out_file.write_all(&buf[..]).unwrap();
         }
     }

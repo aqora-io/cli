@@ -13,3 +13,9 @@ pub enum Error {
     #[error(transparent)]
     Tokio(#[from] tokio::task::JoinError),
 }
+
+impl From<zip::result::ZipError> for Error {
+    fn from(value: zip::result::ZipError) -> Self {
+        Self::Io(value.into())
+    }
+}

@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{Read, Seek as _, SeekFrom},
+    io::{Read, Seek, SeekFrom},
 };
 
 use indicatif::ProgressBar;
@@ -35,5 +35,13 @@ impl<R: Read> Read for IndicatifReader<R> {
         self.reader
             .read(buf)
             .inspect(|read| self.progress_bar.inc(*read as u64))
+    }
+}
+
+impl<R: Read + Seek> Seek for IndicatifReader<R> {
+    fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+        let new_pos = self.reader.seek(pos)?;
+        self.progress_bar.set_position(new_pos);
+        Ok(new_pos)
     }
 }
