@@ -1,5 +1,5 @@
 use crate::{
-    error::Error,
+    error::{Error, Result},
     utils::{ArchiveKind, Compression, PathExt},
 };
 #[cfg(feature = "indicatif")]
@@ -96,7 +96,7 @@ impl Unarchiver {
         Ok(Box::new(File::open(&self.input)?))
     }
 
-    pub fn synchronously(self) -> Result<(), Error> {
+    pub fn synchronously(self) -> Result<()> {
         match self.source_kind.or_else(|| self.input.archive_kind()) {
             None => Err(Error::UnsupportedCompression),
 
@@ -139,7 +139,7 @@ impl Unarchiver {
     }
 
     #[cfg(feature = "tokio")]
-    pub async fn asynchronously(self, runtime: tokio::runtime::Handle) -> Result<(), Error> {
+    pub async fn asynchronously(self, runtime: tokio::runtime::Handle) -> Result<()> {
         runtime.spawn_blocking(move || self.synchronously()).await?
     }
 }

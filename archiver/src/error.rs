@@ -19,3 +19,5 @@ impl From<zip::result::ZipError> for Error {
         Self::Io(value.into())
     }
 }
+
+pub type Result<T, E = Error> = std::result::Result<T, E>;

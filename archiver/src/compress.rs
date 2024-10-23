@@ -1,6 +1,7 @@
 use crate::{
-    error::Error,
+    error::Result,
     utils::{ArchiveKind, Compression, PathExt},
+    Error,
 };
 use ignore::DirEntry;
 #[cfg(feature = "indicatif")]
@@ -94,7 +95,7 @@ impl Archiver {
         Ok(Box::new(self.find_input_paths()?))
     }
 
-    fn create_tar<W: WriteFinish>(&self, writer: W) -> Result<(), Error> {
+    fn create_tar<W: WriteFinish>(&self, writer: W) -> Result<()> {
         let mut tar = tar::Builder::new(writer);
 
         for input_path in self.input_paths()? {
@@ -110,7 +111,7 @@ impl Archiver {
         Ok(())
     }
 
-    pub fn synchronously(self) -> Result<(), Error> {
+    pub fn synchronously(self) -> Result<()> {
         match self.target_kind.or_else(|| self.output.archive_kind()) {
             None => Err(Error::UnsupportedCompression),
 
@@ -158,7 +159,7 @@ impl Archiver {
     }
 
     #[cfg(feature = "tokio")]
-    pub async fn asynchronously(self, runtime: tokio::runtime::Handle) -> Result<(), Error> {
+    pub async fn asynchronously(self, runtime: tokio::runtime::Handle) -> Result<()> {
         runtime.spawn_blocking(move || self.synchronously()).await?
     }
 }
