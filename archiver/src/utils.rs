@@ -1,4 +1,4 @@
-use std::{path::Path, str::FromStr};
+use std::{fmt::Display, path::Path, str::FromStr};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ArchiveKind {
@@ -30,6 +30,16 @@ impl Default for ArchiveKind {
     }
 }
 
+impl Display for ArchiveKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Zip => f.write_str("zip"),
+            Self::Tar(Some(compression)) => f.write_fmt(format_args!("tar.{compression}")),
+            Self::Tar(None) => f.write_str("tar"),
+        }
+    }
+}
+
 #[derive(Default, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Compression {
     Gzip,
@@ -45,6 +55,15 @@ impl FromStr for Compression {
             "gz" => Ok(Compression::Gzip),
             "zst" => Ok(Compression::Zstandard),
             _ => Err(()),
+        }
+    }
+}
+
+impl Display for Compression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Gzip => f.write_str("gz"),
+            Self::Zstandard => f.write_str("zst"),
         }
     }
 }
