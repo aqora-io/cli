@@ -20,31 +20,29 @@ pub struct Archiver {
 }
 
 impl Archiver {
-    #[cfg(feature = "indicatif")]
     pub fn new(input: PathBuf, output: PathBuf) -> Self {
         Self {
             input,
             output,
+            #[cfg(feature = "indicatif")]
             progress_bar: None,
         }
     }
 
     #[cfg(feature = "indicatif")]
-    pub fn new_with_progress_bar(
-        input: PathBuf,
-        output: PathBuf,
-        progress_bar: ProgressBar,
-    ) -> Self {
+    pub fn with_progress_bar(self, progress_bar: ProgressBar) -> Self {
         Self {
-            input,
-            output,
             progress_bar: Some(progress_bar),
+            ..self
         }
     }
 
-    #[cfg(not(feature = "indicatif"))]
-    pub fn new(input: PathBuf, output: PathBuf) -> Self {
-        Self { input, output }
+    #[cfg(feature = "indicatif")]
+    pub fn without_progress_bar(self) -> Self {
+        Self {
+            progress_bar: None,
+            ..self
+        }
     }
 
     fn find_input_paths(&self) -> Result<impl Iterator<Item = PathBuf>, ignore::Error> {

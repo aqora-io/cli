@@ -34,32 +34,26 @@ impl Crc32 {
     }
 }
 
-#[cfg(feature = "indicatif")]
 fn create_archiver(input: &Path, output: &Path) -> Archiver {
-    let pb = indicatif::ProgressBar::with_draw_target(
-        Some(80),
-        indicatif::ProgressDrawTarget::stdout_with_hz(1),
-    );
-    Archiver::new_with_progress_bar(input.to_path_buf(), output.to_path_buf(), pb.clone())
+    let mut archiver = Archiver::new(input.to_path_buf(), output.to_path_buf());
+    if cfg!(feature = "indicatif") {
+        archiver = archiver.with_progress_bar(indicatif::ProgressBar::with_draw_target(
+            Some(80),
+            indicatif::ProgressDrawTarget::stdout_with_hz(1),
+        ));
+    }
+    archiver
 }
 
-#[cfg(not(feature = "indicatif"))]
-fn create_archiver(input: &Path, output: &Path) -> Archiver {
-    Archiver::new(input.to_path_buf(), output.to_path_buf())
-}
-
-#[cfg(feature = "indicatif")]
 fn create_unarchiver(input: &Path, output: &Path) -> Unarchiver {
-    let pb = indicatif::ProgressBar::with_draw_target(
-        Some(80),
-        indicatif::ProgressDrawTarget::stdout_with_hz(1),
-    );
-    Unarchiver::new_with_progress_bar(input.to_path_buf(), output.to_path_buf(), pb.clone())
-}
-
-#[cfg(not(feature = "indicatif"))]
-fn create_unarchiver(input: &Path, output: &Path) -> Unarchiver {
-    Unarchiver::new(input.to_path_buf(), output.to_path_buf())
+    let mut unarchiver = Unarchiver::new(input.to_path_buf(), output.to_path_buf());
+    if cfg!(feature = "indicatif") {
+        unarchiver = unarchiver.with_progress_bar(indicatif::ProgressBar::with_draw_target(
+            Some(80),
+            indicatif::ProgressDrawTarget::stdout_with_hz(1),
+        ));
+    }
+    unarchiver
 }
 
 fn rand_str(byte_size: usize) -> String {

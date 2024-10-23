@@ -14,13 +14,10 @@ pub async fn compress(
 ) -> Result<(), Error> {
     let _pb = TempProgressStyle::new(pb);
     pb.set_style(progress_bar::pretty());
-    Archiver::new_with_progress_bar(
-        input.as_ref().to_path_buf(),
-        output.as_ref().to_path_buf(),
-        pb.clone(),
-    )
-    .asynchronously(tokio::runtime::Handle::current())
-    .await
+    Archiver::new(input.as_ref().to_path_buf(), output.as_ref().to_path_buf())
+        .with_progress_bar(pb.clone())
+        .asynchronously(tokio::runtime::Handle::current())
+        .await
 }
 
 pub async fn decompress(
@@ -30,11 +27,8 @@ pub async fn decompress(
 ) -> Result<(), Error> {
     let _pb = TempProgressStyle::new(pb);
     pb.set_style(progress_bar::pretty_bytes());
-    Unarchiver::new_with_progress_bar(
-        input.as_ref().to_path_buf(),
-        output.as_ref().to_path_buf(),
-        pb.clone(),
-    )
-    .asynchronously(tokio::runtime::Handle::current())
-    .await
+    Unarchiver::new(input.as_ref().to_path_buf(), output.as_ref().to_path_buf())
+        .with_progress_bar(pb.clone())
+        .asynchronously(tokio::runtime::Handle::current())
+        .await
 }

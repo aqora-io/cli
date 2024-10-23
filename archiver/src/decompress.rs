@@ -2,6 +2,8 @@ use crate::{
     error::Error,
     utils::{ArchiveKind, Compression, PathExt},
 };
+#[cfg(feature = "indicatif")]
+use indicatif::ProgressBar;
 use std::{
     fs::{self, File},
     io::{self, Read, Seek},
@@ -13,35 +15,33 @@ pub struct Unarchiver {
     input: PathBuf,
     output: PathBuf,
     #[cfg(feature = "indicatif")]
-    progress_bar: Option<indicatif::ProgressBar>,
+    progress_bar: Option<ProgressBar>,
 }
 
 impl Unarchiver {
-    #[cfg(feature = "indicatif")]
     pub fn new(input: PathBuf, output: PathBuf) -> Self {
         Self {
             input,
             output,
+            #[cfg(feature = "indicatif")]
             progress_bar: None,
         }
     }
 
     #[cfg(feature = "indicatif")]
-    pub fn new_with_progress_bar(
-        input: PathBuf,
-        output: PathBuf,
-        progress_bar: indicatif::ProgressBar,
-    ) -> Self {
+    pub fn with_progress_bar(self, progress_bar: ProgressBar) -> Self {
         Self {
-            input,
-            output,
             progress_bar: Some(progress_bar),
+            ..self
         }
     }
 
-    #[cfg(not(feature = "indicatif"))]
-    pub fn new(input: PathBuf, output: PathBuf) -> Self {
-        Self { input, output }
+    #[cfg(feature = "indicatif")]
+    pub fn without_progress_bar(self) -> Self {
+        Self {
+            progress_bar: None,
+            ..self
+        }
     }
 
     #[cfg(feature = "indicatif")]
