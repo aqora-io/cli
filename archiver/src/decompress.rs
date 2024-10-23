@@ -14,6 +14,8 @@ use std::{
 pub struct Unarchiver {
     input: PathBuf,
     output: PathBuf,
+    source_kind: Option<ArchiveKind>,
+
     #[cfg(feature = "indicatif")]
     progress_bar: Option<ProgressBar>,
 }
@@ -23,8 +25,24 @@ impl Unarchiver {
         Self {
             input,
             output,
+            source_kind: None,
+
             #[cfg(feature = "indicatif")]
             progress_bar: None,
+        }
+    }
+
+    pub fn with_source_kind(self, source_kind: ArchiveKind) -> Self {
+        Self {
+            source_kind: Some(source_kind),
+            ..self
+        }
+    }
+
+    pub fn without_source_kind(self) -> Self {
+        Self {
+            source_kind: None,
+            ..self
         }
     }
 
@@ -79,7 +97,7 @@ impl Unarchiver {
     }
 
     pub fn synchronously(self) -> Result<(), Error> {
-        match self.input.archive_kind() {
+        match self.source_kind.or_else(|| self.input.archive_kind()) {
             None => Err(Error::UnsupportedCompression),
 
             Some(ArchiveKind::Tar(compression)) => {

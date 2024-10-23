@@ -1,6 +1,8 @@
+mod common;
+
+use crate::common::Crc32Writer;
 use aqora_archiver::{ArchiveKind, Archiver, Compression, Unarchiver};
-use base64::Engine;
-use rand::{thread_rng, Rng, RngCore};
+use rand::{thread_rng, RngCore};
 use rayon::iter::{IntoParallelIterator, ParallelIterator as _};
 use std::{
     collections::{HashMap, HashSet},
@@ -9,30 +11,8 @@ use std::{
     path::{Path, PathBuf},
     sync::OnceLock,
 };
-use tempfile::TempDir;
+use tempfile::{NamedTempFile, TempDir};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt as _, Layer};
-
-struct Crc32(crc32fast::Hasher);
-
-impl Write for Crc32 {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.update(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-impl Crc32 {
-    fn new() -> Self {
-        Self(crc32fast::Hasher::new())
-    }
-    fn finalize(self) -> u32 {
-        self.0.finalize()
-    }
-}
 
 fn create_archiver(input: &Path, output: &Path) -> Archiver {
     let mut archiver = Archiver::new(input.to_path_buf(), output.to_path_buf());
@@ -56,25 +36,20 @@ fn create_unarchiver(input: &Path, output: &Path) -> Unarchiver {
     unarchiver
 }
 
-fn rand_str(byte_size: usize) -> String {
-    let mut bytes = Vec::with_capacity(byte_size);
-    thread_rng().fill(&mut bytes[..]);
-    base64::prelude::BASE64_STANDARD.encode(bytes)
-}
-
 fn run_test_identity(src_dir: &Path, arch_kind: ArchiveKind) {
-    let work_dir = TempDir::new().unwrap();
     let src_entries = scan_data_dir(src_dir).unwrap();
 
-    let arch_path = work_dir.path().join(format!("{}.{arch_kind}", rand_str(8)));
+    let arch_path = NamedTempFile::new().unwrap();
 
-    create_archiver(src_dir, &arch_path)
+    create_archiver(src_dir, arch_path.path())
+        .with_target_kind(arch_kind)
         .synchronously()
         .expect("Cannot run archiver synchronously");
     // assert!(arch_path.path().with_extension("").metadata().is_err());
 
     let dst_dir = TempDir::new().unwrap();
-    create_unarchiver(&arch_path, dst_dir.path())
+    create_unarchiver(arch_path.path(), dst_dir.path())
+        .with_source_kind(arch_kind)
         .synchronously()
         .expect("Cannot run unarchiver synchronously");
     // assert!(arch_path.path().with_extension("").metadata().is_err());
@@ -92,6 +67,7 @@ fn run_test_identity(src_dir: &Path, arch_kind: ArchiveKind) {
 }
 
 static TRACING_SETUP: OnceLock<()> = OnceLock::new();
+static DATA_DIR: OnceLock<TempDir> = OnceLock::new();
 
 fn tracing_setup() {
     TRACING_SETUP.get_or_init(|| {
@@ -103,35 +79,33 @@ fn tracing_setup() {
     });
 }
 
+fn data_dir() -> &'static Path {
+    let data_dir = DATA_DIR.get_or_init(|| generate_data_dir(20, 10, 5));
+    data_dir.path()
+}
+
 #[test]
 fn test_identity_tar_zst() {
     tracing_setup();
-    let src_dir = generate_data_dir(20, 10, 5);
-    run_test_identity(
-        src_dir.path(),
-        ArchiveKind::Tar(Some(Compression::Zstandard)),
-    );
+    run_test_identity(data_dir(), ArchiveKind::Tar(Some(Compression::Zstandard)));
 }
 
 #[test]
 fn test_identity_tar_gz() {
     tracing_setup();
-    let src_dir = generate_data_dir(1, 1, 1);
-    run_test_identity(src_dir.path(), ArchiveKind::Tar(Some(Compression::Gzip)));
+    run_test_identity(data_dir(), ArchiveKind::Tar(Some(Compression::Gzip)));
 }
 
 #[test]
 fn test_identity_tar() {
     tracing_setup();
-    let src_dir = generate_data_dir(1, 1, 1);
-    run_test_identity(src_dir.path(), ArchiveKind::Tar(None));
+    run_test_identity(data_dir(), ArchiveKind::Tar(None));
 }
 
 #[test]
 fn test_identity_zip() {
     tracing_setup();
-    let src_dir = generate_data_dir(20, 1, 5);
-    run_test_identity(src_dir.path(), ArchiveKind::Zip);
+    run_test_identity(data_dir(), ArchiveKind::Zip);
 }
 
 #[tracing::instrument]
@@ -176,7 +150,7 @@ fn scan_data_dir(
         .filter_map(|(path, meta)| if meta.is_file() { Some(path) } else { None })
         .map(|path| -> Result<_, aqora_archiver::Error> {
             let entry_path = path.strip_prefix(data_dir)?.to_path_buf();
-            let mut hasher = Crc32::new();
+            let mut hasher = crate::Crc32Writer::new();
             let mut file = File::open(path)?;
             std::io::copy(&mut file, &mut hasher)?;
             let entry_hash = hasher.finalize();

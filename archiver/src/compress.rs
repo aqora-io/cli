@@ -15,6 +15,8 @@ use std::{
 pub struct Archiver {
     input: PathBuf,
     output: PathBuf,
+    target_kind: Option<ArchiveKind>,
+
     #[cfg(feature = "indicatif")]
     progress_bar: Option<ProgressBar>,
 }
@@ -24,8 +26,24 @@ impl Archiver {
         Self {
             input,
             output,
+            target_kind: None,
+
             #[cfg(feature = "indicatif")]
             progress_bar: None,
+        }
+    }
+
+    pub fn with_target_kind(self, target_kind: ArchiveKind) -> Self {
+        Self {
+            target_kind: Some(target_kind),
+            ..self
+        }
+    }
+
+    pub fn without_target_kind(self) -> Self {
+        Self {
+            target_kind: None,
+            ..self
         }
     }
 
@@ -93,7 +111,7 @@ impl Archiver {
     }
 
     pub fn synchronously(self) -> Result<(), Error> {
-        match self.output.archive_kind() {
+        match self.target_kind.or_else(|| self.output.archive_kind()) {
             None => Err(Error::UnsupportedCompression),
 
             Some(ArchiveKind::Tar(compression)) => {

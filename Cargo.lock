@@ -165,7 +165,6 @@ dependencies = [
 name = "aqora-archiver"
 version = "0.6.0"
 dependencies = [
- "base64 0.22.0",
  "crc32fast",
  "flate2",
  "ignore",
