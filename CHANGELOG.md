@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.7.0 - 2024-10-25
+#### Features
+- zstd (#93) - (fd752c8) - Antoine Chauvin
+
+- - -
+
 ## v0.6.1 - 2024-10-18
 #### Bug Fixes
 - Fix templates to wait on AsyncIterator - (41926ef) - Julian Popescu
