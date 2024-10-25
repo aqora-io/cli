@@ -5,10 +5,11 @@ use crate::{
 };
 use futures::prelude::*;
 use indicatif::ProgressBar;
+use reqwest::header::CONTENT_DISPOSITION;
 use std::path::Path;
 use url::Url;
 
-pub async fn download_tar_gz(url: Url, dir: impl AsRef<Path>, pb: &ProgressBar) -> Result<()> {
+pub async fn download_archive(url: Url, dir: impl AsRef<Path>, pb: &ProgressBar) -> Result<()> {
     let _guard = TempProgressStyle::new(pb);
 
     tokio::fs::create_dir_all(&dir).await.map_err(|e| {
@@ -34,6 +35,12 @@ pub async fn download_tar_gz(url: Url, dir: impl AsRef<Path>, pb: &ProgressBar) 
         })?
         .error_for_status()
         .map_err(|e| error::system(&format!("Failed to download data: {e}"), ""))?;
+    let attachment = response
+        .headers()
+        .get(CONTENT_DISPOSITION)
+        .and_then(parse_content_disposition_attachment)
+        .map(ToString::to_string)
+        .ok_or_else(|| error::system("todo", "fixme"))?;
     let show_progress = if let Some(content_length) = response.content_length() {
         pb.reset();
         pb.set_style(progress_bar::pretty_bytes());
@@ -45,13 +52,15 @@ pub async fn download_tar_gz(url: Url, dir: impl AsRef<Path>, pb: &ProgressBar) 
         false
     };
     let mut byte_stream = response.bytes_stream();
-    let tempfile = tempfile::NamedTempFile::new().map_err(|e| {
+
+    let tar_dir = tempfile::TempDir::new().map_err(|e| {
         error::user(
             &format!("Failed to create temporary file: {e}"),
             "Please make sure you have permission to create files in this directory",
         )
     })?;
-    let mut tar_file = tokio::fs::File::create(tempfile.path()).await?;
+    let tar_path = tar_dir.path().join(attachment);
+    let mut tar_file = tokio::fs::File::create(&tar_path).await?;
     while let Some(item) = byte_stream.next().await {
         let item = item?;
         tokio::io::copy(&mut item.as_ref(), &mut tar_file).await?;
@@ -59,11 +68,27 @@ pub async fn download_tar_gz(url: Url, dir: impl AsRef<Path>, pb: &ProgressBar) 
             pb.inc(item.len() as u64);
         }
     }
-    decompress(tempfile.path(), &dir, pb).await.map_err(|e| {
+    decompress(tar_path, &dir, pb).await.map_err(|e| {
         error::user(
             &format!("Failed to decompress data: {e}"),
             "Please make sure you have permission to create files in this directory",
         )
     })?;
     Ok(())
+}
+
+fn parse_content_disposition_attachment(header: &reqwest::header::HeaderValue) -> Option<&str> {
+    let header = header.to_str().ok()?;
+    let mut is_attachment = false;
+    let mut out_filename = None;
+    for part in header.split(';') {
+        let part = part.trim();
+        if part == "attachment" {
+            is_attachment = true;
+        } else if let Some(filename) = part.strip_prefix("filename=") {
+            out_filename = Some(filename.trim_matches('"'));
+        }
+    }
+
+    out_filename.filter(|_| is_attachment)
 }

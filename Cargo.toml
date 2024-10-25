@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["config", "runner", "template"]
+members = ["archiver", "config", "runner", "template"]
 
 [package]
 name = "aqora"
@@ -21,10 +21,10 @@ default = []
 extension-module = ["pyo3/extension-module", "pyo3/abi3-py39", "pyo3/abi3"]
 
 [dependencies]
+aqora-archiver = { path = "archiver", features = ["indicatif", "tokio", "tracing"] }
 aqora-config = { path = "config" }
 aqora-runner = { path = "runner", features = ["clap"] }
 aqora-template = { path = "template" }
-async-compression = { version = "0.4", features = ["tokio", "gzip"] }
 async-tempfile = "0.6"
 axum = "0.7"
 base32 = "0.5"
@@ -37,7 +37,6 @@ dunce = "1.0"
 fs4 = { version = "0.8", features = ["tokio"] }
 futures = "0.3"
 graphql_client = { version = "0.14", features = ["reqwest-rustls"] }
-gzp = { version = "0.11.3", default-features = false, features = ["deflate_rust"] }
 hostname = "0.4"
 human-errors = "0.1"
 ignore = "0.4"
@@ -84,7 +83,6 @@ tokio = { version = "1", features = [
   "io-util",
 ] }
 tokio-stream = { version = "0.1", features = ["io-util"] }
-tokio-tar = "0.3"
 tokio-util = { version = "0.7", features = ["io"] }
 toml = "0.8"
 toml_edit = "0.22"

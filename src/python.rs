@@ -19,10 +19,11 @@ pub struct LastRunResult {
     pub use_case_version: Option<Version>,
 }
 
+#[tracing::instrument(skip(env, pb))]
 pub async fn build_package(
     env: &PyEnv,
-    input: impl AsRef<Path>,
-    output: impl AsRef<Path>,
+    input: impl AsRef<Path> + std::fmt::Debug,
+    output: impl AsRef<Path> + std::fmt::Debug,
     pb: &ProgressBar,
 ) -> Result<()> {
     pb.set_message("Building package");

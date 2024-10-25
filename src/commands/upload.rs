@@ -1,7 +1,7 @@
 use crate::{
     colors::ColorChoiceExt,
     commands::GlobalArgs,
-    compress::compress,
+    compress::{compress, DEFAULT_ARCH_EXTENSION, DEFAULT_ARCH_MIME_TYPE},
     dirs::{
         project_last_run_dir, project_last_run_result, project_use_case_toml_path, pyproject_path,
         read_pyproject,
@@ -24,6 +24,7 @@ use indicatif::{MultiProgress, ProgressBar};
 use serde::Serialize;
 use std::path::Path;
 use tempfile::tempdir;
+use tracing::Instrument as _;
 use url::Url;
 
 use super::test::run_submission_tests;
@@ -390,6 +391,7 @@ Do you want to update the version to {new_version} now?"#
     Ok(version)
 }
 
+#[tracing::instrument(skip(args, global, project), err)]
 pub async fn upload_use_case(
     args: Upload,
     global: GlobalArgs,
@@ -494,6 +496,7 @@ pub async fn upload_use_case(
             competition_id: competition.id.to_node_id(),
             pyproject_toml,
             readme,
+            compression: update_use_case_mutation::ProjectVersionCompressor::ZSTANDARD,
         })
         .await?
         .create_use_case_version
@@ -506,9 +509,9 @@ pub async fn upload_use_case(
             &project_version.files,
             update_use_case_mutation::ProjectVersionFileKind::DATA,
         )?;
-        let data_tar_file = tempdir
-            .path()
-            .join(format!("{package_name}-{version}.data.tar.gz"));
+        let data_tar_file = tempdir.path().join(format!(
+            "{package_name}-{version}.data.{DEFAULT_ARCH_EXTENSION}"
+        ));
         let mut data_pb = ProgressBar::new_spinner().with_message("Compressing data");
         data_pb.enable_steady_tick(std::time::Duration::from_millis(100));
         data_pb = m.add(data_pb);
@@ -516,6 +519,7 @@ pub async fn upload_use_case(
         let data_pb_cloned = data_pb.clone();
         let client = client.clone();
         async move {
+            data_pb_cloned.set_message("Compressing data");
             compress(data_path, &data_tar_file, &data_pb_cloned)
                 .await
                 .map_err(|err| {
@@ -529,19 +533,19 @@ pub async fn upload_use_case(
                 &client,
                 data_tar_file,
                 &id,
-                Some("application/gzip"),
+                Some(DEFAULT_ARCH_MIME_TYPE),
                 Some(upload_url),
                 &data_pb_cloned,
             )
             .await
         }
-        .map(move |res| {
+        .instrument(tracing::debug_span!("data"))
+        .inspect(move |res| {
             if res.is_ok() {
                 data_pb.finish_with_message("Data uploaded");
             } else {
                 data_pb.finish_with_message("An error occurred while processing data");
             }
-            res
         })
         .boxed()
     };
@@ -552,9 +556,9 @@ pub async fn upload_use_case(
                 &project_version.files,
                 update_use_case_mutation::ProjectVersionFileKind::TEMPLATE,
             )?;
-            let template_tar_file = tempdir
-                .path()
-                .join(format!("{package_name}-{version}.template.tar.gz"));
+            let template_tar_file = tempdir.path().join(format!(
+                "{package_name}-{version}.template.{DEFAULT_ARCH_EXTENSION}"
+            ));
             let mut template_pb = ProgressBar::new_spinner().with_message("Compressing template");
             template_pb.enable_steady_tick(std::time::Duration::from_millis(100));
             template_pb = m.add(template_pb);
@@ -562,6 +566,7 @@ pub async fn upload_use_case(
             let template_pb_cloned = template_pb.clone();
             let client = client.clone();
             async move {
+                template_pb_cloned.set_message("Compressing template");
                 compress(template_path, &template_tar_file, &template_pb_cloned)
                     .await
                     .map_err(|err| {
@@ -570,24 +575,25 @@ pub async fn upload_use_case(
                             "Please make sure the template directory is valid",
                         )
                     })?;
+
                 template_pb_cloned.set_message("Uploading template");
                 upload_project_version_file(
                     &client,
                     template_tar_file,
                     &id,
-                    Some("application/gzip"),
+                    Some(DEFAULT_ARCH_MIME_TYPE),
                     Some(upload_url),
                     &template_pb_cloned,
                 )
                 .await
             }
-            .map(move |res| {
+            .instrument(tracing::debug_span!("template"))
+            .inspect(move |res| {
                 if res.is_ok() {
                     template_pb.finish_with_message("Template uploaded");
                 } else {
                     template_pb.finish_with_message("An error occurred while processing template");
                 }
-                res
             })
             .boxed()
         } else {
@@ -609,6 +615,7 @@ pub async fn upload_use_case(
         let package_pb_cloned = package_pb.clone();
         let client = client.clone();
         async move {
+            package_pb_cloned.set_message("Building package");
             let project_file = RevertFile::save(pyproject_path(&global.project))?;
             let mut new_project = project.clone();
             new_project.set_name(package_name);
@@ -617,7 +624,7 @@ pub async fn upload_use_case(
             build_package(
                 &env,
                 &global.project,
-                package_build_path,
+                &package_build_path,
                 &package_pb_cloned,
             )
             .await?;
@@ -628,24 +635,26 @@ pub async fn upload_use_case(
                 &client,
                 package_tar_file,
                 &id,
-                Some("application/gzip"),
+                Some(DEFAULT_ARCH_MIME_TYPE),
                 Some(upload_url),
                 &package_pb_cloned,
             )
             .await
         }
-        .map(move |res| {
+        .instrument(tracing::debug_span!("package"))
+        .inspect(move |res| {
             if res.is_ok() {
                 package_pb.finish_with_message("Package uploaded");
             } else {
                 package_pb.finish_with_message("An error occurred while processing package");
             }
-            res
         })
         .boxed()
     };
 
-    futures::future::try_join_all([data_fut, template_fut, package_fut]).await?;
+    futures::future::try_join_all([data_fut, template_fut, package_fut])
+        .instrument(tracing::debug_span!("try_join_all"))
+        .await?;
 
     let mut validate_pb = ProgressBar::new_spinner().with_message("Validating use case");
     validate_pb.enable_steady_tick(std::time::Duration::from_millis(100));
@@ -890,6 +899,7 @@ Do you want to run the tests now?"#,
             pyproject_toml,
             readme,
             entity_id: entity_id.to_node_id(),
+            compression: update_submission_mutation::ProjectVersionCompressor::ZSTANDARD,
         })
         .await?
         .create_submission_version
@@ -908,9 +918,9 @@ Do you want to run the tests now?"#,
             &project_version.files,
             update_submission_mutation::ProjectVersionFileKind::SUBMISSION_EVALUATION,
         )?;
-        let evaluation_tar_file = tempdir
-            .path()
-            .join(format!("{package_name}-{version}.evaluation.tar.gz"));
+        let evaluation_tar_file = tempdir.path().join(format!(
+            "{package_name}-{version}.evaluation.{DEFAULT_ARCH_EXTENSION}"
+        ));
         let mut evaluation_pb = ProgressBar::new_spinner().with_message("Compressing evaluation");
         evaluation_pb.enable_steady_tick(std::time::Duration::from_millis(100));
         evaluation_pb = m.add(evaluation_pb);
@@ -931,19 +941,19 @@ Do you want to run the tests now?"#,
                 &client,
                 evaluation_tar_file,
                 &id,
-                Some("application/gzip"),
+                Some(DEFAULT_ARCH_MIME_TYPE),
                 Some(upload_url),
                 &evaluation_pb_cloned,
             )
             .await
         }
-        .map(move |res| {
+        .instrument(tracing::debug_span!("evaluation"))
+        .inspect(move |res| {
             if res.is_ok() {
                 evaluation_pb.finish_with_message("Evaluation uploaded");
             } else {
                 evaluation_pb.finish_with_message("An error occurred while processing evaluation");
             }
-            res
         })
         .boxed()
     };
@@ -981,19 +991,19 @@ Do you want to run the tests now?"#,
                 &client,
                 package_tar_file,
                 &id,
-                Some("application/gzip"),
+                Some(DEFAULT_ARCH_MIME_TYPE),
                 Some(upload_url),
                 &package_pb_cloned,
             )
             .await
         }
-        .map(move |res| {
+        .instrument(tracing::debug_span!("package"))
+        .inspect(move |res| {
             if res.is_ok() {
                 package_pb.finish_with_message("Package uploaded");
             } else {
                 package_pb.finish_with_message("An error occurred while processing package");
             }
-            res
         })
         .boxed()
     };

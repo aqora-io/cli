@@ -97,6 +97,7 @@ async fn upload_part(
     path: impl AsRef<Path>,
     chunk_number: u64,
     content_length: u64,
+    content_type: Option<&str>,
     upload_url: Url,
     pb: &ProgressBar,
 ) -> Result<String> {
@@ -104,7 +105,7 @@ async fn upload_part(
     file.seek(SeekFrom::Start(chunk_number * CHUNK_SIZE))
         .await?;
     let chunk = file.take(CHUNK_SIZE);
-    let response = do_upload(client, chunk, &upload_url, content_length, None, pb).await?;
+    let response = do_upload(client, chunk, &upload_url, content_length, content_type, pb).await?;
     Ok(response
         .headers()
         .get("ETag")
@@ -130,7 +131,6 @@ async fn multipart_upload(
         .send::<CreateMultipartUpload>(create_multipart_upload::Variables {
             id: id.to_node_id(),
             chunks: chunks.iter().map(|&x| x as i64).collect(),
-            content_type: content_type.map(|x| x.to_string()),
         })
         .await?
         .create_project_version_file_multipart_upload;
@@ -161,6 +161,7 @@ async fn multipart_upload(
                     path.as_ref(),
                     i as u64,
                     content_length,
+                    content_type,
                     url,
                     pb,
                 )
@@ -179,9 +180,10 @@ async fn multipart_upload(
     Ok(())
 }
 
+#[tracing::instrument(ret, err, skip(client, pb))]
 pub async fn upload_project_version_file(
     client: &GraphQLClient,
-    path: impl AsRef<Path>,
+    path: impl AsRef<Path> + std::fmt::Debug,
     id: &Id,
     content_type: Option<&str>,
     upload_url: Option<&Url>,
