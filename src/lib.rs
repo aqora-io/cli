@@ -23,6 +23,7 @@ mod run;
 pub mod sentry;
 mod shutdown;
 mod upload;
+mod vscode;
 
 pub use commands::Cli;
 pub use run::run;
