@@ -82,6 +82,14 @@ pub fn project_vscode_dir(project_dir: impl AsRef<Path>) -> PathBuf {
     project_dir.as_ref().join(VSCODE_DIRNAME)
 }
 
+pub fn vscode_user_settings_file_path() -> PathBuf {
+    dirs::config_dir()
+        .unwrap()
+        .join("Code")
+        .join("User")
+        .join(VSCODE_SETTINGS_FILENAME)
+}
+
 pub fn vscode_settings_path(project_dir: impl AsRef<Path>) -> PathBuf {
     project_vscode_dir(project_dir).join(VSCODE_SETTINGS_FILENAME)
 }

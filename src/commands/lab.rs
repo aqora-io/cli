@@ -1,7 +1,6 @@
 use std::{
     ffi::OsString,
     fs,
-    io::{self, BufRead, Write},
     path::{Path, PathBuf},
 };
 
@@ -17,8 +16,9 @@ use crate::{
     dirs::{project_vscode_dir, vscode_settings_path},
     error::{self, Result},
     process::run_command,
-    vscode::VSCodeSettings,
+    vscode::UserVSCodeSettings,
 };
+use dialoguer::Confirm;
 
 use crate::commands::python::{python, Python};
 
@@ -100,7 +100,7 @@ async fn handle_vscode_integration(
 ) -> Result<()> {
     is_vscode_available(pb).await?;
 
-    if VSCodeSettings::load()
+    if UserVSCodeSettings::load()
         .await?
         .aqora_can_install_extensions()
         .unwrap_or(false)
@@ -117,7 +117,7 @@ async fn ask_for_install_vscode_extensions(
     allow_vscode_extensions: Option<bool>,
     pb: &ProgressBar,
 ) -> Result<()> {
-    let mut vscode_settings = VSCodeSettings::load().await?;
+    let mut vscode_settings = UserVSCodeSettings::load().await?;
 
     if let Some(allow) = allow_vscode_extensions {
         vscode_settings
@@ -155,7 +155,9 @@ async fn ask_for_install_vscode_extensions(
         let pb = pb.clone();
         move || {
             pb.suspend(|| {
-                ask_confirmation(prompt_message)
+                Confirm::new()
+                    .with_prompt(prompt_message)
+                    .interact()
                     .map_err(|_| error::system("Failed to read input", "Please try again"))
             })
         }
@@ -168,16 +170,6 @@ async fn ask_for_install_vscode_extensions(
         .await;
     vscode_settings.save().await?;
     Ok(())
-}
-
-fn ask_confirmation(prompt: impl AsRef<str>) -> io::Result<bool> {
-    let mut stdout = io::stdout().lock();
-    stdout.write_all(format!("{} [y/n]: ", prompt.as_ref()).as_bytes())?;
-    stdout.flush()?;
-
-    let mut buf = String::new();
-    io::stdin().lock().read_line(&mut buf)?;
-    Ok(matches!(buf.trim().to_lowercase().as_str(), "y" | "yes"))
 }
 
 #[derive(Args, Debug, Serialize)]
@@ -204,7 +196,7 @@ pub async fn lab(args: Lab, global_args: GlobalArgs) -> Result<()> {
     let env = global_args.init_venv(&pb).await?;
 
     if !args.jupyter_notebook {
-        if VSCodeSettings::load()
+        if UserVSCodeSettings::load()
             .await?
             .aqora_can_install_extensions()
             .is_none()

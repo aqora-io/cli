@@ -1,20 +1,19 @@
-use dirs::config_dir;
 use fs4::tokio::AsyncFileExt;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use tokio::{
     fs::OpenOptions,
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
 };
 
+use crate::dirs::vscode_user_settings_file_path;
+
 const AQORA_CAN_INSTALL_EXT_KEY: &str = "aqora.canInstallExtensions";
-const VSCODE_SETTINGS_FILENAME: &str = "settings.json";
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct VSCodeSettings {
+pub struct UserVSCodeSettings {
     #[serde(flatten)]
     pub other: HashMap<String, serde_json::Value>,
 }
@@ -26,9 +25,9 @@ fn clean_json(input: impl AsRef<str>) -> String {
     re.replace_all(input.as_ref(), "$1").to_string()
 }
 
-impl VSCodeSettings {
+impl UserVSCodeSettings {
     pub async fn load() -> Result<Self, std::io::Error> {
-        let path = settings_file_path();
+        let path = vscode_user_settings_file_path();
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -41,8 +40,8 @@ impl VSCodeSettings {
 
         let mut contents = String::new();
         file.read_to_string(&mut contents).await?;
-        let settings: VSCodeSettings = if contents.is_empty() {
-            VSCodeSettings {
+        let settings: UserVSCodeSettings = if contents.is_empty() {
+            UserVSCodeSettings {
                 other: HashMap::new(),
             }
         } else {
@@ -54,7 +53,7 @@ impl VSCodeSettings {
     }
 
     pub async fn save(&self) -> Result<(), std::io::Error> {
-        let path = settings_file_path();
+        let path = vscode_user_settings_file_path();
         let mut file = OpenOptions::new()
             .write(true)
             .create(true)
@@ -84,12 +83,4 @@ impl VSCodeSettings {
             .get(AQORA_CAN_INSTALL_EXT_KEY)
             .and_then(|can_install| serde_json::from_value::<bool>(can_install.clone()).ok())
     }
-}
-
-fn settings_file_path() -> PathBuf {
-    config_dir()
-        .unwrap()
-        .join("Code")
-        .join("User")
-        .join(VSCODE_SETTINGS_FILENAME)
 }
