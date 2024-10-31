@@ -102,7 +102,7 @@ async fn handle_vscode_integration(
 
     if UserVSCodeSettings::load()
         .await?
-        .aqora_can_install_extensions()
+        .aqora_can_install_extensions
         .unwrap_or(false)
     {
         install_extensions(pb).await?;
@@ -122,8 +122,8 @@ async fn ask_for_install_vscode_extensions(
     if let Some(allow) = allow_vscode_extensions {
         vscode_settings
             .set_aqora_can_install_extensions(allow)
-            .await;
-        vscode_settings.save().await?;
+            .save()
+            .await?;
         return Ok(());
     }
 
@@ -167,8 +167,8 @@ async fn ask_for_install_vscode_extensions(
 
     vscode_settings
         .set_aqora_can_install_extensions(can_install)
-        .await;
-    vscode_settings.save().await?;
+        .save()
+        .await?;
     Ok(())
 }
 
@@ -198,7 +198,7 @@ pub async fn lab(args: Lab, global_args: GlobalArgs) -> Result<()> {
     if !args.jupyter_notebook {
         if UserVSCodeSettings::load()
             .await?
-            .aqora_can_install_extensions()
+            .aqora_can_install_extensions
             .is_none()
         {
             ask_for_install_vscode_extensions(args.allow_vscode_extensions, &pb).await?;
