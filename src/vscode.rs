@@ -73,7 +73,7 @@ where
     F: for<'a> FnOnce(&'a mut File) -> BoxFuture<'a, Result<T>> + Send,
     T: Send,
 {
-    let path = vscode_user_settings_file_path();
+    let path = vscode_user_settings_file_path().await?;
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
