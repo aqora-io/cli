@@ -139,7 +139,6 @@ dependencies = [
  "pyo3",
  "pyo3-asyncio",
  "rand",
- "regex",
  "reqwest 0.11.24",
  "rmp-serde",
  "sentry",

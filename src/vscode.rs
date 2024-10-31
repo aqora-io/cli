@@ -3,9 +3,7 @@ use crate::error::{self, Result};
 use fs4::tokio::AsyncFileExt;
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use tokio::fs::File;
 use tokio::{
     fs::OpenOptions,
@@ -14,10 +12,7 @@ use tokio::{
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UserVSCodeSettings {
-    #[serde(rename = "aqora.canInstallExtensions")]
-    pub aqora_can_install_extensions: Option<bool>,
-    #[serde(flatten)]
-    pub other: HashMap<String, serde_json::Value>,
+    pub can_install_extensions: Option<bool>,
 }
 
 impl UserVSCodeSettings {
@@ -27,7 +22,7 @@ impl UserVSCodeSettings {
                 let mut contents = String::new();
                 file.read_to_string(&mut contents).await?;
 
-                let settings = try_parse_json(&contents)
+                let settings = serde_json::from_str(&contents)
                     .map_err(|e| {
                         error::system(
                             &format!("Failed to parse user vscode settings file: {:?}", e),
@@ -35,8 +30,7 @@ impl UserVSCodeSettings {
                         )
                     })
                     .unwrap_or(UserVSCodeSettings {
-                        other: HashMap::new(),
-                        aqora_can_install_extensions: None,
+                        can_install_extensions: None,
                     });
 
                 Ok(settings)
@@ -62,8 +56,8 @@ impl UserVSCodeSettings {
         .await
     }
 
-    pub fn set_aqora_can_install_extensions(&mut self, can_install: bool) -> &mut Self {
-        self.aqora_can_install_extensions = Some(can_install);
+    pub fn can_install_extensions(&mut self, can_install: bool) -> &mut Self {
+        self.can_install_extensions = Some(can_install);
         self
     }
 }
@@ -117,16 +111,4 @@ where
     })?;
 
     res
-}
-
-fn try_parse_json(input: &str) -> Result<UserVSCodeSettings, serde_json::Error> {
-    serde_json::from_str(input).or_else(|e| {
-        if e.classify() == serde_json::error::Category::Syntax {
-            let re = Regex::new(r",\s*(\}|\])").unwrap();
-            let cleaned = re.replace_all(input, "$1").to_string();
-            serde_json::from_str(&cleaned)
-        } else {
-            Err(e)
-        }
-    })
 }

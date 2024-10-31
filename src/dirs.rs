@@ -23,17 +23,13 @@ const PYPROJECT_FILENAME: &str = "pyproject.toml";
 const USE_CASE_FILENAME: &str = "use_case.toml";
 const VSCODE_SETTINGS_FILENAME: &str = "settings.json";
 
-async fn base_config_dir() -> Result<PathBuf> {
-    dirs::data_dir().or_else(dirs::config_dir).ok_or_else(|| {
+pub async fn config_dir() -> Result<PathBuf> {
+    let mut path = dirs::data_dir().or_else(dirs::config_dir).ok_or_else(|| {
         error::system(
             "Could not find config directory",
             "This is a bug, please report it",
         )
-    })
-}
-
-pub async fn config_dir() -> Result<PathBuf> {
-    let mut path = base_config_dir().await?;
+    })?;
     path.push("aqora");
     tokio::fs::create_dir_all(&path).await.map_err(|e| {
         error::system(
@@ -49,11 +45,7 @@ pub async fn config_dir() -> Result<PathBuf> {
 }
 
 pub async fn vscode_user_settings_file_path() -> Result<PathBuf> {
-    let path = base_config_dir().await?;
-    Ok(path
-        .join("Code")
-        .join("User")
-        .join(VSCODE_SETTINGS_FILENAME))
+    Ok(config_dir().await?.join(VSCODE_SETTINGS_FILENAME))
 }
 
 pub fn project_config_dir(project_dir: impl AsRef<Path>) -> PathBuf {
