@@ -7,6 +7,7 @@ use crate::{
     },
     error::{self, Result},
     evaluate::evaluate,
+    file_utils::with_locked_file,
     ipynb::{convert_submission_notebooks, convert_use_case_notebooks},
     print::wrap_python_output,
     python::LastRunResult,
@@ -25,10 +26,13 @@ use pyo3::{exceptions::PyException, Python};
 use serde::Serialize;
 use std::{
     collections::HashMap,
+    io::SeekFrom,
     path::{Path, PathBuf},
     pin::Pin,
     sync::{atomic::AtomicU32, Arc},
 };
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use url::Url;
 
 #[derive(Args, Debug, Clone, Serialize)]
 #[command(author, version, about)]
@@ -65,6 +69,22 @@ fn last_run_items(
             Err(err) => Err((index, err)),
         }
     })
+}
+
+fn build_shield_score_badge(score: &Py<PyAny>, aqora_url: Url) -> Result<String> {
+    const LOGO_BASE64: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA4AAAAOCAYAAAAfSC3RAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAIWSURBVHgBjZI/bBJxFMe//5x3BE9D2waCeZiEwNxECcbHSwmGt3qZkwcnB2Q0cFAR6d2Mk6KgcHNQSeHwmJaJ06XYmICprEq1PbaUk7ugJ93p1ToYPpb3svv5fve5/2+P8IRjqqdS4MGiwDTQFx1f2stx4+Kip7Mi3KsKIVj87Kq7zj2z/qoJoajK15IAzTtxVlRiREFIi2ZB6Hg57yoIHEpC0k7lTGL16oRLTk3JFQmGcjkgkA0H4gEBWfSWShyHFIoet+/EyCbh9GJ2B+hx24JvILU2SwiYhyCA4Q5feb6I3bRskyLGMuN6ZriEAsBqo9z3nhYkY/F0Q8BQznUjSQuvBseV9sshNzbArU0zdAAWbOsejOYOmpzY7ZiSJL+hMJKQoqeXh+qkuOogCuj48h4tlyg5Qncw/z3brKrjoLbfRlTfQWwQ46w6zRmHM7edn5Zd8xi5t9EH8MVVUN0B5aPcvcWmwKHxX2+c7Jtm5ddsaf4K2z9WEXrYznT2axXOVlLGg7JNdYf1BxCI6ynHpReUYvv4aVrfU1wdk8ResDel1V8r5XBBsj7wzie8NyLxgE7Q94nKL6h17B3Pglet+2N91hfK0+sxLEx0V9rgtfzM9feXdpsr6DRLI2V8SLw3PtmJ7xN58Z92rPqC37yeaPU7Pa/ffDq0wSyGKPHXav+9OBxVD215HW64k1vSp7ZI6/+d34DKO3EcR6BAbMAAAAASUVORK5CYII=";
+    const LABEL_COLOR: &str = "eceafc";
+    const BADGE_COLOR: &str = "4328e5";
+    let badge_url = format!(
+        "https://img.shields.io/badge/score-{}-{}",
+        score, BADGE_COLOR
+    );
+    let query_params = format!(
+        "?logo={}&labelColor={}&link={}",
+        LOGO_BASE64, LABEL_COLOR, aqora_url
+    );
+    let full_url = Url::parse(&badge_url)?.join(&query_params)?;
+    Ok(format!("![Aqora Score Badge]({})", full_url))
 }
 
 struct RunPipelineConfig {
@@ -328,6 +348,7 @@ pub async fn run_submission_tests(
         })
         .collect::<Result<Vec<_>>>()?;
 
+    let competition = modified_use_case.clone().competition.unwrap_or_default();
     let (num_inputs, aggregated) = run_pipeline(
         &env,
         RunPipelineConfig {
@@ -350,6 +371,40 @@ pub async fn run_submission_tests(
                     score
                 ));
             }
+            pipeline_pb.println(format!(
+                "{}: {}",
+                "Score".if_supports_color(OwoStream::Stdout, |text| { text.bold() }),
+                score
+            ));
+            let path = global.project.join("README.md");
+            with_locked_file(
+                |file| {
+                    let score = score.clone();
+                    let url = global.aqora_url().unwrap();
+                    async move {
+                        let mut contents = String::new();
+                        file.read_to_string(&mut contents).await?;
+                        file.seek(SeekFrom::Start(0)).await?;
+                        file.write_all(
+                            format!(
+                                "{}\n{}",
+                                build_shield_score_badge(
+                                    &score,
+                                    url.join(&format!("competitions/{}", &competition))?
+                                )?,
+                                &contents
+                            )
+                            .as_bytes(),
+                        )
+                        .await?;
+
+                        Ok(())
+                    }
+                    .boxed()
+                },
+                path,
+            )
+            .await?;
             pipeline_pb.finish_and_clear();
             Ok(score)
         }

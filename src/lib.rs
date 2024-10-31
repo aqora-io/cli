@@ -8,6 +8,7 @@ mod dirs;
 mod download;
 mod error;
 mod evaluate;
+mod file_utils;
 mod git;
 mod graphql_client;
 mod id;
