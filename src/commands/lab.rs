@@ -102,7 +102,7 @@ async fn handle_vscode_integration(
 
     if UserVSCodeSettings::load()
         .await?
-        .aqora_can_install_extensions
+        .can_install_extensions
         .unwrap_or(false)
     {
         install_extensions(pb).await?;
@@ -120,10 +120,7 @@ async fn ask_for_install_vscode_extensions(
     let mut vscode_settings = UserVSCodeSettings::load().await?;
 
     if let Some(allow) = allow_vscode_extensions {
-        vscode_settings
-            .set_aqora_can_install_extensions(allow)
-            .save()
-            .await?;
+        vscode_settings.can_install_extensions(allow).save().await?;
         return Ok(());
     }
 
@@ -166,7 +163,7 @@ async fn ask_for_install_vscode_extensions(
     .map_err(|_| error::user("The extension installation prompt was interrupted.", ""))??;
 
     vscode_settings
-        .set_aqora_can_install_extensions(can_install)
+        .can_install_extensions(can_install)
         .save()
         .await?;
     Ok(())
@@ -198,7 +195,7 @@ pub async fn lab(args: Lab, global_args: GlobalArgs) -> Result<()> {
     if !args.jupyter_notebook {
         if UserVSCodeSettings::load()
             .await?
-            .aqora_can_install_extensions
+            .can_install_extensions
             .is_none()
         {
             ask_for_install_vscode_extensions(args.allow_vscode_extensions, &pb).await?;
