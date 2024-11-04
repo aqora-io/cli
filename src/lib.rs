@@ -2,6 +2,7 @@ mod cfg_file;
 mod colors;
 mod commands;
 mod compress;
+mod config;
 mod credentials;
 mod dirs;
 mod download;

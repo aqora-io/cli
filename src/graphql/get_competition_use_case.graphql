@@ -1,6 +1,7 @@
 query GetCompetitionUseCase($slug: String!) {
   competitionBySlug(slug: $slug) {
     id
+    hasLeaderboard
     useCase {
       name
       latest {
