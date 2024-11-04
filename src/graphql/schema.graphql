@@ -44,6 +44,7 @@ enum Action {
 	READ_USER_EMAIL
 	READ_USER_NOTIFICATIONS
 	READ_USER_PERMISSIONS
+	READ_ACTIVITY_TRACKER
 	REMOVE_COMPETITION_MEMBER
 	REMOVE_EVENT_COMPETITION
 	REMOVE_EVENT_MEMBER
@@ -64,6 +65,56 @@ enum Action {
 	UPDATE_TOPIC
 	UPDATE_USER
 	UPLOAD_FILES
+}
+
+type Activity {
+	date: NaiveDate!
+	points: Int!
+	level: Int!
+}
+
+type ActivityConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [ActivityEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Activity!]!
+}
+
+"""
+An edge in a connection.
+"""
+type ActivityEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Activity!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+enum ActivityVisibility {
+	"""
+	Activity is only visible to invited members.
+	"""
+	MEMBERS
+	"""
+	Activity is visible by everyone, even unauthenticated users.
+	"""
+	UNAUTHENTICATED
+	"""
+	Activity is visible by every authenticated user.
+	"""
+	AUTHENTICATED
 }
 
 enum ArchiveKind {
@@ -187,10 +238,13 @@ type Competition implements ForumOwner & Node {
 	title: String!
 	shortDescription: String!
 	createdAt: DateTime!
-	isPrivate: Boolean!
+	visibility: ActivityVisibility!
 	requiresApproval: Boolean!
+	leaderboardSize: Int!
+	hasLeaderboard: Boolean!
 	id: ID!
 	description: String
+	isPrivate: Boolean!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	host: Entity!
 	useCase: UseCase!
@@ -204,7 +258,7 @@ type Competition implements ForumOwner & Node {
 	submission(entity: UsernameOrID): Submission
 	forum: Forum!
 	members(after: String, before: String, first: Int, last: Int): CompetitionMembershipConnection!
-	tags(after: String, before: String, first: Int, last: Int): TagConnection!
+	tags(after: String, before: String, first: Int, last: Int): CompetitionTagConnection!
 }
 
 type CompetitionConnection {
@@ -351,6 +405,21 @@ type CompetitionRuleEdge {
 	cursor: String!
 }
 
+type CompetitionTagConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [TagEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Tag!]!
+}
+
 input CreateCommentInput {
 	content: String!
 }
@@ -362,9 +431,10 @@ input CreateCompetitionInput {
 	description: String
 	banner: Upload
 	thumbnail: Upload
-	isPrivate: Boolean!
+	visibility: ActivityVisibility! = UNAUTHENTICATED
 	requiresApproval: Boolean
 	tagIds: [ID]
+	hasLeaderboard: Boolean
 }
 
 input CreateEventInput {
@@ -374,7 +444,7 @@ input CreateEventInput {
 	description: String
 	banner: Upload
 	thumbnail: Upload
-	isPrivate: Boolean!
+	visibility: ActivityVisibility! = UNAUTHENTICATED
 }
 
 input CreateForumInput {
@@ -448,6 +518,14 @@ interface Entity {
 	badges(after: String, before: String, first: Int, last: Int): EntityBadgeConnection!
 	subjectSubscriptions(kinds: [SubjectKind!], after: String, before: String, first: Int, last: Int): SubjectSubscriptionConnection!
 	projectVersionApprovals(projectVersionId: UUID, after: String, before: String, first: Int, last: Int): ProjectVersionApprovalConnection!
+	points: Int!
+	rank: Int!
+}
+
+enum EntityActivitiesConnectionKind {
+	SUBMISSION
+	TOPIC
+	COMMENT
 }
 
 type EntityBadge implements Node {
@@ -530,9 +608,10 @@ type Event implements ForumOwner & Node {
 	title: String!
 	shortDescription: String!
 	createdAt: DateTime!
-	isPrivate: Boolean!
+	visibility: ActivityVisibility!
 	id: ID!
 	description: String
+	isPrivate: Boolean!
 	agenda: JSON
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	host: Entity!
@@ -786,6 +865,37 @@ type ForumSubscription implements SubjectSubscription & Node {
 	subject: Subscribable!
 }
 
+type GlobalLeaderboardConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [GlobalLeaderboardEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Entity!]!
+}
+
+"""
+An edge in a connection.
+"""
+type GlobalLeaderboardEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Entity!
+	rank: Int!
+	points: Int!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
 
 type InitUploadFile {
 	key: String!
@@ -877,6 +987,17 @@ type Mutation {
 	fetchWebsiteMetadata(url: Url!): WebsiteMetadata!
 }
 
+"""
+ISO 8601 calendar date without timezone.
+Format: %Y-%m-%d
+
+# Examples
+
+* `1994-11-13`
+* `2000-02-24`
+"""
+scalar NaiveDate
+
 interface Node {
 	id: ID!
 }
@@ -887,6 +1008,7 @@ enum NotificationKind {
 	CREATE_TOPIC
 	REPLY_TOPIC
 	CONTENT_MENTIONED
+	REPLY_COMMENT
 	SYSTEM
 }
 
@@ -939,13 +1061,15 @@ type Organization implements Entity & Node {
 	kind: EntityKind!
 	image: Url
 	imageThumbnail: Url
-	users(after: String, before: String, first: Int, last: Int): OrganizationMembershipConnection!
+	users(after: String, before: String, first: Int, last: Int): OrganizationUserConnection!
 	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID): SubmissionConnection!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	badges(after: String, before: String, first: Int, last: Int): EntityBadgeConnection!
 	userMembership(user: UsernameOrID): OrganizationMembership
 	subjectSubscriptions(kinds: [SubjectKind!], after: String, before: String, first: Int, last: Int): SubjectSubscriptionConnection!
 	projectVersionApprovals(projectVersionId: UUID, after: String, before: String, first: Int, last: Int): ProjectVersionApprovalConnection!
+	rank: Int!
+	points: Int!
 }
 
 """
@@ -970,21 +1094,6 @@ type OrganizationMembership implements Node {
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 }
 
-type OrganizationMembershipConnection {
-	"""
-	Information to aid in pagination.
-	"""
-	pageInfo: PageInfo!
-	"""
-	A list of edges.
-	"""
-	edges: [OrganizationMembershipEdge!]!
-	"""
-	A list of nodes.
-	"""
-	nodes: [OrganizationMembership!]!
-}
-
 """
 An edge in a connection.
 """
@@ -1004,6 +1113,21 @@ enum OrganizationMembershipKind {
 	ADMIN
 	EDITOR
 	READER
+}
+
+type OrganizationUserConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [OrganizationMembershipEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [OrganizationMembership!]!
 }
 
 """
@@ -1142,10 +1266,12 @@ type ProjectVersionEvaluation implements Node {
 	max: Boolean!
 	finalizedAt: DateTime
 	createdAt: DateTime!
+	rank: Int
 	id: ID!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	projectVersion: ProjectVersion!
 	submission: Submission!
+	points: Int!
 }
 
 type ProjectVersionEvaluationConnection {
@@ -1210,6 +1336,7 @@ type Query {
 	competitionBySlug(slug: String!): Competition
 	entities(after: String, before: String, first: Int, last: Int, search: String, kinds: [EntityKind!]): EntityConnection!
 	entityByUsername(username: String!): Entity
+	leaderboard(after: String, before: String, first: Int, last: Int, search: String, kinds: [EntityKind!]): GlobalLeaderboardConnection!
 	events(after: String, before: String, first: Int, last: Int, search: String): EventConnection!
 	eventBySlug(slug: String!): Event
 	version: Version!
@@ -1334,6 +1461,7 @@ type Subscription {
 	deletedComments(topicId: ID): DeletedComment!
 	updatedComments(topicId: ID): CommentEdge!
 	projectVersionStatusUpdate(competitionId: ID, entityId: ID, projectId: ID, projectVersionId: ID): ProjectVersion!
+	updatedEntity(id: ID): Entity!
 }
 
 type Tag implements Node {
@@ -1455,8 +1583,9 @@ input UpdateCompetitionInput {
 	banner: Upload
 	thumbnail: Upload
 	rules: String
-	isPrivate: Boolean
+	visibility: ActivityVisibility
 	requiresApproval: Boolean
+	hasLeaderboard: Boolean
 	tagIds: [ID]
 }
 
@@ -1467,7 +1596,7 @@ input UpdateEventInput {
 	description: String
 	banner: Upload
 	thumbnail: Upload
-	isPrivate: Boolean
+	visibility: ActivityVisibility
 }
 
 input UpdateForumInput {
@@ -1489,6 +1618,7 @@ input UpdateOrganizationInput {
 	location: String
 	bio: String
 	image: Upload
+	inQuantumJob: Boolean
 }
 
 input UpdateSubmissionInput {
@@ -1517,6 +1647,7 @@ input UpdateUserInput {
 	location: String
 	bio: String
 	image: Upload
+	inQuantumJob: Boolean
 	password: String
 	oldPassword: String
 	email: String
@@ -1549,6 +1680,7 @@ type User implements Entity & Node {
 	github: String
 	website: String
 	bio: String
+	isAvailableOnQuantumJobs: Boolean!
 	createdAt: DateTime!
 	id: ID!
 	kind: EntityKind!
@@ -1561,17 +1693,21 @@ type User implements Entity & Node {
 	can this user perform the action on the given resource
 	"""
 	can(action: Action!, on: ID, actingAs: UsernameOrID): Boolean!
-	organizations(after: String, before: String, first: Int, last: Int): OrganizationMembershipConnection!
+	organizations(after: String, before: String, first: Int, last: Int): UserOrganizationConnection!
 	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID): SubmissionConnection!
 	topics(after: String, before: String, first: Int, last: Int, order: VotableOrder): TopicConnection!
 	comments(after: String, before: String, first: Int, last: Int, order: VotableOrder): CommentConnection!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	badges(after: String, before: String, first: Int, last: Int): EntityBadgeConnection!
-	entities(permission: Permission, search: String, after: String, before: String, first: Int, last: Int): EntityConnection!
+	entities(permission: Permission, search: String, after: String, before: String, first: Int, last: Int): UserEntitiesConnection!
 	notifications: UserNotifications!
 	subjectSubscriptions(kinds: [SubjectKind!], after: String, before: String, first: Int, last: Int): SubjectSubscriptionConnection!
 	projectVersionApprovals(projectVersionId: UUID, after: String, before: String, first: Int, last: Int): ProjectVersionApprovalConnection!
 	karma: Int!
+	jobBoardProfileLink: Url
+	rank: Int!
+	points: Int!
+	activities(after: String, before: String, first: Int, last: Int, kinds: [EntityActivitiesConnectionKind!]): ActivityConnection!
 }
 
 """
@@ -1588,9 +1724,39 @@ type UserEdge {
 	cursor: String!
 }
 
+type UserEntitiesConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [EntityEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Entity!]!
+}
+
 type UserNotifications {
 	enabled: [NotificationKind!]!
 	disabled: [NotificationKind!]!
+}
+
+type UserOrganizationConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [OrganizationMembershipEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [OrganizationMembership!]!
 }
 
 scalar UsernameOrID

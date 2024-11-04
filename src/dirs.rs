@@ -21,6 +21,7 @@ const VSCODE_DIRNAME: &str = ".vscode";
 const LAST_RUN_DIRNAME: &str = "last_run";
 const PYPROJECT_FILENAME: &str = "pyproject.toml";
 const USE_CASE_FILENAME: &str = "use_case.toml";
+const PROJECT_CONFIG_FILENAME: &str = "config.toml";
 const VSCODE_SETTINGS_FILENAME: &str = "settings.json";
 
 pub async fn config_dir() -> Result<PathBuf> {
@@ -80,6 +81,10 @@ pub fn pyproject_path(project_dir: impl AsRef<Path>) -> PathBuf {
 
 pub fn project_use_case_toml_path(project_dir: impl AsRef<Path>) -> PathBuf {
     project_data_dir(project_dir, USE_CASE_FILENAME)
+}
+
+pub fn project_config_file_path(project_dir: impl AsRef<Path>) -> PathBuf {
+    project_config_dir(project_dir).join(PROJECT_CONFIG_FILENAME)
 }
 
 pub fn project_vscode_dir(project_dir: impl AsRef<Path>) -> PathBuf {

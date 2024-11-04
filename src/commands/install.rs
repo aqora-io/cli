@@ -1,5 +1,6 @@
 use crate::{
     commands::GlobalArgs,
+    config::{write_project_config_default, ProjectConfig},
     dirs::{project_config_dir, project_data_dir, project_use_case_toml_path, read_pyproject},
     download::download_archive,
     error::{self, Result},
@@ -88,6 +89,14 @@ pub async fn install_submission(
             ),
         )
     })?;
+
+    write_project_config_default(
+        &global.project,
+        &ProjectConfig {
+            show_score: competition.has_leaderboard,
+        },
+    )
+    .await?;
 
     let use_case_toml_path = project_use_case_toml_path(&global.project);
     let old_use_case = if use_case_toml_path.exists() {

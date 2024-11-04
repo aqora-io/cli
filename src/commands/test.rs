@@ -1,5 +1,6 @@
 use crate::{
     commands::GlobalArgs,
+    config::read_project_config,
     dirs::{
         project_data_dir, project_last_run_dir, project_last_run_result,
         project_use_case_toml_path, read_pyproject,
@@ -218,6 +219,8 @@ pub async fn run_submission_tests(
         .and_then(|aqora| aqora.as_submission())
         .ok_or_else(|| error::user("Submission config is not valid", ""))?;
 
+    let project_config = read_project_config(&global.project).await?;
+
     let use_case_toml_path = project_use_case_toml_path(&global.project);
     let data_path = project_data_dir(&global.project, "data");
     if !use_case_toml_path.exists() || !data_path.exists() {
@@ -340,11 +343,13 @@ pub async fn run_submission_tests(
 
     let result = match aggregated {
         Ok(Some(score)) => {
-            pipeline_pb.println(format!(
-                "{}: {}",
-                "Score".if_supports_color(OwoStream::Stdout, |text| { text.bold() }),
-                score
-            ));
+            if project_config.show_score {
+                pipeline_pb.println(format!(
+                    "{}: {}",
+                    "Score".if_supports_color(OwoStream::Stdout, |text| { text.bold() }),
+                    score
+                ));
+            }
             pipeline_pb.finish_and_clear();
             Ok(score)
         }
