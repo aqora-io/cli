@@ -7,9 +7,9 @@ use indicatif::ProgressBar;
 use serde::Serialize;
 
 use crate::error::{self, Error, Result};
+use crate::git::init_repository;
 use crate::graphql_client::{custom_scalars::*, GraphQLClient};
 
-use super::git::init_repository;
 use super::GlobalArgs;
 
 #[derive(Args, Debug, Serialize)]
