@@ -8,6 +8,7 @@ mod dirs;
 mod download;
 mod error;
 mod evaluate;
+mod git;
 mod graphql_client;
 mod id;
 mod ipynb;
