@@ -20,6 +20,7 @@ use aqora_runner::{
 use clap::Args;
 use futures::prelude::*;
 use indicatif::{MultiProgress, ProgressBar};
+use lazy_regex::regex_replace_all;
 use owo_colors::{OwoColorize, Stream as OwoStream};
 use pyo3::prelude::*;
 use pyo3::{exceptions::PyException, Python};
@@ -228,6 +229,40 @@ fn run_pipeline(
     )
 }
 
+async fn update_score_badge_in_file(
+    path: PathBuf,
+    competition: impl AsRef<str>,
+    score: &Py<PyAny>,
+    url: Url,
+) -> Result<()> {
+    let badge_url = build_shield_score_badge(
+        score,
+        url.join(&format!("competitions/{}", competition.as_ref()))?,
+    )?;
+    with_locked_file(
+        |file| {
+            async move {
+                let mut contents = String::new();
+                file.read_to_string(&mut contents).await?;
+                let updated_content = regex_replace_all!(
+                    r"(?:<!--- score_badge -->)|(!\[Aqora Score Badge\]\([^\)]+\))",
+                    &contents,
+                    badge_url.clone()
+                );
+                if updated_content != contents {
+                    file.seek(SeekFrom::Start(0)).await?;
+                    file.write_all(updated_content.as_bytes()).await?;
+                    file.set_len(updated_content.len() as u64).await?;
+                }
+                Ok(())
+            }
+            .boxed()
+        },
+        path,
+    )
+    .await
+}
+
 pub async fn run_submission_tests(
     m: &MultiProgress,
     global: &GlobalArgs,
@@ -238,9 +273,15 @@ pub async fn run_submission_tests(
         .aqora()
         .and_then(|aqora| aqora.as_submission())
         .ok_or_else(|| error::user("Submission config is not valid", ""))?;
-
     let project_config = read_project_config(&global.project).await?;
-
+    let project_readme_path = project
+        .project
+        .as_ref()
+        .and_then(|p| p.readme.as_ref())
+        .and_then(|readme| match readme {
+            aqora_config::ReadMe::RelativePath(path) => Some(path),
+            aqora_config::ReadMe::Table { file, .. } => file.as_ref(),
+        });
     let use_case_toml_path = project_use_case_toml_path(&global.project);
     let data_path = project_data_dir(&global.project);
     if !use_case_toml_path.exists() || !data_path.exists() {
@@ -376,35 +417,14 @@ pub async fn run_submission_tests(
                 "Score".if_supports_color(OwoStream::Stdout, |text| { text.bold() }),
                 score
             ));
-            let path = global.project.join("README.md");
-            with_locked_file(
-                |file| {
-                    let score = score.clone();
-                    let url = global.aqora_url().unwrap();
-                    async move {
-                        let mut contents = String::new();
-                        file.read_to_string(&mut contents).await?;
-                        file.seek(SeekFrom::Start(0)).await?;
-                        file.write_all(
-                            format!(
-                                "{}\n{}",
-                                build_shield_score_badge(
-                                    &score,
-                                    url.join(&format!("competitions/{}", &competition))?
-                                )?,
-                                &contents
-                            )
-                            .as_bytes(),
-                        )
-                        .await?;
-
-                        Ok(())
-                    }
-                    .boxed()
-                },
-                path,
-            )
-            .await?;
+            let path = global.project.join(project_readme_path.ok_or_else(|| {
+                error::user(
+                    "Project must contain a README file",
+                    "See : https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#readme",
+                )
+            })?);
+            update_score_badge_in_file(path, &competition, &score, global.aqora_url().unwrap())
+                .await?;
             pipeline_pb.finish_and_clear();
             Ok(score)
         }

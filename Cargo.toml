@@ -96,6 +96,7 @@ which = "6.0"
 openssl = { version = "0.10.68", features = ["vendored"], optional = true }
 openssl-probe = { version = "0.1.5", optional = true }
 git2 = { version = "0.19.0" , features = ["vendored-openssl"] }
+lazy-regex = "3.3.0"
 
 [build-dependencies]
 toml_edit = "0.22"
