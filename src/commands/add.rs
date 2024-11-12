@@ -68,13 +68,10 @@ fn merge_requirements(old: &Requirement, new: &Requirement) -> Option<Requiremen
     }
     merged.extras.extend(new.extras.iter().cloned());
     merged.extras.dedup();
-    if let Some(new_marker) = new.marker.as_ref() {
-        if old.marker.is_some() && old.marker.as_ref() != Some(new_marker) {
-            return None;
-        } else {
-            merged.marker = Some(new_marker.clone());
-        }
+    if old.marker != new.marker {
+        return None;
     }
+    merged.marker = new.marker.clone();
     Some(merged)
 }
 
@@ -92,12 +89,7 @@ fn requirement_needs_update(old: &Requirement, new: &Requirement) -> bool {
             return true;
         }
     }
-    if let Some(new_marker) = new.marker.as_ref() {
-        if old.marker.as_ref() != Some(new_marker) {
-            return true;
-        }
-    }
-    false
+    old.marker == new.marker
 }
 
 enum UpdateAction {
@@ -215,7 +207,7 @@ pub async fn add(args: Add, global: GlobalArgs) -> Result<()> {
                 if dep.version_or_url.is_none() {
                     match get_latest_version(&pypi_client, name).await {
                         Ok(Some(version)) => {
-                            if let Ok(version) = VersionSpecifier::new(
+                            if let Ok(version) = VersionSpecifier::from_pattern(
                                 Operator::TildeEqual,
                                 VersionPattern::verbatim(version),
                             ) {
