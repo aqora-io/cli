@@ -6,7 +6,7 @@ use thiserror::Error;
 
 pub use pep440_rs::{self, Version};
 pub use pep508_rs::{self, PackageName, Requirement};
-pub use pyproject_toml::{self, BuildSystem, Contact, License, LicenseFiles, Project, ReadMe};
+pub use pyproject_toml::{self, BuildSystem, Contact, License, Project, ReadMe};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PyProject {
