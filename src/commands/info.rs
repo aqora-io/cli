@@ -10,7 +10,7 @@ use graphql_client::GraphQLQuery;
 use indicatif::ProgressBar;
 use pyo3::Python;
 use serde::Serialize;
-use std::env::args;
+use std::env::{args, current_exe};
 use which::which;
 
 #[derive(GraphQLQuery)]
@@ -41,10 +41,14 @@ pub async fn info(_: Info, global: GlobalArgs) -> Result<()> {
             .and_then(|prefix| prefix.extract::<String>())
     });
     let command = {
-        let command = args().next().unwrap_or_else(|| "aqora".to_string());
-        which(&command)
-            .map(|c| c.display().to_string())
-            .unwrap_or(command)
+        if let Ok(path) = current_exe() {
+            path.display().to_string()
+        } else {
+            let command = args().next().unwrap_or_else(|| "aqora".to_string());
+            which(&command)
+                .map(|c| c.display().to_string())
+                .unwrap_or(command)
+        }
     };
     let uv_path = locate_uv(global.uv.as_ref()).await;
     let uv_version = {
