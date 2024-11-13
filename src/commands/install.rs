@@ -1,7 +1,10 @@
 use crate::{
     commands::GlobalArgs,
     config::{write_project_config_default, ProjectConfig},
-    dirs::{project_config_dir, project_data_dir, project_use_case_toml_path, read_pyproject},
+    dirs::{
+        project_config_dir, project_data_dir, project_use_case_toml_path, project_venv_dir,
+        pyproject_path, read_pyproject,
+    },
     download::download_archive,
     error::{self, Result},
     graphql_client::{custom_scalars::*, GraphQLClient},
@@ -14,7 +17,36 @@ use futures::prelude::*;
 use graphql_client::GraphQLQuery;
 use indicatif::{MultiProgress, ProgressBar};
 use serde::Serialize;
+use std::path::{Path, PathBuf};
 use url::Url;
+
+fn relative_symlink(original: impl AsRef<Path>, link: impl AsRef<Path>) -> std::io::Result<()> {
+    let mut original = dunce::canonicalize(original.as_ref())?;
+    if let Some(parent) = link.as_ref().parent() {
+        for (num_parents, ancestor) in dunce::canonicalize(parent)?.ancestors().enumerate() {
+            if original.starts_with(ancestor) {
+                original = vec![".."; num_parents]
+                    .into_iter()
+                    .collect::<PathBuf>()
+                    .join(original.strip_prefix(ancestor).unwrap());
+                break;
+            }
+        }
+    }
+    #[cfg(windows)]
+    {
+        if original.is_dir() {
+            std::os::windows::fs::symlink_dir(original, link)?;
+        } else {
+            std::os::windows::fs::symlink_file(original, link)?;
+        }
+    }
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(original, link)?;
+    }
+    Ok(())
+}
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -184,7 +216,7 @@ pub async fn install_submission(
         download_pb.set_message("Downloading use case data");
         let download_fut = download_archive(
             use_case_data_url,
-            project_data_dir(&global.project, "data"),
+            project_data_dir(&global.project),
             &download_pb,
         )
         .inspect(|res| {
@@ -243,8 +275,13 @@ pub async fn install_submission(
     Ok(())
 }
 
-pub async fn install_use_case(args: Install, global: GlobalArgs) -> Result<()> {
+pub async fn install_use_case(args: Install, global: GlobalArgs, project: PyProject) -> Result<()> {
     let m = MultiProgress::new();
+
+    let use_case = project
+        .aqora()
+        .and_then(|aqora| aqora.as_use_case())
+        .ok_or_else(|| error::user("Use case config is not valid", ""))?;
 
     let mut pb = ProgressBar::new_spinner().with_message("Setting up virtual environment");
     pb.enable_steady_tick(std::time::Duration::from_millis(100));
@@ -252,9 +289,67 @@ pub async fn install_use_case(args: Install, global: GlobalArgs) -> Result<()> {
 
     let env = global.init_venv(&pb).await?;
 
+    let mut deps = vec![
+        PipPackage::pypi("aqora-cli[venv]"),
+        PipPackage::editable(&global.project),
+    ];
+
+    if let Some(template) = use_case.template.as_ref() {
+        let template_path = global.project.join(template);
+        for (original, link) in [
+            (
+                pyproject_path(&global.project),
+                project_use_case_toml_path(&template_path),
+            ),
+            (
+                global.project.join(&use_case.data),
+                project_data_dir(&template_path),
+            ),
+            (
+                project_venv_dir(&global.project),
+                project_venv_dir(&template_path),
+            ),
+        ] {
+            if link.exists() {
+                continue;
+            }
+            if let Some(parent) = link.parent() {
+                std::fs::create_dir_all(parent).map_err(|err| {
+                    error::user(
+                        &format!(
+                            "Failed to create directories for {}: {}",
+                            link.display(),
+                            err
+                        ),
+                        &format!(
+                            "Make sure you have permissions to write to {}",
+                            parent.display()
+                        ),
+                    )
+                })?;
+            }
+            relative_symlink(&original, &link).map_err(|err| {
+                error::user(
+                    &format!(
+                        "Failed to create symlink from {} to {}: {}",
+                        link.display(),
+                        original.display(),
+                        err
+                    ),
+                    &format!(
+                        "Make sure you have permissions to write to {}",
+                        template_path.display()
+                    ),
+                )
+            })?;
+        }
+
+        deps.push(PipPackage::editable(&template_path));
+    }
+
     pip_install(
         &env,
-        [PipPackage::editable(&global.project)],
+        deps,
         &PipOptions {
             upgrade: args.upgrade,
             ..global.pip_options()
@@ -279,6 +374,6 @@ pub async fn install(args: Install, global: GlobalArgs) -> Result<()> {
     if aqora.is_submission() {
         install_submission(args, global, project).await
     } else {
-        install_use_case(args, global).await
+        install_use_case(args, global, project).await
     }
 }

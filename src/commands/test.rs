@@ -222,7 +222,7 @@ pub async fn run_submission_tests(
     let project_config = read_project_config(&global.project).await?;
 
     let use_case_toml_path = project_use_case_toml_path(&global.project);
-    let data_path = project_data_dir(&global.project, "data");
+    let data_path = project_data_dir(&global.project);
     if !use_case_toml_path.exists() || !data_path.exists() {
         return Err(error::user(
             "Project not setup",

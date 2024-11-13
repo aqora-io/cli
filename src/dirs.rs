@@ -69,10 +69,12 @@ pub fn project_last_run_result(project_dir: impl AsRef<Path>) -> PathBuf {
     project_last_run_dir(project_dir).join("result.msgpack")
 }
 
-pub fn project_data_dir(project_dir: impl AsRef<Path>, kind: impl ToString) -> PathBuf {
-    project_config_dir(project_dir)
-        .join(DATA_DIRNAME)
-        .join(kind.to_string())
+pub fn project_base_data_dir(project_dir: impl AsRef<Path>) -> PathBuf {
+    project_config_dir(project_dir).join(DATA_DIRNAME)
+}
+
+pub fn project_data_dir(project_dir: impl AsRef<Path>) -> PathBuf {
+    project_base_data_dir(project_dir).join(DATA_DIRNAME)
 }
 
 pub fn pyproject_path(project_dir: impl AsRef<Path>) -> PathBuf {
@@ -80,7 +82,7 @@ pub fn pyproject_path(project_dir: impl AsRef<Path>) -> PathBuf {
 }
 
 pub fn project_use_case_toml_path(project_dir: impl AsRef<Path>) -> PathBuf {
-    project_data_dir(project_dir, USE_CASE_FILENAME)
+    project_base_data_dir(project_dir).join(USE_CASE_FILENAME)
 }
 
 pub fn project_config_file_path(project_dir: impl AsRef<Path>) -> PathBuf {

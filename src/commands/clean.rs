@@ -1,16 +1,19 @@
 use crate::{
     commands::GlobalArgs,
-    dirs::{project_config_dir, project_venv_dir},
+    dirs::{project_config_dir, project_venv_dir, read_pyproject},
+    error::{self, Result},
 };
 use clap::Args;
 use serde::Serialize;
+use std::path::Path;
 
 #[derive(Args, Debug, Serialize)]
 #[command(author, version, about)]
 pub struct Clean;
 
-pub async fn clean(_: Clean, global: GlobalArgs) -> crate::error::Result<()> {
-    let project_config_dir = project_config_dir(&global.project);
+async fn clean_dir(path: impl AsRef<Path>) -> Result<()> {
+    let path = path.as_ref();
+    let project_config_dir = project_config_dir(path);
     if project_config_dir.exists() {
         if let Err(err) = tokio::fs::remove_dir_all(&project_config_dir).await {
             tracing::warn!(
@@ -20,9 +23,17 @@ pub async fn clean(_: Clean, global: GlobalArgs) -> crate::error::Result<()> {
             );
         }
     }
-    let venv_dir = project_venv_dir(&global.project);
+    let venv_dir = project_venv_dir(path);
     if venv_dir.exists() {
-        if let Err(err) = tokio::fs::remove_dir_all(&venv_dir).await {
+        if venv_dir.is_symlink() {
+            if let Err(err) = tokio::fs::remove_file(&venv_dir).await {
+                tracing::warn!(
+                    "Failed to remove project venv symlink at {}: {}",
+                    venv_dir.display(),
+                    err
+                );
+            }
+        } else if let Err(err) = tokio::fs::remove_dir_all(&venv_dir).await {
             tracing::warn!(
                 "Failed to remove project venv directory at {}: {}",
                 venv_dir.display(),
@@ -31,15 +42,15 @@ pub async fn clean(_: Clean, global: GlobalArgs) -> crate::error::Result<()> {
         }
     }
     let gitignore = {
-        let mut builder = ignore::gitignore::GitignoreBuilder::new(&global.project);
-        if let Some(err) = builder.add(global.project.join(".gitignore")) {
+        let mut builder = ignore::gitignore::GitignoreBuilder::new(path);
+        if let Some(err) = builder.add(path.join(".gitignore")) {
             Err(err)
         } else {
             builder.build()
         }
     };
     if let Ok(gitignore) = gitignore {
-        for entry in ignore::WalkBuilder::new(&global.project)
+        for entry in ignore::WalkBuilder::new(path)
             .standard_filters(false)
             .build()
             .flatten()
@@ -72,5 +83,23 @@ pub async fn clean(_: Clean, global: GlobalArgs) -> crate::error::Result<()> {
             }
         }
     }
+    Ok(())
+}
+
+pub async fn clean(_: Clean, global: GlobalArgs) -> Result<()> {
+    let project = read_pyproject(&global.project).await?;
+    let aqora = project.aqora().ok_or_else(|| {
+        error::user(
+            "No [tool.aqora] section found in pyproject.toml",
+            "Please make sure you are in the correct directory",
+        )
+    })?;
+    if let Some(template) = aqora
+        .as_use_case()
+        .and_then(|aqora| aqora.template.as_ref())
+    {
+        clean_dir(template).await?;
+    }
+    clean_dir(&global.project).await?;
     Ok(())
 }
