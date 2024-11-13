@@ -2,7 +2,7 @@ use crate::error::{self, Result};
 use indicatif::ProgressBar;
 use pyo3::{
     prelude::*,
-    types::{PyDict, PyTuple},
+    types::{PyDict, PyModule, PyString, PyTuple},
 };
 
 #[pyclass]
@@ -22,32 +22,32 @@ impl ProgressSuspendPyFunc {
     ) -> PyResult<PyObject> {
         self.progress.suspend(|| self.func.call(py, args, kwargs))
     }
+
+    fn __getattr__(&self, py: Python<'_>, name: &PyString) -> PyResult<PyObject> {
+        self.func.getattr(py, name)
+    }
+
+    fn __setattr__(&self, py: Python<'_>, name: &PyString, value: &PyAny) -> PyResult<()> {
+        self.func.setattr(py, name, value)
+    }
+
+    fn __delattr__(&self, py: Python<'_>, name: &PyString) -> PyResult<()> {
+        self.func.as_ref(py).delattr(name)
+    }
 }
 
-fn override_print(py: Python, progress: ProgressBar) -> PyResult<()> {
-    let builtins = py.import(pyo3::intern!(py, "builtins"))?;
-    let print_name = pyo3::intern!(py, "print");
-    let old_print = builtins.getattr(print_name)?.to_object(py);
-    builtins.setattr(
-        print_name,
+fn override_module_func(
+    py: Python,
+    module: &PyModule,
+    name: &PyString,
+    progress: ProgressBar,
+) -> PyResult<()> {
+    let old_func = module.getattr(name)?.to_object(py);
+    module.setattr(
+        name,
         ProgressSuspendPyFunc {
             progress,
-            func: old_print,
-        }
-        .into_py(py),
-    )?;
-    Ok(())
-}
-
-fn override_os_system(py: Python, progress: ProgressBar) -> PyResult<()> {
-    let os = py.import(pyo3::intern!(py, "os"))?;
-    let system_name = pyo3::intern!(py, "system");
-    let old_system = os.getattr(system_name)?.to_object(py);
-    os.setattr(
-        system_name,
-        ProgressSuspendPyFunc {
-            progress,
-            func: old_system,
+            func: old_func,
         }
         .into_py(py),
     )?;
@@ -56,8 +56,18 @@ fn override_os_system(py: Python, progress: ProgressBar) -> PyResult<()> {
 
 pub fn wrap_python_output(progress: &ProgressBar) -> Result<()> {
     Python::with_gil(|py| {
-        override_print(py, progress.clone())?;
-        override_os_system(py, progress.clone())?;
+        override_module_func(
+            py,
+            py.import(pyo3::intern!(py, "builtins"))?,
+            pyo3::intern!(py, "print"),
+            progress.clone(),
+        )?;
+        override_module_func(
+            py,
+            py.import(pyo3::intern!(py, "os"))?,
+            pyo3::intern!(py, "system"),
+            progress.clone(),
+        )?;
         PyResult::Ok(())
     })
     .map_err(|err| {
