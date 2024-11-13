@@ -2,6 +2,25 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.8.0 - 2024-11-13
+#### Bug Fixes
+- add attr magic functions to overriden python builtins - (3548cd3) - Julian Popescu
+- update pep508_rs which had unmaintained dependencies - (2131abe) - Antoine Chauvin
+- load correct config dir - (69f89fe) - Angel Dijoux
+- naming stuff, use dialoguer - (daf3e7b) - Angel Dijoux
+#### Features
+- use aqora-cli in venv only if version is greater - (49f396f) - Julian Popescu
+- add aqora-cli to install command as dep - (0565355) - Julian Popescu
+- hide score if no leaderboard - (1a032dd) - Julian Popescu
+- ask to install vscode extensions - (5e9cc02) - Angel Dijoux
+#### Miscellaneous Chores
+- create our own config file - (9928829) - Angel Dijoux
+- add aqora vscode extension - (1f034d7) - Angel Dijoux
+#### Refactoring
+- vscode load file module - (592d3c5) - Angel Dijoux
+
+- - -
+
 ## v0.7.0 - 2024-10-25
 #### Features
 - zstd (#93) - (fd752c8) - Antoine Chauvin
