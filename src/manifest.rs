@@ -20,3 +20,10 @@ pub fn manifest_name() -> &'static str {
         .map(|project| project.name.as_str())
         .unwrap()
 }
+
+pub fn parse_aqora_version(version_output: &str) -> Option<Version> {
+    version_output
+        .split_whitespace()
+        .nth(1)
+        .and_then(|v| v.parse().ok())
+}

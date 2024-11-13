@@ -1,11 +1,13 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::OnceLock;
 
 use clap::Parser;
 
 use crate::commands::Cli;
 use crate::dirs::project_bin_dir;
+use crate::manifest::{manifest_version, parse_aqora_version};
 
 static TOKIO: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
@@ -25,7 +27,21 @@ fn find_venv_aqora(name: impl AsRef<Path>, cli: &Cli) -> Option<PathBuf> {
     let name = name.as_ref().file_name()?;
     let path = project_bin_dir(&cli.global.project).join(name);
     if path.exists() {
-        Some(path)
+        if let Some(venv_version) = Command::new(&path)
+            .args(["--ignore-venv-aqora", "--version"])
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .and_then(|o| parse_aqora_version(&o))
+        {
+            if &venv_version > manifest_version() {
+                Some(path)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     } else {
         None
     }
