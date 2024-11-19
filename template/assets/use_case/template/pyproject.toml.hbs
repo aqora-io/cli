@@ -4,7 +4,9 @@ version = "0.1.0"
 requires-python = ">={{ python_version }}"
 
 # You can add dependencies with `aqora add`
-dependencies = []
+dependencies = [
+  "q3as>=0.1.3", 
+]
 
 [build-system]
 requires = [
@@ -25,3 +27,4 @@ competition = "{{ competition }}"
 
 [tool.aqora.refs]
 solution = { path = "submission.solution", notebook = true }
+# solution = { path = "submission.solution_q3as", notebook = true }
