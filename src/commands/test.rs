@@ -7,7 +7,6 @@ use crate::{
     },
     error::{self, Result},
     evaluate::evaluate,
-    git::add_and_commit,
     ipynb::{convert_submission_notebooks, convert_use_case_notebooks},
     print::wrap_python_output,
     python::LastRunResult,
@@ -420,24 +419,6 @@ pub async fn run_submission_tests(
             ),
         ));
     }
-    add_and_commit(
-        global.project.as_path(),
-        format!("test: use case v{}", use_case_toml.version().unwrap()),
-    )
-    .map_err(|err| {
-        error::user(
-            &format!(
-                "Failed to commit to a local Git repository at '{}': {}",
-                global.project.display(),
-                err
-            ),
-            &format!(
-                "Make sure you have the correct permissions for '{}'",
-                global.project.display()
-            ),
-        )
-    })?;
-
     result.map(|_| ())
 }
 
