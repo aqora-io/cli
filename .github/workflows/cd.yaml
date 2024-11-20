@@ -43,21 +43,7 @@ jobs:
           args: --release --out dist --find-interpreter ${{ steps.is-openssl-vendored.outputs.enabled }} --features extension-module
           sccache: "true"
           manylinux: "manylinux2014"
-          before-script-linux: |
-            case "${{ matrix.target }}" in
-              "aarch64" | "armv7" | "s390x" | "ppc64le")
-                  # NOTE: pypa/manylinux docker images are Debian based
-                  sudo apt-get update
-                  sudo apt-get install -y pkg-config libssl-dev
-                  sudo apt-get install -y cpanminus
-                  sudo cpanm IPC::Cmd
-                ;;
-              "x86" | "x86_64")
-                # NOTE: rust-cross/manylinux docker images are CentOS based
-                yum update -y
-                yum install -y openssl openssl-devel perl-IPC-Cmd 
-                ;;
-            esac
+          before-script-linux: ./.github/workflows/before_script_linux.sh '${{ matrix.target }}'
           docker-options: -e SENTRY_DSN
         env:
           # Workaround ring 0.17 build issue
@@ -101,18 +87,12 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: "3.10"
-      - name: Install dependencies
-        run: brew install openssl pkg-config
-      - name: Set OpenSSL path
-        run: echo "OPENSSL_DIR=$(brew --prefix openssl)" >> $GITHUB_ENV
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
           args: --release --out dist
           sccache: "true"
-        env:
-          OPENSSL_DIR: ${{ env.OPENSSL_DIR }}
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
