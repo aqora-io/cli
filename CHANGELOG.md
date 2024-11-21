@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.9.0 - 2024-11-21
+#### Features
+- symlink use_case in template - (445bccc) - Julian Popescu
+
+- - -
+
 ## v0.8.0 - 2024-11-13
 #### Bug Fixes
 - add attr magic functions to overriden python builtins - (3548cd3) - Julian Popescu
