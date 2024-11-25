@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use aqora_template::UseCaseTemplate;
 use clap::Args;
@@ -6,7 +6,7 @@ use graphql_client::GraphQLQuery;
 use indicatif::ProgressBar;
 use serde::Serialize;
 
-use crate::error::{self, Error, Result};
+use crate::error::{self, format_permission_error, Result};
 use crate::git::init_repository;
 use crate::graphql_client::{custom_scalars::*, GraphQLClient};
 
@@ -55,21 +55,10 @@ pub async fn use_case(args: UseCase, global: GlobalArgs) -> Result<()> {
         .title(competition.title)
         .render(&dest)
         .map_err(|e| format_permission_error("create use case", &dest, &e))?;
-    init_repository(&pb, &dest, Some(competition.short_description))
-        .map_err(|e| format_permission_error("initialize Git repository", &dest, &e))?;
+    init_repository(&pb, &dest, Some(competition.short_description))?;
     pb.finish_with_message(format!(
         "Created use case in directory '{}'",
         dest.display()
     ));
     Ok(())
-}
-
-fn format_permission_error(action: &str, dest: &Path, error: &impl std::fmt::Display) -> Error {
-    error::user(
-        &format!("Failed to {} at '{}': {}", action, dest.display(), error),
-        &format!(
-            "Make sure you have the correct permissions for '{}'",
-            dest.display()
-        ),
-    )
 }

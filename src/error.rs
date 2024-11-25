@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use axum::{
     body::Body,
     response::{IntoResponse, Response},
@@ -82,6 +84,16 @@ impl IntoResponse for Error {
             .body(body)
             .unwrap()
     }
+}
+
+pub fn format_permission_error(action: &str, dest: &Path, error: &impl std::fmt::Display) -> Error {
+    user(
+        &format!("Failed to {} at '{}': {}", action, dest.display(), error),
+        &format!(
+            "Make sure you have the correct permissions for '{}'",
+            dest.display()
+        ),
+    )
 }
 
 // macro_rules! bail_system {
