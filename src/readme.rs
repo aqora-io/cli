@@ -2,56 +2,79 @@ use aqora_config::ReadMe;
 use mime::Mime;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
+use tokio::fs;
 
 #[derive(Debug, Error)]
-pub enum ReadmeError {
+pub enum ReadMeError {
     #[error(transparent)]
     Io(#[from] std::io::Error),
-    #[error("README not found")]
+    #[error("Readme not found")]
     NotFound,
-    #[error("README content type not supported. Only markdown and plaintext supported")]
+    #[error("Readme content type not supported. Only markdown and plaintext supported")]
     ContentTypeNotSupported,
 }
 
-pub async fn get_readme_path(
-    project_dir: impl AsRef<Path>,
+fn is_supported_mime(content_type: &str) -> Result<(), ReadMeError> {
+    let mime: Mime = content_type
+        .parse()
+        .map_err(|_| ReadMeError::ContentTypeNotSupported)?;
+    if mime.type_() == mime::TEXT && (mime.subtype() == mime::PLAIN || mime.subtype() == "markdown")
+    {
+        Ok(())
+    } else {
+        Err(ReadMeError::ContentTypeNotSupported)
+    }
+}
+
+fn is_supported_extension(extension: Option<&str>) -> bool {
+    match extension {
+        Some(ext) => {
+            let ext = ext.to_lowercase();
+            ext == "md" || ext == "txt"
+        }
+        None => true,
+    }
+}
+
+async fn find_readme_path(
+    project_dir: &Path,
     readme: Option<&ReadMe>,
-) -> Result<Option<PathBuf>, ReadmeError> {
-    let path = match readme {
-        Some(ReadMe::Table {
-            ref file,
-            text: _,
-            content_type,
-        }) => {
-            let path: Option<&Path> = file.as_deref().map(str::as_ref);
-            if let Some(content_type) = content_type {
-                let mime: Mime = content_type
-                    .parse()
-                    .map_err(|_| ReadmeError::ContentTypeNotSupported)?;
-                if !(mime.type_() == mime::TEXT
-                    && (mime.subtype() == mime::PLAIN || mime.subtype() == "markdown"))
-                {
-                    return Err(ReadmeError::ContentTypeNotSupported);
+) -> Result<Option<PathBuf>, ReadMeError> {
+    if let Some(readme) = readme {
+        match readme {
+            ReadMe::Table {
+                file,
+                text: _,
+                content_type,
+            } => {
+                if let Some(content_type) = content_type {
+                    is_supported_mime(content_type)?;
+                }
+                if let Some(file) = file {
+                    let path = project_dir.join(file);
+                    if is_supported_extension(path.extension().and_then(|s| s.to_str())) {
+                        return Ok(Some(path));
+                    } else {
+                        return Err(ReadMeError::ContentTypeNotSupported);
+                    }
                 }
             }
-            path.map(|p| p.to_path_buf())
+            ReadMe::RelativePath(path) => {
+                let path = project_dir.join(path);
+                if is_supported_extension(path.extension().and_then(|s| s.to_str())) {
+                    return Ok(Some(path));
+                } else {
+                    return Err(ReadMeError::ContentTypeNotSupported);
+                }
+            }
         }
-        Some(ReadMe::RelativePath(ref path)) => Some(PathBuf::from(path)),
-        None => None,
-    };
-
-    if let Some(path) = path {
-        return Ok(Some(path));
     }
 
-    let mut dir = tokio::fs::read_dir(&project_dir).await?;
+    let mut dir = fs::read_dir(project_dir).await?;
     while let Some(entry) = dir.next_entry().await? {
-        match entry.file_name().to_string_lossy().to_lowercase().as_str() {
-            "readme.md" | "readme.txt" => {}
-            _ => continue,
-        }
-        let metadata = entry.metadata().await?;
-        if metadata.is_file() {
+        let file_name = entry.file_name().to_string_lossy().to_lowercase();
+        let readme_files = ["readme.md", "readme.txt", "readme"];
+        if readme_files.contains(&file_name.as_str()) && entry.metadata().await?.is_file() {
             return Ok(Some(entry.path()));
         }
     }
@@ -62,24 +85,36 @@ pub async fn get_readme_path(
 pub async fn read_readme(
     project_dir: impl AsRef<Path>,
     readme: Option<&ReadMe>,
-) -> Result<Option<String>, ReadmeError> {
-    let path = match get_readme_path(project_dir, readme).await? {
-        Some(path) => path,
-        None => return Ok(None),
-    };
+) -> Result<Option<String>, ReadMeError> {
+    let project_dir = project_dir.as_ref();
 
-    match path
-        .extension()
-        .map(|ext| ext.to_string_lossy().to_lowercase())
-        .as_deref()
+    if let Some(ReadMe::Table {
+        text: Some(text), ..
+    }) = readme
     {
-        Some("md") | Some("txt") | None => {}
-        _ => return Err(ReadmeError::ContentTypeNotSupported),
+        return Ok(Some(text.clone()));
     }
 
-    if !tokio::fs::try_exists(&path).await? {
-        return Err(ReadmeError::NotFound);
-    }
+    let path = find_readme_path(project_dir, readme).await?;
 
-    Ok(Some(tokio::fs::read_to_string(path).await?))
+    if let Some(path) = path {
+        if !fs::try_exists(&path).await? {
+            return Err(ReadMeError::NotFound);
+        }
+        let content = fs::read_to_string(path).await?;
+        Ok(Some(content))
+    } else {
+        Ok(None)
+    }
+}
+
+pub async fn write_readme(project_dir: impl AsRef<Path>, content: &str) -> Result<(), ReadMeError> {
+    let project_dir = project_dir.as_ref();
+    let existing_readme_path = find_readme_path(project_dir, None).await?;
+    if let Some(existing_path) = existing_readme_path {
+        fs::write(existing_path, content).await?;
+    } else {
+        return Err(ReadMeError::NotFound);
+    }
+    Ok(())
 }

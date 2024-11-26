@@ -7,13 +7,12 @@ use crate::{
     },
     error::{self, Result},
     evaluate::evaluate,
-    file_utils::with_locked_file,
     ipynb::{convert_submission_notebooks, convert_use_case_notebooks},
     print::wrap_python_output,
     python::LastRunResult,
-    readme::get_readme_path,
+    readme::{read_readme, write_readme},
 };
-use aqora_config::{AqoraUseCaseConfig, PyProject};
+use aqora_config::{AqoraUseCaseConfig, PyProject, ReadMe};
 use aqora_runner::{
     pipeline::{EvaluateAllInfo, EvaluateInputInfo, EvaluationError, Pipeline, PipelineConfig},
     python::PyEnv,
@@ -28,12 +27,11 @@ use pyo3::{exceptions::PyException, Python};
 use serde::Serialize;
 use std::{
     collections::HashMap,
-    io::SeekFrom,
     path::{Path, PathBuf},
     pin::Pin,
     sync::{atomic::AtomicU32, Arc},
 };
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+
 use url::Url;
 
 #[derive(Args, Debug, Clone, Serialize)]
@@ -230,41 +228,49 @@ fn run_pipeline(
     )
 }
 
-async fn update_score_badge_in_file(
-    path: PathBuf,
+async fn update_score_badge_in_readme(
     competition: Option<String>,
+    project_dir: impl AsRef<Path>,
+    readme: Option<&ReadMe>,
     score: &Py<PyAny>,
     url: Url,
 ) -> Result<()> {
     let badge_url = build_shield_score_badge(
         score,
-        url.join(&competition.map_or_else(
-            || "competitons".to_string(),
-            |name| format!("competitions/{}", name),
-        ))?,
+        url.join(&competition.unwrap_or_else(|| "competitions".to_string()))?,
     )?;
-    with_locked_file(
-        |file| {
-            async move {
-                let mut contents = String::new();
-                file.read_to_string(&mut contents).await?;
-                let updated_content = regex_replace_all!(
-                    r"(?:<!--\s*aqora:score:start\s*-->.*?<!--\s*aqora:score:end\s*-->)|(!\[Aqora Score Badge\]\([^\)]+\))",
-                    &contents,
-                    badge_url.clone()
-                );
-                if updated_content != contents {
-                    file.seek(SeekFrom::Start(0)).await?;
-                    file.write_all(updated_content.as_bytes()).await?;
-                    file.set_len(updated_content.len() as u64).await?;
-                }
-                Ok(())
-            }
-            .boxed()
-        },
-        path,
-    )
-    .await
+
+    if let Some(content) = read_readme(&project_dir, readme)
+        .await
+        .inspect_err(|e| {
+            tracing::warn!(
+                "Failed to read the README file: {}. Skipping badge update.",
+                e
+            )
+        })
+        .ok()
+        .flatten()
+    {
+        let updated_content = regex_replace_all!(
+            r"(?:<!--\s*aqora:score:start\s*-->.*?<!--\s*aqora:score:end\s*-->)|(!\[Aqora Score Badge\]\([^\)]+\))",
+            &content,
+            badge_url
+        );
+
+        if updated_content != content {
+            write_readme(&project_dir, &updated_content)
+                .await
+                .inspect_err(|e| {
+                    tracing::warn!(
+                        "Failed to write to the README file: {}. Skipping badge update.",
+                        e
+                    )
+                })
+                .ok();
+        }
+    }
+
+    Ok(())
 }
 
 pub async fn run_submission_tests(
@@ -278,17 +284,6 @@ pub async fn run_submission_tests(
         .and_then(|aqora| aqora.as_submission())
         .ok_or_else(|| error::user("Submission config is not valid", ""))?;
     let project_config = read_project_config(&global.project).await?;
-    let project_readme_path = get_readme_path(
-        &global.project,
-        project.project.as_ref().and_then(|p| p.readme.as_ref()),
-    )
-    .await
-    .map_err(|err| {
-        error::user(
-            &format!("Could not read readme: {}", err),
-            "Please make sure the readme is valid",
-        )
-    })?;
     let use_case_toml_path = project_use_case_toml_path(&global.project);
     let data_path = project_data_dir(&global.project);
     if !use_case_toml_path.exists() || !data_path.exists() {
@@ -423,15 +418,18 @@ pub async fn run_submission_tests(
                 "Score".if_supports_color(OwoStream::Stdout, |text| { text.bold() }),
                 score
             ));
-            if let Some(path) = project_readme_path {
-                update_score_badge_in_file(
-                    global.project.join(path),
-                    modified_use_case.competition,
-                    &score,
-                    global.aqora_url()?,
-                )
-                .await?;
-            };
+
+            update_score_badge_in_readme(
+                modified_use_case.competition,
+                &global.project,
+                project.project.as_ref().and_then(|p| p.readme.as_ref()),
+                &score,
+                global.aqora_url()?,
+            )
+            .await
+            .inspect_err(|_| tracing::warn!("Failed to add Aqora badge to README."))
+            .ok();
+
             pipeline_pb.finish_and_clear();
             Ok(score)
         }
