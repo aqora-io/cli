@@ -10,8 +10,9 @@ use crate::{
     ipynb::{convert_submission_notebooks, convert_use_case_notebooks},
     print::wrap_python_output,
     python::LastRunResult,
+    readme::{read_readme, write_readme},
 };
-use aqora_config::{AqoraUseCaseConfig, PyProject};
+use aqora_config::{AqoraUseCaseConfig, PyProject, ReadMe};
 use aqora_runner::{
     pipeline::{EvaluateAllInfo, EvaluateInputInfo, EvaluationError, Pipeline, PipelineConfig},
     python::PyEnv,
@@ -19,6 +20,7 @@ use aqora_runner::{
 use clap::Args;
 use futures::prelude::*;
 use indicatif::{MultiProgress, ProgressBar};
+use lazy_regex::regex_replace_all;
 use owo_colors::{OwoColorize, Stream as OwoStream};
 use pyo3::prelude::*;
 use pyo3::{exceptions::PyException, Python};
@@ -29,6 +31,8 @@ use std::{
     pin::Pin,
     sync::{atomic::AtomicU32, Arc},
 };
+
+use url::Url;
 
 #[derive(Args, Debug, Clone, Serialize)]
 #[command(author, version, about)]
@@ -65,6 +69,22 @@ fn last_run_items(
             Err(err) => Err((index, err)),
         }
     })
+}
+
+fn build_shield_score_badge(score: &Py<PyAny>, aqora_url: Url) -> Result<String> {
+    const LOGO_BASE64: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA4AAAAOCAYAAAAfSC3RAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAIWSURBVHgBjZI/bBJxFMe//5x3BE9D2waCeZiEwNxECcbHSwmGt3qZkwcnB2Q0cFAR6d2Mk6KgcHNQSeHwmJaJ06XYmICprEq1PbaUk7ugJ93p1ToYPpb3svv5fve5/2+P8IRjqqdS4MGiwDTQFx1f2stx4+Kip7Mi3KsKIVj87Kq7zj2z/qoJoajK15IAzTtxVlRiREFIi2ZB6Hg57yoIHEpC0k7lTGL16oRLTk3JFQmGcjkgkA0H4gEBWfSWShyHFIoet+/EyCbh9GJ2B+hx24JvILU2SwiYhyCA4Q5feb6I3bRskyLGMuN6ZriEAsBqo9z3nhYkY/F0Q8BQznUjSQuvBseV9sshNzbArU0zdAAWbOsejOYOmpzY7ZiSJL+hMJKQoqeXh+qkuOogCuj48h4tlyg5Qncw/z3brKrjoLbfRlTfQWwQ46w6zRmHM7edn5Zd8xi5t9EH8MVVUN0B5aPcvcWmwKHxX2+c7Jtm5ddsaf4K2z9WEXrYznT2axXOVlLGg7JNdYf1BxCI6ynHpReUYvv4aVrfU1wdk8ResDel1V8r5XBBsj7wzie8NyLxgE7Q94nKL6h17B3Pglet+2N91hfK0+sxLEx0V9rgtfzM9feXdpsr6DRLI2V8SLw3PtmJ7xN58Z92rPqC37yeaPU7Pa/ffDq0wSyGKPHXav+9OBxVD215HW64k1vSp7ZI6/+d34DKO3EcR6BAbMAAAAASUVORK5CYII=";
+    const LABEL_COLOR: &str = "eceafc";
+    const BADGE_COLOR: &str = "4328e5";
+    let badge_url = format!(
+        "https://img.shields.io/badge/score-{}-{}",
+        score, BADGE_COLOR
+    );
+    let query_params = format!(
+        "?logo={}&labelColor={}&link={}",
+        LOGO_BASE64, LABEL_COLOR, aqora_url
+    );
+    let full_url = Url::parse(&badge_url)?.join(&query_params)?;
+    Ok(format!("![Aqora Score Badge]({})", full_url))
 }
 
 struct RunPipelineConfig {
@@ -208,6 +228,51 @@ fn run_pipeline(
     )
 }
 
+async fn update_score_badge_in_readme(
+    competition: Option<String>,
+    project_dir: impl AsRef<Path>,
+    readme: Option<&ReadMe>,
+    score: &Py<PyAny>,
+    url: Url,
+) -> Result<()> {
+    let badge_url = build_shield_score_badge(
+        score,
+        url.join(&competition.unwrap_or_else(|| "competitions".to_string()))?,
+    )?;
+
+    if let Some(content) = read_readme(&project_dir, readme)
+        .await
+        .inspect_err(|e| {
+            tracing::warn!(
+                "Failed to read the README file: {}. Skipping badge update.",
+                e
+            )
+        })
+        .ok()
+        .flatten()
+    {
+        let updated_content = regex_replace_all!(
+            r"(?:<!--\s*aqora:score:start\s*-->.*?<!--\s*aqora:score:end\s*-->)|(!\[Aqora Score Badge\]\([^\)]+\))",
+            &content,
+            badge_url
+        );
+
+        if updated_content != content {
+            write_readme(&project_dir, &updated_content)
+                .await
+                .inspect_err(|e| {
+                    tracing::warn!(
+                        "Failed to write to the README file: {}. Skipping badge update.",
+                        e
+                    )
+                })
+                .ok();
+        }
+    }
+
+    Ok(())
+}
+
 pub async fn run_submission_tests(
     m: &MultiProgress,
     global: &GlobalArgs,
@@ -218,9 +283,7 @@ pub async fn run_submission_tests(
         .aqora()
         .and_then(|aqora| aqora.as_submission())
         .ok_or_else(|| error::user("Submission config is not valid", ""))?;
-
     let project_config = read_project_config(&global.project).await?;
-
     let use_case_toml_path = project_use_case_toml_path(&global.project);
     let data_path = project_data_dir(&global.project);
     if !use_case_toml_path.exists() || !data_path.exists() {
@@ -331,7 +394,7 @@ pub async fn run_submission_tests(
     let (num_inputs, aggregated) = run_pipeline(
         &env,
         RunPipelineConfig {
-            use_case: modified_use_case,
+            use_case: modified_use_case.clone(),
             pipeline_config: config,
             tests: tests.clone(),
             last_run_dir,
@@ -350,6 +413,23 @@ pub async fn run_submission_tests(
                     score
                 ));
             }
+            pipeline_pb.println(format!(
+                "{}: {}",
+                "Score".if_supports_color(OwoStream::Stdout, |text| { text.bold() }),
+                score
+            ));
+
+            update_score_badge_in_readme(
+                modified_use_case.competition,
+                &global.project,
+                project.project.as_ref().and_then(|p| p.readme.as_ref()),
+                &score,
+                global.aqora_url()?,
+            )
+            .await
+            .inspect_err(|_| tracing::warn!("Failed to add Aqora badge to README."))
+            .ok();
+
             pipeline_pb.finish_and_clear();
             Ok(score)
         }

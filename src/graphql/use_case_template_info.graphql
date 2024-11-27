@@ -2,6 +2,7 @@ query UseCaseTemplateInfo($slug: String!) {
   competitionBySlug(slug: $slug) {
     id
     title
+    shortDescription
     useCase {
       latest {
         version
