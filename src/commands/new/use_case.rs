@@ -55,7 +55,14 @@ pub async fn use_case(args: UseCase, global: GlobalArgs) -> Result<()> {
         .title(competition.title)
         .render(&dest)
         .map_err(|e| format_permission_error("create use case", &dest, &e))?;
-    init_repository(&pb, &dest, Some(competition.short_description))?;
+    init_repository(&pb, &dest, Some(competition.short_description))
+        .inspect_err(|e| {
+            tracing::warn!(
+                "Failed to create a Git repository: {}. Skipping git init.",
+                e
+            )
+        })
+        .ok();
     pb.finish_with_message(format!(
         "Created use case in directory '{}'",
         dest.display()

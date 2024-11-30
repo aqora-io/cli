@@ -101,7 +101,14 @@ pub async fn template(args: Template, global: GlobalArgs) -> Result<()> {
     pb.set_message("Downloading competition template...");
     match download_archive(download_url, &destination, &pb).await {
         Ok(_) => {
-            init_repository(&pb, &destination, None)?;
+            init_repository(&pb, &destination, None)
+                .inspect_err(|e| {
+                    tracing::warn!(
+                        "Failed to create a Git repository: {}. Skipping git init.",
+                        e
+                    )
+                })
+                .ok();
             pb.finish_with_message(format!(
                 "Competition template downloaded to {}",
                 destination.display()
