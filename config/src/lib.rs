@@ -404,7 +404,7 @@ impl<'de> de::Deserialize<'de> for PathStr<'static> {
     {
         struct PathStrVisitor;
 
-        impl<'de> de::Visitor<'de> for PathStrVisitor {
+        impl de::Visitor<'_> for PathStrVisitor {
             type Value = PathStr<'static>;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
