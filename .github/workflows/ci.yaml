@@ -24,6 +24,7 @@ jobs:
           toolchain: 1.82.0
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - run: rustc --version
       - run: cargo fmt --all --check
       - run: cargo clippy -- -D warnings
       - run: cargo test
