@@ -11,10 +11,15 @@ pub async fn compress(
     input: impl AsRef<Path>,
     output: impl AsRef<Path>,
     pb: &ProgressBar,
+    gitignore: bool,
 ) -> Result<(), Error> {
     let _pb = TempProgressStyle::new(pb);
     pb.set_style(progress_bar::pretty());
-    Archiver::new(input.as_ref().to_path_buf(), output.as_ref().to_path_buf())
+    let mut archiver = Archiver::new(input.as_ref().to_path_buf(), output.as_ref().to_path_buf());
+    if !gitignore {
+        archiver = archiver.without_gitignore();
+    }
+    archiver
         .with_progress_bar(pb.clone())
         .asynchronously(tokio::runtime::Handle::current())
         .await

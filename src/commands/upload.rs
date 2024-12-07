@@ -520,7 +520,7 @@ pub async fn upload_use_case(
         let client = client.clone();
         async move {
             data_pb_cloned.set_message("Compressing data");
-            compress(data_path, &data_tar_file, &data_pb_cloned)
+            compress(data_path, &data_tar_file, &data_pb_cloned, true)
                 .await
                 .map_err(|err| {
                     error::system(
@@ -567,14 +567,19 @@ pub async fn upload_use_case(
             let client = client.clone();
             async move {
                 template_pb_cloned.set_message("Compressing template");
-                compress(template_path, &template_tar_file, &template_pb_cloned)
-                    .await
-                    .map_err(|err| {
-                        error::system(
-                            &format!("Could not compress template: {}", err),
-                            "Please make sure the template directory is valid",
-                        )
-                    })?;
+                compress(
+                    template_path,
+                    &template_tar_file,
+                    &template_pb_cloned,
+                    false,
+                )
+                .await
+                .map_err(|err| {
+                    error::system(
+                        &format!("Could not compress template: {}", err),
+                        "Please make sure the template directory is valid",
+                    )
+                })?;
 
                 template_pb_cloned.set_message("Uploading template");
                 upload_project_version_file(
@@ -928,14 +933,19 @@ Do you want to run the tests now?"#,
         let evaluation_pb_cloned = evaluation_pb.clone();
         let client = client.clone();
         async move {
-            compress(evaluation_path, &evaluation_tar_file, &evaluation_pb_cloned)
-                .await
-                .map_err(|err| {
-                    error::system(
-                        &format!("Could not compress evaluation: {}", err),
-                        "Please make sure the evaluation directory is valid",
-                    )
-                })?;
+            compress(
+                evaluation_path,
+                &evaluation_tar_file,
+                &evaluation_pb_cloned,
+                true,
+            )
+            .await
+            .map_err(|err| {
+                error::system(
+                    &format!("Could not compress evaluation: {}", err),
+                    "Please make sure the evaluation directory is valid",
+                )
+            })?;
             evaluation_pb_cloned.set_message("Uploading evaluation");
             upload_project_version_file(
                 &client,

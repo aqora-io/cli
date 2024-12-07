@@ -17,6 +17,7 @@ pub struct Archiver {
     input: PathBuf,
     output: PathBuf,
     target_kind: Option<ArchiveKind>,
+    gitignore: bool,
 
     #[cfg(feature = "indicatif")]
     progress_bar: Option<ProgressBar>,
@@ -28,6 +29,7 @@ impl Archiver {
             input,
             output,
             target_kind: None,
+            gitignore: true,
 
             #[cfg(feature = "indicatif")]
             progress_bar: None,
@@ -44,6 +46,20 @@ impl Archiver {
     pub fn without_target_kind(self) -> Self {
         Self {
             target_kind: None,
+            ..self
+        }
+    }
+
+    pub fn with_gitignore(self) -> Self {
+        Self {
+            gitignore: true,
+            ..self
+        }
+    }
+
+    pub fn without_gitignore(self) -> Self {
+        Self {
+            gitignore: false,
             ..self
         }
     }
@@ -67,6 +83,7 @@ impl Archiver {
     fn find_input_paths(&self) -> Result<impl Iterator<Item = PathBuf>, ignore::Error> {
         Ok(ignore::WalkBuilder::new(&self.input)
             .hidden(false)
+            .git_ignore(self.gitignore)
             .build()
             .skip(1)
             .map(|result| result.map(DirEntry::into_path))
