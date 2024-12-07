@@ -18,12 +18,8 @@ jobs:
           python-version: "3.10"
           cache: "pip"
       - run: pip install uv
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - run: rustc --version
       - run: cargo fmt --all --check
       - run: cargo clippy -- -D warnings
       - run: cargo test
