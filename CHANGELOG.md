@@ -2,6 +2,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.10.0 - 2024-12-07
+#### Bug Fixes
+- upload templates without ignoring files - (ecd8e3d) - Julian Popescu
+#### Features
+- init a Git repo for default use_case template (#97) - (0d7408d) - Angel Dijoux
+- q3as in default use case template (#105) - (e2203c8) - Angel Dijoux
+#### Miscellaneous Chores
+- clippy errors (#106) - (b55bf69) - Angel Dijoux
+
+- - -
+
 ## v0.9.0 - 2024-11-21
 #### Features
 - symlink use_case in template - (445bccc) - Julian Popescu
