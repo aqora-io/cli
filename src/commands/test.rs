@@ -419,7 +419,6 @@ pub async fn run_submission_tests(
             ),
         ));
     }
-
     result.map(|_| ())
 }
 

@@ -5,6 +5,7 @@ use crate::{
     },
     download::download_archive,
     error::{self, Result},
+    git::init_repository,
     graphql_client::GraphQLClient,
 };
 use clap::Args;
@@ -99,10 +100,20 @@ pub async fn template(args: Template, global: GlobalArgs) -> Result<()> {
 
     pb.set_message("Downloading competition template...");
     match download_archive(download_url, &destination, &pb).await {
-        Ok(_) => pb.finish_with_message(format!(
-            "Competition template downloaded to {}",
-            destination.display()
-        )),
+        Ok(_) => {
+            init_repository(&pb, &destination, None)
+                .inspect_err(|e| {
+                    tracing::warn!(
+                        "Failed to create a Git repository: {}. Skipping git init.",
+                        e
+                    )
+                })
+                .ok();
+            pb.finish_with_message(format!(
+                "Competition template downloaded to {}",
+                destination.display()
+            ))
+        }
         Err(error) => {
             pb.finish_with_message("Failed to download competition template");
             return Err(error);

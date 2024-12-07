@@ -6,7 +6,8 @@ use graphql_client::GraphQLQuery;
 use indicatif::ProgressBar;
 use serde::Serialize;
 
-use crate::error::{self, Result};
+use crate::error::{self, format_permission_error, Result};
+use crate::git::init_repository;
 use crate::graphql_client::{custom_scalars::*, GraphQLClient};
 
 use super::GlobalArgs;
@@ -53,15 +54,15 @@ pub async fn use_case(args: UseCase, global: GlobalArgs) -> Result<()> {
         .competition(args.competition)
         .title(competition.title)
         .render(&dest)
-        .map_err(|e| {
-            error::user(
-                &format!("Failed to create use case at '{}': {}", dest.display(), e),
-                &format!(
-                    "Make sure you have the correct permissions for '{}'",
-                    dest.display()
-                ),
+        .map_err(|e| format_permission_error("create use case", &dest, &e))?;
+    init_repository(&pb, &dest, Some(competition.short_description))
+        .inspect_err(|e| {
+            tracing::warn!(
+                "Failed to create a Git repository: {}. Skipping git init.",
+                e
             )
-        })?;
+        })
+        .ok();
     pb.finish_with_message(format!(
         "Created use case in directory '{}'",
         dest.display()
