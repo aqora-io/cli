@@ -154,6 +154,7 @@ async fn ask_for_install_vscode_extensions(
             pb.suspend(|| {
                 Confirm::new()
                     .with_prompt(prompt_message)
+                    .default(true)
                     .interact()
                     .map_err(|_| error::system("Failed to read input", "Please try again"))
             })

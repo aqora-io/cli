@@ -1,6 +1,7 @@
 use crate::{
     commands::{
         install::{install, Install},
+        login::check_login,
         GlobalArgs,
     },
     download::download_archive,
@@ -34,6 +35,9 @@ pub struct Template {
 }
 
 pub async fn template(args: Template, global: GlobalArgs) -> Result<()> {
+    let m = MultiProgress::new();
+    check_login(global.clone(), &m).await?;
+
     let client = GraphQLClient::new(global.url.parse()?).await?;
 
     let destination = args
@@ -55,7 +59,6 @@ pub async fn template(args: Template, global: GlobalArgs) -> Result<()> {
         ));
     }
 
-    let m = MultiProgress::new();
     let mut pb = ProgressBar::new_spinner().with_message("Fetching competition...");
     pb.enable_steady_tick(std::time::Duration::from_millis(100));
     pb = m.add(pb);

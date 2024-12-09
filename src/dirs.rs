@@ -208,6 +208,7 @@ async fn ensure_uv(
     let confirmation = pb.suspend(|| {
         dialoguer::Confirm::with_theme(color.dialoguer().as_ref())
             .with_prompt("`uv` is required. Install it now? (python3 -m pip install uv)")
+            .default(true)
             .interact()
     })?;
 
