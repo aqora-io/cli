@@ -22,6 +22,12 @@ impl<'a> Drop for TempProgressStyle<'a> {
     }
 }
 
+pub fn default_spinner() -> ProgressBar {
+    let progress = ProgressBar::new_spinner();
+    progress.enable_steady_tick(std::time::Duration::from_millis(100));
+    progress
+}
+
 pub fn pretty() -> ProgressStyle {
     ProgressStyle::with_template(
         "{spinner} [{elapsed_precise}] {msg} [{wide_bar}] {pos:>7}/{len:7} ({eta})",
