@@ -20,7 +20,7 @@ lazy_static::lazy_static! {
 /// Aqora respects your privacy and follows https://consoledonottrack.com/ :
 /// when $DO_NOT_TRACK environment variable is defined, Aqora will not
 /// record any statistics or report any incidents.
-#[derive(Args, Debug, Serialize)]
+#[derive(Args, Debug, Serialize, Clone)]
 pub struct GlobalArgs {
     #[arg(
         long,
