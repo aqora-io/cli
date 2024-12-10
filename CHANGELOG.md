@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.11.0 - 2024-12-10
+#### Features
+- accept rules with cli - (94fb62c) - Julian Popescu
+- add organization prompt for template download - (987aa0d) - Julian Popescu
+- prompt user login on template - (bea1c4a) - Julian Popescu
+
+- - -
+
 ## v0.10.0 - 2024-12-07
 #### Bug Fixes
 - upload templates without ignoring files - (ecd8e3d) - Julian Popescu

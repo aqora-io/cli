@@ -108,7 +108,7 @@ dependencies = [
 
 [[package]]
 name = "aqora"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "aqora-archiver",
  "aqora-config",
@@ -164,7 +164,7 @@ dependencies = [
 
 [[package]]
 name = "aqora-archiver"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "crc32fast",
  "flate2",
@@ -185,7 +185,7 @@ dependencies = [
 
 [[package]]
 name = "aqora-config"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "pep440_rs",
  "pep508_rs",
@@ -197,7 +197,7 @@ dependencies = [
 
 [[package]]
 name = "aqora-runner"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "aqora-config",
  "clap",
@@ -214,7 +214,7 @@ dependencies = [
 
 [[package]]
 name = "aqora-template"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "derive_builder",
  "handlebars",
