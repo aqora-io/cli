@@ -373,6 +373,7 @@ async fn update_project_version(
                         r#"Project version must be greater than {last_version}.
 Do you want to update the version to {new_version} now?"#
                     ))
+                    .default(true)
                     .interact()
             })?;
             if confirmation {
@@ -824,6 +825,7 @@ pub async fn upload_submission(
 It is required to run the tests again.
 Do you want to run the tests now?"#,
                     )
+                    .default(true)
                     .interact()
             })?;
             if confirmation {
@@ -860,6 +862,7 @@ Do you want to run the tests now?"#,
 Those changes may not be reflected in the submission unless you re-run the tests.
 Do you want to re-run the tests now?"#,
                         )
+                        .default(true)
                         .interact()
                 })?;
                 if confirmation {
@@ -875,6 +878,7 @@ Do you want to re-run the tests now?"#,
 It is required to run the tests again.
 Do you want to run the tests now?"#,
                 )
+                .default(true)
                 .interact()
         })?;
         if confirmation {

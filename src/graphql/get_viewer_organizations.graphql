@@ -1,0 +1,13 @@
+query GetViewerOrganizations {
+  viewer {
+    organizations {
+      nodes {
+        organization {
+          id
+          username
+          displayName
+        }
+      }
+    }
+  }
+}

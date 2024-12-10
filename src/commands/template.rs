@@ -1,8 +1,11 @@
 use crate::{
+    colors::ColorChoiceExt,
     commands::{
         install::{install, Install},
+        login::check_login,
         GlobalArgs,
     },
+    dirs::pyproject_path,
     download::download_archive,
     error::{self, Result},
     git::init_repository,
@@ -24,6 +27,14 @@ use url::Url;
 )]
 pub struct GetCompetitionTemplate;
 
+#[derive(GraphQLQuery)]
+#[graphql(
+    query_path = "src/graphql/get_viewer_organizations.graphql",
+    schema_path = "src/graphql/schema.graphql",
+    response_derives = "Debug"
+)]
+pub struct GetViewerOrganizations;
+
 #[derive(Args, Debug, Serialize)]
 #[command(author, version, about)]
 pub struct Template {
@@ -34,6 +45,9 @@ pub struct Template {
 }
 
 pub async fn template(args: Template, global: GlobalArgs) -> Result<()> {
+    let m = MultiProgress::new();
+    let logged_in = check_login(global.clone(), &m).await?;
+
     let client = GraphQLClient::new(global.url.parse()?).await?;
 
     let destination = args
@@ -55,7 +69,6 @@ pub async fn template(args: Template, global: GlobalArgs) -> Result<()> {
         ));
     }
 
-    let m = MultiProgress::new();
     let mut pb = ProgressBar::new_spinner().with_message("Fetching competition...");
     pb.enable_steady_tick(std::time::Duration::from_millis(100));
     pb = m.add(pb);
@@ -98,6 +111,44 @@ pub async fn template(args: Template, global: GlobalArgs) -> Result<()> {
         })?
         .download_url;
 
+    let organizations = if logged_in {
+        client
+            .send::<GetViewerOrganizations>(get_viewer_organizations::Variables {})
+            .await?
+            .viewer
+            .organizations
+            .nodes
+            .into_iter()
+            .map(|node| node.organization)
+            .collect::<Vec<_>>()
+    } else {
+        vec![]
+    };
+
+    let organization = if !organizations.is_empty() {
+        m.suspend(|| -> Result<_> {
+            let items = organizations
+                .iter()
+                .map(|org| format!("@{} ({})", org.username.clone(), org.display_name.clone()))
+                .collect::<Vec<_>>();
+            Result::Ok(
+                dialoguer::FuzzySelect::with_theme(global.color.dialoguer().as_ref())
+                    .with_prompt("Would you like to submit with a team? (Press ESC to skip)")
+                    .items(&items)
+                    .interact_opt()
+                    .map_err(|err| {
+                        error::system(
+                            &format!("Could not select organization: {err}"),
+                            "Please try again",
+                        )
+                    })?
+                    .and_then(|index| organizations.into_iter().nth(index)),
+            )
+        })?
+    } else {
+        None
+    };
+
     pb.set_message("Downloading competition template...");
     match download_archive(download_url, &destination, &pb).await {
         Ok(_) => {
@@ -118,6 +169,48 @@ pub async fn template(args: Template, global: GlobalArgs) -> Result<()> {
             pb.finish_with_message("Failed to download competition template");
             return Err(error);
         }
+    }
+
+    if let Some(organization) = organization {
+        let toml_path = pyproject_path(&destination);
+        let mut doc = tokio::fs::read_to_string(&toml_path)
+            .await
+            .map_err(|err| {
+                error::system(
+                    &format!("Failed to read {}: {err}", toml_path.display()),
+                    "Contact the competition organizer",
+                )
+            })?
+            .parse::<toml_edit::DocumentMut>()
+            .map_err(|err| {
+                error::system(
+                    &format!("Failed to parse {}: {err}", toml_path.display()),
+                    "Contact the competition organizer",
+                )
+            })?;
+        let aqora_config = doc
+            .get_mut("tool")
+            .and_then(|tool| tool.as_table_mut())
+            .and_then(|tool| tool.get_mut("aqora"))
+            .and_then(|aqora| aqora.as_table_mut())
+            .ok_or_else(|| {
+                error::system(
+                    &format!(
+                        "Failed to parse {}: Could not find tool.aqora",
+                        toml_path.display()
+                    ),
+                    "Contact the competition organizer",
+                )
+            })?;
+        aqora_config["entity"] = toml_edit::value(organization.username.clone());
+        tokio::fs::write(&toml_path, doc.to_string())
+            .await
+            .map_err(|err| {
+                error::system(
+                    &format!("Failed to write {}: {err}", toml_path.display()),
+                    "Check the permissions of the file",
+                )
+            })?;
     }
 
     if !args.no_install {
