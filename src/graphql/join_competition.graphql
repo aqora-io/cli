@@ -1,0 +1,7 @@
+mutation JoinCompetition($competitionId: ID!, $entityId: ID!) {
+  joinCompetition(competitionId: $competitionId, asEntity: $entityId) {
+    node {
+      id
+    }
+  }
+}

@@ -1,0 +1,5 @@
+mutation AcceptCompetitionRules($competitionId: ID!, $entityId: ID!) {
+  agreeToCompetitionRule(competition: $competitionId, asEntity: $entityId) {
+    id
+  }
+}

@@ -1,6 +1,6 @@
 use crate::{
     colors::ColorChoiceExt,
-    commands::GlobalArgs,
+    commands::{login::check_login, GlobalArgs},
     compress::{compress, DEFAULT_ARCH_EXTENSION, DEFAULT_ARCH_MIME_TYPE},
     dirs::{
         project_last_run_dir, project_last_run_result, project_use_case_toml_path, pyproject_path,
@@ -10,6 +10,7 @@ use crate::{
     graphql_client::{custom_scalars::*, GraphQLClient},
     id::Id,
     ipynb::convert_project_notebooks,
+    progress_bar::default_spinner,
     python::{build_package, LastRunResult},
     readme::read_readme,
     revert_file::RevertFile,
@@ -28,6 +29,12 @@ use tracing::Instrument as _;
 use url::Url;
 
 use super::test::run_submission_tests;
+
+const DEFAULT_RULES: &str = r#"=========================
+Rules, Terms & Conditions
+=========================
+
+By default all competitions must comply to the rules defined in [aqora's Terms of Use](https://aqora.io/terms)."#;
 
 #[derive(Args, Debug, Serialize)]
 #[command(author, version, about)]
@@ -177,8 +184,10 @@ pub struct LatestSubmissionVersion;
 
 #[derive(Debug)]
 pub struct LatestSubmissionVersionResponse {
+    is_member: bool,
     previously_agreed: bool,
     latest_agreed: bool,
+    rule_text: String,
     version: Option<Version>,
 }
 
@@ -220,11 +229,29 @@ pub async fn get_latest_submission_version(
     let previously_agreed =
         competition.entity_rule_agreements.nodes.len() > if latest_agreed { 1 } else { 0 };
     Ok(LatestSubmissionVersionResponse {
+        is_member: competition.membership.is_some(),
+        rule_text: competition.latest_rule.text,
         previously_agreed,
         latest_agreed,
         version,
     })
 }
+
+#[derive(GraphQLQuery)]
+#[graphql(
+    query_path = "src/graphql/join_competition.graphql",
+    schema_path = "src/graphql/schema.graphql",
+    response_derives = "Debug"
+)]
+pub struct JoinCompetition;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+    query_path = "src/graphql/accept_competition_rules.graphql",
+    schema_path = "src/graphql/schema.graphql",
+    response_derives = "Debug"
+)]
+pub struct AcceptCompetitionRules;
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -399,6 +426,7 @@ pub async fn upload_use_case(
     mut project: PyProject,
 ) -> Result<()> {
     let m = MultiProgress::new();
+    check_login(global.clone(), &m).await?;
 
     project.validate_version().map_err(|err| {
         error::user(
@@ -683,6 +711,7 @@ pub async fn upload_submission(
     mut project: PyProject,
 ) -> Result<()> {
     let m = MultiProgress::new();
+    check_login(global.clone(), &m).await?;
 
     let use_case_toml_path = project_use_case_toml_path(&global.project);
     if !use_case_toml_path.exists() {
@@ -774,6 +803,8 @@ pub async fn upload_submission(
         version: submission_version,
         previously_agreed,
         latest_agreed,
+        rule_text,
+        is_member,
     } = get_latest_submission_version(&client, slug.clone(), entity_id).await?;
 
     if !latest_agreed {
@@ -782,12 +813,54 @@ pub async fn upload_submission(
         } else {
             "You must agree to the competition rules before submitting."
         };
-        let mut url = global.aqora_url().unwrap();
-        url.set_path(&format!("competitions/{slug}/rules"));
-        return Err(error::user(
-            message,
-            &format!("Please agree to the competition rules at {url}",),
-        ));
+        let mut rules = DEFAULT_RULES.to_string();
+        if !rule_text.trim().is_empty() {
+            rules.push_str(&format!("\n\n{rule_text}"));
+        }
+
+        let accepts = m.suspend(|| {
+            let will_review = dialoguer::Confirm::with_theme(global.color.dialoguer().as_ref())
+                .with_prompt(format!("{message} Would you like to review them now?"))
+                .default(true)
+                .interact()
+                .ok()
+                .unwrap_or_default();
+            if !will_review {
+                return false;
+            }
+            if dialoguer::Editor::new().edit(&rules).is_err() {
+                return false;
+            }
+            dialoguer::Confirm::with_theme(global.color.dialoguer().as_ref())
+                .with_prompt("Would you like to accept?")
+                .interact()
+                .ok()
+                .unwrap_or_default()
+        });
+        if !accepts {
+            let mut url = global.aqora_url().unwrap();
+            url.set_path(&format!("competitions/{slug}/rules"));
+            return Err(error::user(
+                message,
+                &format!("Please agree to the competition rules at {url}",),
+            ));
+        }
+        let pb = m.add(default_spinner().with_message("Accepting rules..."));
+        if !is_member {
+            client
+                .send::<JoinCompetition>(join_competition::Variables {
+                    competition_id: competition_id.to_node_id(),
+                    entity_id: entity_id.to_node_id(),
+                })
+                .await?;
+        }
+        client
+            .send::<AcceptCompetitionRules>(accept_competition_rules::Variables {
+                competition_id: competition_id.to_node_id(),
+                entity_id: entity_id.to_node_id(),
+            })
+            .await?;
+        pb.finish_with_message("Rules accepted");
     }
 
     if use_case_toml.version().as_ref() != Some(&use_case_version) {
@@ -799,10 +872,23 @@ pub async fn upload_submission(
 
     let evaluation_path = project_last_run_dir(&global.project);
     if !evaluation_path.exists() {
-        return Err(error::user(
-            "No last run result found",
-            "Please make sure you have run `aqora test`",
-        ));
+        let confirmation = m.suspend(|| {
+            dialoguer::Confirm::with_theme(global.color.dialoguer().as_ref())
+                .with_prompt(
+                    r#"No last run result found.
+Would you like to run the tests now?"#,
+                )
+                .default(true)
+                .interact()
+        })?;
+        if confirmation {
+            run_submission_tests(&m, &global, &project, Default::default()).await?;
+        } else {
+            return Err(error::user(
+                "No last run result found",
+                "Please make sure you have run `aqora test`",
+            ));
+        }
     }
 
     let last_run_result: Result<LastRunResult> =

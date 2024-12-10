@@ -8,6 +8,7 @@ enum Action {
 	CREATE_COMPETITION
 	CREATE_COMPETITION_RULE_AGREEMENT
 	CREATE_EVENT
+	CREATE_EVENT_RULE_AGREEMENT
 	CREATE_FORUM
 	CREATE_ORGANIZATION
 	CREATE_PROJECT_VERSION_APPROVAL
@@ -26,6 +27,8 @@ enum Action {
 	DELETE_USER
 	DELETE_TAG
 	FETCH_WEBSITE_METADATA
+	JOIN_COMPETITION
+	JOIN_EVENT
 	PUBLISH_VOTE
 	READ_COMMENT
 	READ_COMPETITION
@@ -36,6 +39,8 @@ enum Action {
 	READ_EVENT
 	READ_EVENT_COMPETITION
 	READ_EVENT_MEMBERSHIP
+	READ_EVENT_RULE
+	READ_EVENT_RULE_AGREEMENT
 	READ_PROJECT_VERSION
 	READ_PROJECT_VERSION_APPROVAL
 	READ_PROJECT_VERSION_EVALUATION
@@ -184,6 +189,26 @@ enum Badge {
 	Badge awarded upon first submission
 	"""
 	QUANTUM_PIONEER
+	"""
+	Hackathon Champion - Q2B Silicon Valley 2024
+	"""
+	Q2B2024_GOLD
+	"""
+	Hackathon Innovator - 2nd Place Team - Q2B Silicon Valley 2024
+	"""
+	Q2B2024_SILVER
+	"""
+	Hackathon Trailblazer - 3rd Place Team - Q2B Silicon Valley 2024
+	"""
+	Q2B2024_BRONZE
+	"""
+	On-Site Participant - Q2B Hackathon 2024
+	"""
+	Q2B2024_ONSITE
+	"""
+	Global Participant - Q2B Hackathon 2024
+	"""
+	Q2B2024_REMOTE
 	UNKNOWN
 }
 
@@ -250,13 +275,14 @@ type Competition implements ForumOwner & Node {
 	useCase: UseCase!
 	latestRule: CompetitionRule!
 	rules(after: String, before: String, first: Int, last: Int): CompetitionRuleConnection!
-	entityRuleAgreements(after: String, before: String, first: Int, last: Int, entity: UsernameOrID): CompetitionRuleAgreementConnection!
+	entityRuleAgreements(after: String, before: String, first: Int, last: Int, entity: UsernameOrID, latest: Boolean): CompetitionRuleAgreementConnection!
 	banner: Url
 	thumbnail: Url
 	leaderboard(after: String, before: String, first: Int, last: Int): ProjectVersionEvaluationConnection!
 	submissions(after: String, before: String, first: Int, last: Int, entityId: ID, needsApproval: Boolean): SubmissionConnection!
 	submission(entity: UsernameOrID): Submission
 	forum: Forum!
+	membership(entity: UsernameOrID): CompetitionMembership
 	members(after: String, before: String, first: Int, last: Int): CompetitionMembershipConnection!
 	tags(after: String, before: String, first: Int, last: Int): CompetitionTagConnection!
 }
@@ -295,6 +321,7 @@ type CompetitionMembership implements Node {
 	id: ID!
 	entity: Entity!
 	competition: Competition!
+	ruleAgreements(after: String, before: String, first: Int, last: Int, latest: Boolean): CompetitionRuleAgreementConnection!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 }
 
@@ -618,8 +645,12 @@ type Event implements ForumOwner & Node {
 	forum: Forum!
 	banner: Url
 	thumbnail: Url
+	membership(entity: UsernameOrID): EventMembership
 	members(after: String, before: String, first: Int, last: Int, userIsOrgMember: ID): EventMembershipConnection!
 	competitions(after: String, before: String, first: Int, last: Int): EventCompetitionConnection!
+	latestRule: EventRule!
+	rules(after: String, before: String, first: Int, last: Int): EventRuleConnection!
+	entityRuleAgreements(after: String, before: String, first: Int, last: Int, entity: UsernameOrID, latest: Boolean): EventRuleAgreementConnection!
 }
 
 type EventCompetition implements Node {
@@ -692,6 +723,7 @@ type EventMembership implements Node {
 	id: ID!
 	entity: Entity!
 	event: Event!
+	ruleAgreements(after: String, before: String, first: Int, last: Int, latest: Boolean): EventRuleAgreementConnection!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 }
 
@@ -727,6 +759,79 @@ type EventMembershipEdge {
 enum EventMembershipKind {
 	HOST
 	PARTICIPANT
+}
+
+type EventRule implements Node {
+	text: String!
+	createdAt: DateTime!
+	id: ID!
+	event: Event!
+	entityAgreement(entity: UsernameOrID): EventRuleAgreement
+}
+
+type EventRuleAgreement implements Node {
+	createdAt: DateTime!
+	id: ID!
+	eventRule: EventRule!
+	entity: Entity!
+}
+
+type EventRuleAgreementConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [EventRuleAgreementEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [EventRuleAgreement!]!
+}
+
+"""
+An edge in a connection.
+"""
+type EventRuleAgreementEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: EventRuleAgreement!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+type EventRuleConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [EventRuleEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [EventRule!]!
+}
+
+"""
+An edge in a connection.
+"""
+type EventRuleEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: EventRule!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type FileBrowser {
@@ -954,7 +1059,9 @@ type Mutation {
 	awardBadge(entityId: ID!, badge: Badge!): EntityBadgeEdge!
 	withdrawBadge(id: ID!): ID!
 	agreeToCompetitionRule(competition: ID!, asEntity: UsernameOrID): CompetitionRuleAgreement!
+	agreeToEventRule(event: ID!, asEntity: UsernameOrID): EventRuleAgreement!
 	addCompetitionMember(competitionId: ID!, entityId: ID!): CompetitionMembershipEdge!
+	joinCompetition(competitionId: ID!, asEntity: UsernameOrID): CompetitionMembershipEdge!
 	removeCompetitionMember(id: ID!): ID!
 	transferCompetitionOwnership(competitionId: ID!, toEntityId: ID!): [CompetitionMembershipEdge!]!
 	setUserNotificationSubscription(notification: NotificationKind!, subscribe: Boolean!): UserEdge!
@@ -965,6 +1072,7 @@ type Mutation {
 	deleteEvent(id: ID!): ID!
 	updateEventAgenda(input: UpdateAgendaInput!, eventId: ID!): EventEdge!
 	addEventMember(eventId: ID!, entityId: ID!): EventMembershipEdge!
+	joinEvent(eventId: ID!, asEntity: UsernameOrID): EventMembershipEdge!
 	removeEventMember(id: ID!): ID!
 	transferEventOwnership(eventId: ID!, toEntityId: ID!): [EventMembershipEdge!]!
 	addEventCompetition(eventId: ID!, competitionId: ID!): EventCompetitionEdge!
@@ -1009,6 +1117,7 @@ enum NotificationKind {
 	REPLY_TOPIC
 	CONTENT_MENTIONED
 	REPLY_COMMENT
+	PROMOTIONAL_NEWSLETTER
 	SYSTEM
 }
 
@@ -1363,6 +1472,7 @@ input SignupUserInput {
 	image: Upload
 	email: String!
 	password: String!
+	subscribePromotionalNewsletter: Boolean
 }
 
 
@@ -1597,6 +1707,7 @@ input UpdateEventInput {
 	banner: Upload
 	thumbnail: Upload
 	visibility: ActivityVisibility
+	rules: String
 }
 
 input UpdateForumInput {
