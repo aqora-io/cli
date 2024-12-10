@@ -1,0 +1,15 @@
+query GetViewerEnabledEntities($resource: ID!, $action: Action!) {
+  viewer {
+    id
+    username
+    displayName
+    entities(permission: { to: $action, on: $resource }) {
+      nodes {
+        __typename
+        id
+        username
+        displayName
+      }
+    }
+  }
+}
