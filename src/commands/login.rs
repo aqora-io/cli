@@ -1,7 +1,9 @@
-use crate::credentials::{with_locked_credentials, Credentials};
 use crate::{
+    colors::ColorChoiceExt,
     commands::GlobalArgs,
+    credentials::{get_credentials, with_locked_credentials, Credentials},
     error::{self, Result},
+    progress_bar::default_spinner,
     shutdown::shutdown_signal,
 };
 use axum::{
@@ -15,7 +17,7 @@ use chrono::{Duration, Utc};
 use clap::Args;
 use futures::prelude::*;
 use graphql_client::GraphQLQuery;
-use indicatif::ProgressBar;
+use indicatif::{MultiProgress, ProgressBar};
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, Write};
 use std::{future::IntoFuture, sync::Arc};
@@ -27,7 +29,7 @@ use url::Url;
 
 const CLIENT_ID_PREFIX: &str = "localhost-";
 
-#[derive(Args, Debug, Serialize)]
+#[derive(Args, Default, Debug, Serialize)]
 #[command(author, version, about)]
 pub struct Login {
     #[arg(long, short, help = "Force login without a browser")]
@@ -326,11 +328,10 @@ async fn login_interactive(
 )]
 pub struct Oauth2TokenMutation;
 
-pub async fn login(args: Login, global: GlobalArgs) -> Result<()> {
+async fn do_login(args: Login, global: GlobalArgs, progress: ProgressBar) -> Result<()> {
     with_locked_credentials(|file| {
         async move {
-            let progress = ProgressBar::new_spinner().with_message("Logging in...");
-            progress.enable_steady_tick(std::time::Duration::from_millis(100));
+            progress.set_message("Logging in...");
             let client_id = client_id();
             let (redirect_uri, code) = if let Some(res) =
                 get_oauth_code(&global, &client_id, &progress, args.interactive).await?
@@ -379,4 +380,31 @@ pub async fn login(args: Login, global: GlobalArgs) -> Result<()> {
         .boxed()
     })
     .await
+}
+
+pub async fn login(args: Login, global: GlobalArgs) -> Result<()> {
+    do_login(args, global, default_spinner()).await
+}
+
+pub async fn check_login(global: GlobalArgs, multi_progress: &MultiProgress) -> Result<bool> {
+    if get_credentials(global.aqora_url()?).await?.is_some() {
+        return Ok(true);
+    }
+    let confirmation = multi_progress.suspend(|| {
+        dialoguer::Confirm::with_theme(global.color.dialoguer().as_ref())
+            .with_prompt(
+                "Your aqora account is not currently connected. Would you like to connect it now?",
+            )
+            .default(true)
+            .interact()
+    })?;
+    if confirmation {
+        do_login(
+            Login::default(),
+            global,
+            multi_progress.add(default_spinner()),
+        )
+        .await?;
+    }
+    Ok(confirmation)
 }
