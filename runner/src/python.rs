@@ -487,6 +487,64 @@ pub fn deepcopy<'py>(py: Python<'py>, obj: &'py PyAny) -> PyResult<&'py PyAny> {
     copy.call1((obj,))
 }
 
+pub mod serde_pyjson {
+    use std::borrow::Cow;
+
+    use pyo3::{FromPyObject, IntoPy, PyObject, Python};
+
+    pub(crate) struct BytesVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for BytesVisitor {
+        type Value = Cow<'de, [u8]>;
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("bytes")
+        }
+        fn visit_borrowed_bytes<E>(self, v: &'de [u8]) -> Result<Self::Value, E> {
+            Ok(Cow::Borrowed(v))
+        }
+        fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(Cow::Owned(v.to_vec()))
+        }
+        fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E> {
+            Ok(Cow::Owned(v))
+        }
+    }
+
+    pub fn serialize<S, T>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::ser::Serializer,
+        T: IntoPy<PyObject> + Clone,
+    {
+        Python::with_gil(|py| {
+            let out = py
+                .import("json")
+                .map_err(serde::ser::Error::custom)?
+                .getattr("dumps")
+                .map_err(serde::ser::Error::custom)?
+                .call1((value.clone().into_py(py),))
+                .map_err(serde::ser::Error::custom)?;
+            let bytes = out.extract().map_err(serde::ser::Error::custom)?;
+            serializer.serialize_bytes(bytes)
+        })
+    }
+
+    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+        T: for<'a> FromPyObject<'a>,
+    {
+        let bytes = deserializer.deserialize_any(BytesVisitor)?;
+        Python::with_gil(|py| {
+            let out = py.import("json")?.getattr("loads")?.call1((bytes,))?;
+            FromPyObject::extract(out)
+        })
+        .map_err(serde::de::Error::custom)
+    }
+}
+
 pub mod serde_pickle {
     use pyo3::prelude::*;
     use std::borrow::Cow;
@@ -556,63 +614,6 @@ pub mod serde_pickle {
             PyResult::Ok(PyErr::from_value(out))
         })
         .map_err(serde::de::Error::custom)
-    }
-}
-
-pub mod serde_pickle_opt {
-    use super::serde_pickle;
-    use pyo3::prelude::*;
-    use std::borrow::Cow;
-
-    struct MaybeBytesVisitor;
-
-    impl<'de> serde::de::Visitor<'de> for MaybeBytesVisitor {
-        type Value = Option<Cow<'de, [u8]>>;
-        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-            formatter.write_str("maybe bytes")
-        }
-        fn visit_none<E>(self) -> Result<Self::Value, E> {
-            Ok(None)
-        }
-        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-        where
-            D: serde::de::Deserializer<'de>,
-        {
-            let bytes = deserializer.deserialize_any(serde_pickle::BytesVisitor)?;
-            Ok(Some(bytes))
-        }
-    }
-
-    pub fn serialize<'a, S, T>(value: &'a Option<T>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::ser::Serializer,
-        &'a T: IntoPy<PyObject>,
-    {
-        match value {
-            Some(value) => serde_pickle::serialize(value, serializer),
-            None => serializer.serialize_none(),
-        }
-    }
-
-    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
-    where
-        D: serde::de::Deserializer<'de>,
-        T: for<'a> FromPyObject<'a>,
-    {
-        let bytes = deserializer.deserialize_option(MaybeBytesVisitor)?;
-        if let Some(bytes) = bytes {
-            Python::with_gil(|py| {
-                let out = py
-                    .import("pickle")?
-                    .getattr("loads")?
-                    .call1((bytes.as_ref(),))?;
-                FromPyObject::extract(out)
-            })
-            .map_err(serde::de::Error::custom)
-            .map(Some)
-        } else {
-            Ok(None)
-        }
     }
 }
 

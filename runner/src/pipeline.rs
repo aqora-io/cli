@@ -1,5 +1,5 @@
 use crate::python::{
-    async_generator, async_python_run, deepcopy, format_err, serde_pickle, serde_pickle_opt,
+    async_generator, async_python_run, deepcopy, format_err, serde_pickle, serde_pyjson,
     AsyncIterator, PyEnv,
 };
 use aqora_config::{AqoraUseCaseConfig, FunctionDef};
@@ -122,13 +122,13 @@ pub struct Layer {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[pyclass]
 pub struct LayerEvaluation {
-    #[serde(with = "serde_pickle")]
+    #[serde(with = "serde_pyjson")]
     pub transform: PyObject,
-    #[serde(with = "serde_pickle")]
+    #[serde(with = "serde_pyjson")]
     pub context: PyObject,
-    #[serde(with = "serde_pickle_opt")]
+    #[serde(with = "serde_pyjson", default)]
     pub metric: Option<PyObject>,
-    #[serde(with = "serde_pickle_opt")]
+    #[serde(with = "serde_pyjson", default)]
     pub branch: Option<PyObject>,
 }
 
@@ -174,7 +174,7 @@ pub type EvaluationResult = HashMap<String, Vec<LayerEvaluation>>;
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct EvaluateInputInfo {
-    #[serde(with = "serde_pickle_opt")]
+    #[serde(with = "serde_pyjson", default)]
     pub input: Option<PyObject>,
     pub result: EvaluationResult,
     pub error: Option<EvaluationError>,
@@ -182,7 +182,7 @@ pub struct EvaluateInputInfo {
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct EvaluateAllInfo {
-    #[serde(with = "serde_pickle_opt")]
+    #[serde(with = "serde_pyjson", default)]
     pub score: Option<PyObject>,
     pub num_inputs: u32,
 }
