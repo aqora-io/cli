@@ -2,6 +2,7 @@ use crate::{
     colors::ColorChoiceExt,
     commands::{login::check_login, GlobalArgs},
     compress::{compress, DEFAULT_ARCH_EXTENSION, DEFAULT_ARCH_MIME_TYPE},
+    dialog::AutoConfirmDialog,
     dirs::{
         project_last_run_dir, project_last_run_result, project_use_case_toml_path, pyproject_path,
         read_pyproject,
@@ -388,6 +389,7 @@ async fn update_project_version(
     last_version: Option<&Version>,
     pb: &ProgressBar,
     color: ColorChoice,
+    auto_confirm: bool,
 ) -> Result<Version> {
     let mut version = project.version().unwrap();
 
@@ -395,7 +397,8 @@ async fn update_project_version(
         if last_version >= &version {
             let new_version = increment_version(last_version);
             let confirmation = pb.suspend(|| {
-                dialoguer::Confirm::with_theme(color.dialoguer().as_ref())
+                AutoConfirmDialog::with_theme(color.dialoguer().as_ref())
+                    .auto_confirm(auto_confirm)
                     .with_prompt(format!(
                         r#"Project version must be greater than {last_version}.
 Do you want to update the version to {new_version} now?"#
@@ -491,6 +494,7 @@ pub async fn upload_use_case(
         competition.version.as_ref(),
         &use_case_pb,
         global.color,
+        global.yes,
     )
     .await?;
 
@@ -819,7 +823,8 @@ pub async fn upload_submission(
         }
 
         let accepts = m.suspend(|| {
-            let will_review = dialoguer::Confirm::with_theme(global.color.dialoguer().as_ref())
+            let will_review = AutoConfirmDialog::with_theme(global.color.dialoguer().as_ref())
+                .auto_confirm(global.yes)
                 .with_prompt(format!("{message} Would you like to review them now?"))
                 .default(true)
                 .interact()
@@ -831,7 +836,8 @@ pub async fn upload_submission(
             if dialoguer::Editor::new().edit(&rules).is_err() {
                 return false;
             }
-            dialoguer::Confirm::with_theme(global.color.dialoguer().as_ref())
+            AutoConfirmDialog::with_theme(global.color.dialoguer().as_ref())
+                .auto_confirm(global.yes)
                 .with_prompt("Would you like to accept?")
                 .interact()
                 .ok()
@@ -873,7 +879,8 @@ pub async fn upload_submission(
     let evaluation_path = project_last_run_dir(&global.project);
     if !evaluation_path.exists() {
         let confirmation = m.suspend(|| {
-            dialoguer::Confirm::with_theme(global.color.dialoguer().as_ref())
+            AutoConfirmDialog::with_theme(global.color.dialoguer().as_ref())
+                .auto_confirm(global.yes)
                 .with_prompt(
                     r#"No last run result found.
 Would you like to run the tests now?"#,
@@ -905,7 +912,8 @@ Would you like to run the tests now?"#,
     if let Ok(last_run_result) = last_run_result.as_ref() {
         if last_run_result.use_case_version.as_ref() != Some(&use_case_version) {
             let confirmation = m.suspend(|| {
-                dialoguer::Confirm::with_theme(global.color.dialoguer().as_ref())
+                AutoConfirmDialog::with_theme(global.color.dialoguer().as_ref())
+                    .auto_confirm(global.yes)
                     .with_prompt(
                         r#"It seems the use case version has changed since the last test run.
 It is required to run the tests again.
@@ -942,7 +950,8 @@ Do you want to run the tests now?"#,
             }
             if should_run_tests {
                 let confirmation = m.suspend(|| {
-                    dialoguer::Confirm::with_theme(global.color.dialoguer().as_ref())
+                    AutoConfirmDialog::with_theme(global.color.dialoguer().as_ref())
+                        .auto_confirm(global.yes)
                         .with_prompt(
                             r#"It seems you have made some changes since since the last test run.
 Those changes may not be reflected in the submission unless you re-run the tests.
@@ -958,7 +967,8 @@ Do you want to re-run the tests now?"#,
         }
     } else {
         let confirmation = m.suspend(|| {
-            dialoguer::Confirm::with_theme(global.color.dialoguer().as_ref())
+            AutoConfirmDialog::with_theme(global.color.dialoguer().as_ref())
+                .auto_confirm(global.yes)
                 .with_prompt(
                     r#"It seems the last test run result is corrupted or missing.
 It is required to run the tests again.
@@ -983,6 +993,7 @@ Do you want to run the tests now?"#,
         submission_version.as_ref(),
         &use_case_pb,
         global.color,
+        global.yes,
     )
     .await?;
 

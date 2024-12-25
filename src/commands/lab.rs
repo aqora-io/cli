@@ -13,12 +13,12 @@ use tokio::process::Command;
 use url::Url;
 
 use crate::{
+    dialog::AutoConfirmDialog,
     dirs::{project_vscode_dir, vscode_settings_path},
     error::{self, Result},
     process::run_command,
     vscode::UserVSCodeSettings,
 };
-use dialoguer::Confirm;
 
 use crate::commands::python::{python, Python};
 
@@ -116,6 +116,7 @@ async fn handle_vscode_integration(
 async fn ask_for_install_vscode_extensions(
     allow_vscode_extensions: Option<bool>,
     pb: &ProgressBar,
+    auto_confirm: bool,
 ) -> Result<()> {
     let mut vscode_settings = UserVSCodeSettings::load().await?;
 
@@ -152,7 +153,8 @@ async fn ask_for_install_vscode_extensions(
         let pb = pb.clone();
         move || {
             pb.suspend(|| {
-                Confirm::new()
+                AutoConfirmDialog::new()
+                    .auto_confirm(auto_confirm)
                     .with_prompt(prompt_message)
                     .default(true)
                     .interact()
@@ -199,7 +201,8 @@ pub async fn lab(args: Lab, global_args: GlobalArgs) -> Result<()> {
             .can_install_extensions
             .is_none()
         {
-            ask_for_install_vscode_extensions(args.allow_vscode_extensions, &pb).await?;
+            ask_for_install_vscode_extensions(args.allow_vscode_extensions, &pb, global_args.yes)
+                .await?;
         }
         handle_vscode_integration(global_args, &env, &pb).await
     } else {

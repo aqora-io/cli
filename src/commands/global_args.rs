@@ -44,6 +44,14 @@ pub struct GlobalArgs {
     pub color: ColorChoice,
     #[arg(value_enum, long, default_value_t = LinkMode::Copy, global = true)]
     pub dep_link_mode: LinkMode,
+    #[arg(
+        short = 'y',
+        long = "yes",
+        help = "Skip interactive dialogs and automatically confirm all prompts",
+        default_value_t = false,
+        global = true
+    )]
+    pub yes: bool,
 }
 
 impl GlobalArgs {
@@ -77,6 +85,7 @@ impl GlobalArgs {
             self.python.as_ref(),
             self.color.forced(),
             self.dep_link_mode,
+            self.yes,
             pb,
         )
         .await
@@ -89,6 +98,7 @@ impl GlobalArgs {
             self.python.as_ref(),
             self.color.forced(),
             self.dep_link_mode,
+            self.yes,
             pb,
         )
         .await

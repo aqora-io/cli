@@ -1,6 +1,7 @@
 use crate::{
     cfg_file::read_cfg_file_key,
     colors::ColorChoiceExt,
+    dialog::AutoConfirmDialog,
     error::{self, Result},
     manifest::manifest_name,
     process::run_command,
@@ -187,6 +188,7 @@ async fn ensure_uv(
     uv_path: Option<impl AsRef<Path>>,
     pb: &ProgressBar,
     color: ColorChoice,
+    auto_confirm: bool,
 ) -> Result<PathBuf> {
     if let Some(uv_path) = uv_path.as_ref() {
         return if uv_path.as_ref().exists() {
@@ -206,7 +208,8 @@ async fn ensure_uv(
     }
 
     let confirmation = pb.suspend(|| {
-        dialoguer::Confirm::with_theme(color.dialoguer().as_ref())
+        AutoConfirmDialog::with_theme(color.dialoguer().as_ref())
+            .auto_confirm(auto_confirm)
             .with_prompt("`uv` is required. Install it now? (python3 -m pip install uv)")
             .default(true)
             .interact()
@@ -256,12 +259,22 @@ pub async fn opt_init_venv(
     python: Option<impl AsRef<str>>,
     color: ColorChoice,
     link_mode: LinkMode,
+    auto_confirm: bool,
     pb: &ProgressBar,
 ) -> Result<Option<PyEnv>> {
     let venv_dir = project_venv_dir(&project_dir);
     if tokio::fs::try_exists(venv_dir).await? {
         Ok(Some(
-            init_venv(&project_dir, uv_path, python, color, link_mode, pb).await?,
+            init_venv(
+                &project_dir,
+                uv_path,
+                python,
+                color,
+                link_mode,
+                auto_confirm,
+                pb,
+            )
+            .await?,
         ))
     } else {
         Ok(None)
@@ -274,10 +287,11 @@ pub async fn init_venv(
     python: Option<impl AsRef<str>>,
     color: ColorChoice,
     link_mode: LinkMode,
+    auto_confirm: bool,
     pb: &ProgressBar,
 ) -> Result<PyEnv> {
     pb.set_message("Initializing the Python environment...");
-    let uv_path = ensure_uv(uv_path, pb, color).await?;
+    let uv_path = ensure_uv(uv_path, pb, color, auto_confirm).await?;
     let venv_dir = project_venv_dir(&project_dir);
     if let Some(python) = python.as_ref() {
         if let Ok(Some(installed_python)) = get_installed_python_version(&venv_dir).await {
