@@ -4,6 +4,7 @@ mod commands;
 mod compress;
 mod config;
 mod credentials;
+mod dialog;
 mod dirs;
 mod download;
 mod error;
