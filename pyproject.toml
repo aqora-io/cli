@@ -1,5 +1,5 @@
 [build-system]
-requires = ["maturin>=1.0,<2.0"]
+requires = ["maturin>=1.4,<2.0"]
 build-backend = "maturin"
 
 [project]
@@ -7,6 +7,7 @@ name = "aqora-cli"
 description = "The aqora command line interface"
 authors = [{ name = "S.A.S Aqora Quantum", email = "hello@aqora.io" }]
 requires-python = ">=3.8"
+dynamic = ["version"]
 # keywords = []
 # classifiers = []
 
