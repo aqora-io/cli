@@ -1,7 +1,7 @@
 use crate::{
     cfg_file::read_cfg_file_key,
     colors::ColorChoiceExt,
-    dialog::AutoConfirmDialog,
+    dialog::Confirm,
     error::{self, Result},
     manifest::manifest_name,
     process::run_command,
@@ -208,8 +208,9 @@ async fn ensure_uv(
     }
 
     let confirmation = pb.suspend(|| {
-        AutoConfirmDialog::with_theme(color.dialoguer().as_ref())
-            .auto_confirm(auto_confirm)
+        Confirm::new()
+            .with_theme(color.dialoguer())
+            .no_prompt(auto_confirm)
             .with_prompt("`uv` is required. Install it now? (python3 -m pip install uv)")
             .default(true)
             .interact()
@@ -290,8 +291,8 @@ pub async fn init_venv(
     auto_confirm: bool,
     pb: &ProgressBar,
 ) -> Result<PyEnv> {
-    pb.set_message("Initializing the Python environment...");
     let uv_path = ensure_uv(uv_path, pb, color, auto_confirm).await?;
+    pb.set_message("Initializing the Python environment...");
     let venv_dir = project_venv_dir(&project_dir);
     if let Some(python) = python.as_ref() {
         if let Ok(Some(installed_python)) = get_installed_python_version(&venv_dir).await {

@@ -1,5 +1,6 @@
 use crate::{
     colors::ColorChoiceExt,
+    dialog::{Confirm, FuzzySelect},
     dirs::{init_venv, opt_init_venv},
     error::Result,
     graphql_client::graphql_url,
@@ -46,12 +47,12 @@ pub struct GlobalArgs {
     pub dep_link_mode: LinkMode,
     #[arg(
         short = 'y',
-        long = "yes",
-        help = "Skip interactive dialogs and automatically confirm all prompts",
+        long = "no-prompt",
+        help = "Skip interactive dialogs and automatically confirm",
         default_value_t = false,
         global = true
     )]
-    pub yes: bool,
+    pub no_prompt: bool,
 }
 
 impl GlobalArgs {
@@ -85,7 +86,7 @@ impl GlobalArgs {
             self.python.as_ref(),
             self.color.forced(),
             self.dep_link_mode,
-            self.yes,
+            self.no_prompt,
             pb,
         )
         .await
@@ -98,9 +99,21 @@ impl GlobalArgs {
             self.python.as_ref(),
             self.color.forced(),
             self.dep_link_mode,
-            self.yes,
+            self.no_prompt,
             pb,
         )
         .await
+    }
+
+    pub fn confirm(&self) -> Confirm {
+        Confirm::new()
+            .with_theme(self.color.dialoguer())
+            .no_prompt(self.no_prompt)
+    }
+
+    pub fn fuzzy_select(&self) -> FuzzySelect {
+        FuzzySelect::new()
+            .with_theme(self.color.dialoguer())
+            .no_prompt(self.no_prompt)
     }
 }

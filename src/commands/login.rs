@@ -1,8 +1,6 @@
 use crate::{
-    colors::ColorChoiceExt,
     commands::GlobalArgs,
     credentials::{get_credentials, with_locked_credentials, Credentials},
-    dialog::AutoConfirmDialog,
     error::{self, Result},
     progress_bar::default_spinner,
     shutdown::shutdown_signal,
@@ -392,12 +390,13 @@ pub async fn check_login(global: GlobalArgs, multi_progress: &MultiProgress) -> 
         return Ok(true);
     }
     let confirmation = multi_progress.suspend(|| {
-        AutoConfirmDialog::with_theme(global.color.dialoguer().as_ref())
-            .auto_confirm(global.yes)
+        global
+            .confirm()
             .with_prompt(
                 "Your aqora account is not currently connected. Would you like to connect it now?",
             )
             .default(true)
+            .no_prompt_value(false)
             .interact()
     })?;
     if confirmation {
