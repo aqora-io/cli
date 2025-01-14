@@ -1,5 +1,6 @@
 use crate::{
     commands::{
+        clean::{clean, Clean},
         install::{install, Install},
         login::check_login,
         GlobalArgs,
@@ -222,7 +223,13 @@ pub async fn template(args: Template, global: GlobalArgs) -> Result<()> {
             })?;
     }
 
-    if !args.no_install {
+    if args.no_install {
+        let clean_global = GlobalArgs {
+            project: destination.clone(),
+            ..global
+        };
+        clean(Clean, clean_global).await?;
+    } else {
         let install_global = GlobalArgs {
             project: destination.clone(),
             ..global
@@ -230,7 +237,7 @@ pub async fn template(args: Template, global: GlobalArgs) -> Result<()> {
         install(
             Install {
                 competition: Some(args.competition),
-                ..Default::default()
+                upgrade: true,
             },
             install_global,
         )
