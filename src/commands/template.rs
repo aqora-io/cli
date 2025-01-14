@@ -1,5 +1,4 @@
 use crate::{
-    colors::ColorChoiceExt,
     commands::{
         install::{install, Install},
         login::check_login,
@@ -132,9 +131,10 @@ pub async fn template(args: Template, global: GlobalArgs) -> Result<()> {
                     format!("@{} ({})", org.username.clone(), org.display_name.clone())
                 }));
                 Result::Ok(
-                    dialoguer::FuzzySelect::with_theme(global.color.dialoguer().as_ref())
+                    global
+                        .fuzzy_select()
                         .with_prompt("Would you like to submit with a team? (Press ESC to skip)")
-                        .items(&items)
+                        .items(items)
                         .interact_opt()
                         .map_err(|err| {
                             error::system(
