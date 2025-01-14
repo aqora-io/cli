@@ -47,7 +47,7 @@ pub struct Template {
 
 pub async fn template(args: Template, global: GlobalArgs) -> Result<()> {
     let m = MultiProgress::new();
-    let logged_in = check_login(global.clone(), &m).await?;
+    let logged_in = check_login(global.clone(), &m, global.no_prompt).await?;
 
     let client = GraphQLClient::new(global.url.parse()?).await?;
 
@@ -111,7 +111,7 @@ pub async fn template(args: Template, global: GlobalArgs) -> Result<()> {
         })?
         .download_url;
 
-    let organization = if logged_in {
+    let organization = if logged_in && !global.no_prompt {
         let viewer = client
             .send::<GetViewerEnabledEntities>(get_viewer_enabled_entities::Variables {
                 resource: competition.id,

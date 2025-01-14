@@ -388,6 +388,7 @@ async fn update_project_version(
     last_version: Option<&Version>,
     pb: &ProgressBar,
     color: ColorChoice,
+    no_prompt: bool,
 ) -> Result<Version> {
     let mut version = project.version().unwrap();
 
@@ -395,6 +396,9 @@ async fn update_project_version(
         if last_version >= &version {
             let new_version = increment_version(last_version);
             let confirmation = pb.suspend(|| {
+                if no_prompt {
+                    return Ok(false);
+                }
                 dialoguer::Confirm::with_theme(color.dialoguer().as_ref())
                     .with_prompt(format!(
                         r#"Project version must be greater than {last_version}.
@@ -426,7 +430,7 @@ pub async fn upload_use_case(
     mut project: PyProject,
 ) -> Result<()> {
     let m = MultiProgress::new();
-    check_login(global.clone(), &m).await?;
+    check_login(global.clone(), &m, global.no_prompt).await?;
 
     project.validate_version().map_err(|err| {
         error::user(
@@ -491,6 +495,7 @@ pub async fn upload_use_case(
         competition.version.as_ref(),
         &use_case_pb,
         global.color,
+        global.no_prompt,
     )
     .await?;
 
@@ -711,7 +716,7 @@ pub async fn upload_submission(
     mut project: PyProject,
 ) -> Result<()> {
     let m = MultiProgress::new();
-    check_login(global.clone(), &m).await?;
+    check_login(global.clone(), &m, global.no_prompt).await?;
 
     let use_case_toml_path = project_use_case_toml_path(&global.project);
     if !use_case_toml_path.exists() {
@@ -819,6 +824,9 @@ pub async fn upload_submission(
         }
 
         let accepts = m.suspend(|| {
+            if global.no_prompt {
+                return false;
+            }
             let will_review = dialoguer::Confirm::with_theme(global.color.dialoguer().as_ref())
                 .with_prompt(format!("{message} Would you like to review them now?"))
                 .default(true)
@@ -873,6 +881,9 @@ pub async fn upload_submission(
     let evaluation_path = project_last_run_dir(&global.project);
     if !evaluation_path.exists() {
         let confirmation = m.suspend(|| {
+            if global.no_prompt {
+                return Ok(false);
+            }
             dialoguer::Confirm::with_theme(global.color.dialoguer().as_ref())
                 .with_prompt(
                     r#"No last run result found.
@@ -905,6 +916,9 @@ Would you like to run the tests now?"#,
     if let Ok(last_run_result) = last_run_result.as_ref() {
         if last_run_result.use_case_version.as_ref() != Some(&use_case_version) {
             let confirmation = m.suspend(|| {
+                if global.no_prompt {
+                    return Ok(false);
+                }
                 dialoguer::Confirm::with_theme(global.color.dialoguer().as_ref())
                     .with_prompt(
                         r#"It seems the use case version has changed since the last test run.
@@ -942,6 +956,9 @@ Do you want to run the tests now?"#,
             }
             if should_run_tests {
                 let confirmation = m.suspend(|| {
+                    if global.no_prompt {
+                        return Ok(false);
+                    }
                     dialoguer::Confirm::with_theme(global.color.dialoguer().as_ref())
                         .with_prompt(
                             r#"It seems you have made some changes since since the last test run.
@@ -958,6 +975,9 @@ Do you want to re-run the tests now?"#,
         }
     } else {
         let confirmation = m.suspend(|| {
+            if global.no_prompt {
+                return Ok(false);
+            }
             dialoguer::Confirm::with_theme(global.color.dialoguer().as_ref())
                 .with_prompt(
                     r#"It seems the last test run result is corrupted or missing.
@@ -983,6 +1003,7 @@ Do you want to run the tests now?"#,
         submission_version.as_ref(),
         &use_case_pb,
         global.color,
+        global.no_prompt,
     )
     .await?;
 

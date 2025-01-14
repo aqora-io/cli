@@ -116,6 +116,7 @@ async fn handle_vscode_integration(
 async fn ask_for_install_vscode_extensions(
     allow_vscode_extensions: Option<bool>,
     pb: &ProgressBar,
+    no_prompt: bool,
 ) -> Result<()> {
     let mut vscode_settings = UserVSCodeSettings::load().await?;
 
@@ -148,9 +149,11 @@ async fn ask_for_install_vscode_extensions(
         format_extensions()
     );
 
-    let can_install = tokio::task::spawn_blocking({
+    let can_install = if no_prompt {
+        false
+    } else {
         let pb = pb.clone();
-        move || {
+        tokio::task::spawn_blocking(move || {
             pb.suspend(|| {
                 Confirm::new()
                     .with_prompt(prompt_message)
@@ -158,10 +161,10 @@ async fn ask_for_install_vscode_extensions(
                     .interact()
                     .map_err(|_| error::system("Failed to read input", "Please try again"))
             })
-        }
-    })
-    .await
-    .map_err(|_| error::user("The extension installation prompt was interrupted.", ""))??;
+        })
+        .await
+        .map_err(|_| error::user("The extension installation prompt was interrupted.", ""))??
+    };
 
     vscode_settings
         .can_install_extensions(can_install)
@@ -199,7 +202,12 @@ pub async fn lab(args: Lab, global_args: GlobalArgs) -> Result<()> {
             .can_install_extensions
             .is_none()
         {
-            ask_for_install_vscode_extensions(args.allow_vscode_extensions, &pb).await?;
+            ask_for_install_vscode_extensions(
+                args.allow_vscode_extensions,
+                &pb,
+                global_args.no_prompt,
+            )
+            .await?;
         }
         handle_vscode_integration(global_args, &env, &pb).await
     } else {

@@ -386,9 +386,16 @@ pub async fn login(args: Login, global: GlobalArgs) -> Result<()> {
     do_login(args, global, default_spinner()).await
 }
 
-pub async fn check_login(global: GlobalArgs, multi_progress: &MultiProgress) -> Result<bool> {
+pub async fn check_login(
+    global: GlobalArgs,
+    multi_progress: &MultiProgress,
+    no_prompt: bool,
+) -> Result<bool> {
     if get_credentials(global.aqora_url()?).await?.is_some() {
         return Ok(true);
+    }
+    if no_prompt {
+        return Ok(false);
     }
     let confirmation = multi_progress.suspend(|| {
         dialoguer::Confirm::with_theme(global.color.dialoguer().as_ref())

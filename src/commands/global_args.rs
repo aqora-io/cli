@@ -44,6 +44,9 @@ pub struct GlobalArgs {
     pub color: ColorChoice,
     #[arg(value_enum, long, default_value_t = LinkMode::Copy, global = true)]
     pub dep_link_mode: LinkMode,
+    /// Do not prompt
+    #[arg(short = 'y', long, global = true)]
+    pub no_prompt: bool,
 }
 
 impl GlobalArgs {
