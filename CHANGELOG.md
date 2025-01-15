@@ -2,6 +2,18 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.12.0 - 2025-01-15
+#### Bug Fixes
+- template command creating a faulty directory - (3881a12) - Antoine Chauvin
+#### Features
+- skip when say : - (732662e) - Angel Dijoux
+#### Miscellaneous Chores
+- fix maturin 1.8.0 build issue - (58845bf) - Angel Dijoux
+#### Refactoring
+- add convenience methods for no-prompt - (4d1443e) - Julian Popescu
+
+- - -
+
 ## v0.11.0 - 2024-12-10
 #### Features
 - accept rules with cli - (94fb62c) - Julian Popescu
