@@ -359,6 +359,52 @@ impl Evaluator {
         }
         Ok(out)
     }
+
+    pub async fn evaluate_until(
+        &self,
+        until_layer: &str,
+        mut input: PyObject,
+        defaults: Option<&EvaluationResult>,
+    ) -> Result<PyObject, EvaluationError> {
+        let mut out = EvaluationResult::new();
+        let original_input = input.clone();
+        let mut context = Python::with_gil(|py| PyNone::get(py).into_py(py));
+        let mut layer_index = 0;
+        let until_index = self
+            .layers
+            .iter()
+            .position(|layer| layer.name == until_layer)
+            .ok_or_else(|| EvaluationError::LayerNotFound(until_layer.to_string()))?;
+        while layer_index < until_index {
+            let layer = &self.layers[layer_index];
+            let default = defaults
+                .and_then(|defaults| defaults.get(&layer.name))
+                .and_then(|defaults| defaults.get(out.get(&layer.name).map_or(0, |v| v.len())));
+            let result = layer
+                .evaluate(&input, &original_input, &context, default)
+                .await?;
+            if let Some(branch) = result.branch_str()? {
+                layer_index = self
+                    .layers
+                    .iter()
+                    .position(|layer| layer.name == branch)
+                    .ok_or_else(|| EvaluationError::LayerNotFound(branch))?;
+            } else {
+                layer_index += 1;
+            }
+            input = result.transform.clone();
+            context = result.context.clone();
+            out.entry(layer.name.clone()).or_default().push(result);
+        }
+
+        if layer_index != until_index {
+            return Err(EvaluationError::Custom(format!(
+                "layer {until_layer:?} cannot be evaluated with this input"
+            )));
+        }
+
+        Ok(input)
+    }
 }
 
 pub struct Pipeline {
