@@ -332,6 +332,12 @@ pub enum PathStrReplaceError {
     RefNotFound(String),
 }
 
+impl PathStr<'static> {
+    pub fn new(i: impl IntoIterator<Item = String>) -> Self {
+        Self(i.into_iter().collect())
+    }
+}
+
 impl<'a> PathStr<'a> {
     pub fn module<'b: 'a>(&'b self) -> PathStr<'b> {
         Self(Cow::Borrowed(&self.0[..self.0.len() - 1]))
