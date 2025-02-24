@@ -43,8 +43,10 @@ ignore = "0.4"
 indicatif = "0.17"
 lazy_static = "1.4"
 mime = "0.3"
+once_cell = "1"
 open = "5.0"
 owo-colors = { version = "4.0", features = ["supports-colors"] }
+parking_lot = { version = "0.12", features = ["arc_lock", "send_guard"] }
 passterm = "2.0"
 pyo3 = { version = "0.20", features = ["serde"] }
 pyo3-asyncio = { version = "0.20", features = ["attributes", "tokio-runtime"] }
