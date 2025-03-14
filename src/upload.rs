@@ -1,21 +1,26 @@
 use std::path::Path;
 
-use futures::prelude::*;
+use futures::StreamExt as _;
 use graphql_client::GraphQLQuery;
 use indicatif::ProgressBar;
 use reqwest::{
     header::{AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE},
     Body, Response,
 };
-use tokio::fs::File;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, SeekFrom};
+use serde::Deserialize;
+use tokio::{
+    fs::File,
+    io::{AsyncRead, AsyncSeek, AsyncSeekExt},
+};
 use tokio_util::io::ReaderStream;
 use url::Url;
 
 use crate::{
+    checksum::Checksum,
     error::{self, Result},
     graphql_client::GraphQLClient,
     id::Id,
+    io_util::{AsyncTryClone, FilePart},
     progress_bar::{self, TempProgressStyle},
 };
 
@@ -35,50 +40,122 @@ struct CreateMultipartUpload;
 )]
 struct CompleteMultipartUpload;
 
-// const CHUNK_SIZE: u64 = 1024 * 1024 * 100;
-const CHUNK_SIZE: u64 = 1024 * 1024 * 10;
+const MB: usize = 1024 * 1024;
+const CHUNK_SIZE: usize = 10 * MB;
+const MAX_RETRY_UPLOAD: usize = 3;
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "PascalCase")]
+#[cfg_attr(test, derive(Eq, PartialEq))]
+struct UploadError {
+    code: UploadErrorCodeValue,
+    message: String,
+    request_id: String,
+}
+
+#[derive(Deserialize, Debug)]
+#[cfg_attr(test, derive(Eq, PartialEq))]
+struct UploadErrorCodeValue {
+    #[serde(rename = "$value")]
+    value: UploadErrorCode,
+}
+
+#[derive(Deserialize, Debug)]
+#[cfg_attr(test, derive(Eq, PartialEq))]
+enum UploadErrorCode {
+    BadDigest,
+    InvalidArgument,
+    InvalidDigest,
+    InvalidSignature,
+    SignatureDoesNotMatch,
+    #[serde(untagged)]
+    Unknown(String),
+}
 
 async fn do_upload(
     client: &reqwest::Client,
-    body: impl AsyncRead + Send + 'static,
+    mut body: impl AsyncRead + AsyncSeek + AsyncTryClone + Send + Unpin + 'static,
     upload_url: &Url,
-    content_length: u64,
+    content_length: usize,
     content_type: Option<&str>,
     pb: &ProgressBar,
 ) -> Result<Response> {
-    let mut request = client
-        .put(upload_url.to_string())
-        .header(AUTHORIZATION, "")
-        .header(CONTENT_LENGTH, content_length);
-    if let Some(content_type) = content_type {
-        request = request.header(CONTENT_TYPE, content_type);
-    }
-    let pb = pb.clone();
-    let body = Body::wrap_stream(ReaderStream::new(body).inspect(move |chunk| {
-        if let Ok(chunk) = chunk.as_ref() {
-            pb.inc(chunk.len() as u64);
+    let checksum = Checksum::read_default_from(&mut body).await?;
+
+    for retry in 0..MAX_RETRY_UPLOAD {
+        if retry > 0 {
+            pb.suspend(|| {
+                tracing::error!("Retrying upload...");
+            });
         }
-    }));
-    let response = request.body(body).send().await?;
-    if !response.status().is_success() {
-        Err(error::system(
-            &format!(
-                "Could not upload data: [{}] {}",
-                response.status(),
-                response.text().await.unwrap_or("".to_string())
-            ),
-            "",
-        ))
-    } else {
-        Ok(response)
+
+        // prepare request body
+        body.rewind().await?;
+        let body = ReaderStream::new(body.try_clone().await?);
+        let body = Body::wrap_stream(body.inspect({
+            let pb = pb.clone();
+            move |chunk| {
+                if let Ok(chunk) = chunk.as_ref() {
+                    pb.inc(chunk.len() as u64);
+                }
+            }
+        }));
+
+        // prepare request
+        let mut request = client
+            .put(upload_url.to_string())
+            .header(AUTHORIZATION, "")
+            .header(CONTENT_LENGTH, content_length)
+            .header(checksum.header_name(), checksum.header_value());
+        if let Some(content_type) = content_type {
+            request = request.header(CONTENT_TYPE, content_type);
+        }
+        request = request.body(body);
+
+        // send request
+        let response = request.send().await?;
+        if response.status().is_success() {
+            return Ok(response);
+        }
+
+        // verify error
+        let status = response.status();
+        let error = response.text().await?;
+        let error: UploadError = quick_xml::de::from_str(&error)
+            .map_err(|_| error::system(&format!("Upload failed: {status}"), ""))?;
+        match &error.code.value {
+            UploadErrorCode::BadDigest
+            | UploadErrorCode::InvalidArgument
+            | UploadErrorCode::InvalidDigest
+            | UploadErrorCode::InvalidSignature
+            | UploadErrorCode::SignatureDoesNotMatch => {
+                // retry immediately when checksum verification fails
+            }
+            UploadErrorCode::Unknown(code) => {
+                // abort prematurely for any other failure
+                return Err(error::system(
+                    &format!(
+                        "Upload failed: {status:?} {} request_id={} {}",
+                        code, error.request_id, error.message
+                    ),
+                    "Please report this issue on our forums",
+                ));
+            }
+        }
     }
+
+    // abort upload if checksum verification fails too much
+    Err(error::system(
+        "Upload failed",
+        "Please verify reliability of your network and/or disk",
+    ))
 }
 
 async fn simple_upload(
     client: &reqwest::Client,
     file: File,
     upload_url: &Url,
-    content_length: u64,
+    content_length: usize,
     content_type: Option<&str>,
     pb: &ProgressBar,
 ) -> Result<()> {
@@ -87,7 +164,7 @@ async fn simple_upload(
     pb.set_style(progress_bar::pretty_bytes());
     pb.disable_steady_tick();
     pb.set_position(0);
-    pb.set_length(content_length);
+    pb.set_length(content_length as u64);
     let _ = do_upload(client, file, upload_url, content_length, content_type, pb).await?;
     Ok(())
 }
@@ -96,15 +173,13 @@ async fn upload_part(
     client: &reqwest::Client,
     path: impl AsRef<Path>,
     chunk_number: u64,
-    content_length: u64,
+    content_length: usize,
     content_type: Option<&str>,
     upload_url: Url,
     pb: &ProgressBar,
 ) -> Result<String> {
-    let mut file = tokio::fs::File::open(path).await?;
-    file.seek(SeekFrom::Start(chunk_number * CHUNK_SIZE))
-        .await?;
-    let chunk = file.take(CHUNK_SIZE);
+    let file = tokio::fs::File::open(path).await?;
+    let chunk = FilePart::slice(file, chunk_number * CHUNK_SIZE as u64, CHUNK_SIZE).await?;
     let response = do_upload(client, chunk, &upload_url, content_length, content_type, pb).await?;
     Ok(response
         .headers()
@@ -119,11 +194,11 @@ async fn multipart_upload(
     client: &GraphQLClient,
     path: impl AsRef<Path>,
     id: &Id,
-    content_length: u64,
+    content_length: usize,
     content_type: Option<&str>,
     pb: &ProgressBar,
 ) -> Result<()> {
-    let mut chunks = [CHUNK_SIZE].repeat((content_length / CHUNK_SIZE) as usize);
+    let mut chunks = [CHUNK_SIZE].repeat(content_length / CHUNK_SIZE);
     if content_length % CHUNK_SIZE != 0 {
         chunks.push(content_length % CHUNK_SIZE);
     }
@@ -140,7 +215,7 @@ async fn multipart_upload(
     pb.set_style(progress_bar::pretty_bytes());
     pb.disable_steady_tick();
     pb.set_position(0);
-    pb.set_length(content_length);
+    pb.set_length(content_length as u64);
 
     let e_tags = futures::future::try_join_all(
         create_multipart_upload
@@ -190,7 +265,7 @@ pub async fn upload_project_version_file(
     pb: &ProgressBar,
 ) -> Result<()> {
     let file = tokio::fs::File::open(path.as_ref()).await?;
-    let content_len = file.metadata().await?.len();
+    let content_len = file.metadata().await?.len() as usize;
     if content_len < CHUNK_SIZE && upload_url.is_some() {
         simple_upload(
             client.inner(),
@@ -203,5 +278,57 @@ pub async fn upload_project_version_file(
         .await
     } else {
         multipart_upload(client, path, id, content_len, content_type, pb).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{UploadError, UploadErrorCode, UploadErrorCodeValue};
+
+    #[test]
+    fn test_de_upload_error_response() {
+        assert_eq!(
+            UploadError {
+                code: UploadErrorCodeValue {
+                    value: UploadErrorCode::Unknown("NoSuchKey".to_string())
+                },
+                message: "The resource you requested does not exist".to_string(),
+                request_id: "4442587FB7D0A2F9".to_string(),
+            },
+            quick_xml::de::from_str(
+                r#"
+<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+  <Code>NoSuchKey</Code>
+  <Message>The resource you requested does not exist</Message>
+  <Resource>/mybucket/myfoto.jpg</Resource>
+  <RequestId>4442587FB7D0A2F9</RequestId>
+</Error>
+        "#,
+            )
+            .unwrap(),
+        );
+
+        assert_eq!(
+            UploadError {
+                code: UploadErrorCodeValue {
+                    value: UploadErrorCode::BadDigest
+                },
+                message: "foobar".to_string(),
+                request_id: "4 8 15 16 23 42".to_string(),
+            },
+            quick_xml::de::from_str(
+                r#"
+<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+  <Code>BadDigest</Code>
+  <Message>foobar</Message>
+  <Resource>buzz</Resource>
+  <RequestId>4 8 15 16 23 42</RequestId>
+</Error>
+        "#,
+            )
+            .unwrap(),
+        );
     }
 }
