@@ -116,6 +116,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "clap",
+ "crc32fast",
  "dialoguer",
  "dirs",
  "dunce",
@@ -137,6 +138,7 @@ dependencies = [
  "pyo3",
  "pyo3-asyncio",
  "qrcode",
+ "quick-xml",
  "rand 0.8.5",
  "reqwest 0.11.27",
  "ring",
@@ -2445,6 +2447,16 @@ name = "qrcode"
 version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec"
+
+[[package]]
+name = "quick-xml"
+version = "0.37.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf763ab1c7a3aa408be466efc86efe35ed1bd3dd74173ed39d6b0d0a6f0ba148"
+dependencies = [
+ "memchr",
+ "serde",
+]
 
 [[package]]
 name = "quinn"
