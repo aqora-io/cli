@@ -16,7 +16,7 @@ flate2 = { version = "1.0", default-features = false, features = ["zlib-ng"] }
 tar = "0.4"
 tempfile = "3.9"
 thiserror = "1.0"
-zip = "2.2"
+zip = "2.3"
 zstd = { version = "0.13", default-features = false, features = ["zstdmt"] }
 
 indicatif = { version = "0.17", optional = true }
