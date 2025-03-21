@@ -1,0 +1,5 @@
+subscription Oauth2RedirectSubscription($state: String!, $signature: String!) {
+  oauth2Redirect(input: { state: $state, signature: $signature }) {
+    code
+  }
+}
