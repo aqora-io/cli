@@ -1,4 +1,5 @@
 mod cfg_file;
+mod checksum;
 mod colors;
 mod commands;
 mod compress;
@@ -12,6 +13,7 @@ mod evaluate;
 mod git;
 mod graphql_client;
 mod id;
+mod io_util;
 mod ipynb;
 mod manifest;
 #[cfg(feature = "extension-module")]

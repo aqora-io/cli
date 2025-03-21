@@ -122,6 +122,55 @@ jobs:
           command: upload
           args: --non-interactive --skip-existing *
 
+  prerelease:
+    name: Prerelease
+    runs-on: ubuntu-latest
+    if: "github.event_name == 'pull_request'"
+    needs: [linux, windows, macos, sdist]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Setup Cocogitto
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cocogitto@6.2
+      - name: Get prerelease name
+        id: prerelease_name
+        run: |
+          tag_name=$(cog bump --auto --dry-run --build "pr-${{ github.event.pull_request.number }}" | tr )
+          echo "tag_name=${tag_name#v}" >> "${GITHUB_OUTPUT}"
+          echo "old_name=$(cog get-version 2>/dev/null)" >> "${GITHUB_OUTPUT}"
+          echo "::notice::${old_name} --> ${tag_name}"
+      - name: Generate prerelease changelog
+        id: prerelease_changelog
+        run: |
+          echo "body<<EOF" >> "${GITHUB_OUTPUT}"
+          cog changelog "${{ steps.prerelease_name.outputs.old_name }}" | tee "${GITHUB_STEP_SUMMARY}" >> "${GITHUB_OUTPUT}"
+          echo "EOF" >> "${GITHUB_OUTPUT}"
+      - name: Download wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: target
+      - name: Set prerelease name
+        working-directory: target
+        run: rename 's/${{ steps.prerelease_name.outputs.old_name }}/${{ steps.prerelease_name.outputs.tag_name }}/' *
+      - name: Generate SHA256SUMS
+        working-directory: target
+        run: sha256sum --tag * > SHA256SUMS.txt
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          files: "target/*"
+          tag_name: v${{ steps.prerelease_name.outputs.tag_name }}
+          body: ${{ steps.prerelease_changelog.outputs.body }}
+
   docker:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest

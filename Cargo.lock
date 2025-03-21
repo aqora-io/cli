@@ -116,6 +116,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "clap",
+ "crc32fast",
  "dialoguer",
  "dirs",
  "dunce",
@@ -135,6 +136,7 @@ dependencies = [
  "pretty_assertions",
  "pyo3",
  "pyo3-asyncio",
+ "quick-xml",
  "rand 0.8.5",
  "reqwest 0.11.27",
  "rmp-serde",
@@ -2342,6 +2344,16 @@ dependencies = [
  "serde",
  "thiserror 1.0.69",
  "toml",
+]
+
+[[package]]
+name = "quick-xml"
+version = "0.37.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "165859e9e55f79d67b96c5d96f4e88b6f2695a1972849c15a6a3f5c59fc2c003"
+dependencies = [
+ "memchr",
+ "serde",
 ]
 
 [[package]]
