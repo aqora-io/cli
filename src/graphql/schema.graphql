@@ -1,9 +1,10 @@
 enum Action {
+	ACCEPT_EVENT_INVITE
 	ADD_COMPETITION_MEMBER
 	ADD_EVENT_COMPETITION
 	ADD_EVENT_MEMBER
 	AWARD_BADGE
-	CREATE_TAG
+	CREATE_BLOG_ARTICLE
 	CREATE_COMMENT
 	CREATE_COMPETITION
 	CREATE_COMPETITION_RULE_AGREEMENT
@@ -14,8 +15,10 @@ enum Action {
 	CREATE_PROJECT_VERSION_APPROVAL
 	CREATE_SUBJECT_SUBSCRIPTION
 	CREATE_SUBMISSION_VERSION
+	CREATE_TAG
 	CREATE_TOPIC
 	CREATE_USE_CASE_VERSION
+	DELETE_BLOG_ARTICLE
 	DELETE_COMMENT
 	DELETE_COMPETITION
 	DELETE_EVENT
@@ -23,21 +26,23 @@ enum Action {
 	DELETE_ORGANIZATION
 	DELETE_PROJECT_VERSION_APPROVAL
 	DELETE_SUBJECT_SUBSCRIPTION
+	DELETE_TAG
 	DELETE_TOPIC
 	DELETE_USER
-	DELETE_TAG
 	FETCH_WEBSITE_METADATA
 	JOIN_COMPETITION
 	JOIN_EVENT
+	MANAGE_EVENT_INVITE_CODE
 	PUBLISH_VOTE
+	READ_ACTIVITY_TRACKER
 	READ_COMMENT
 	READ_COMPETITION
 	READ_COMPETITION_MEMBERSHIP
 	READ_COMPETITION_RULE
 	READ_COMPETITION_RULE_AGREEMENT
-	READ_SUBJECT_SUBSCRIPTION
 	READ_EVENT
 	READ_EVENT_COMPETITION
+	READ_EVENT_INVITATION
 	READ_EVENT_MEMBERSHIP
 	READ_EVENT_RULE
 	READ_EVENT_RULE_AGREEMENT
@@ -45,11 +50,11 @@ enum Action {
 	READ_PROJECT_VERSION_APPROVAL
 	READ_PROJECT_VERSION_EVALUATION
 	READ_PROJECT_VERSION_FILE
+	READ_SUBJECT_SUBSCRIPTION
 	READ_TOPIC
 	READ_USER_EMAIL
 	READ_USER_NOTIFICATIONS
 	READ_USER_PERMISSIONS
-	READ_ACTIVITY_TRACKER
 	REMOVE_COMPETITION_MEMBER
 	REMOVE_EVENT_COMPETITION
 	REMOVE_EVENT_MEMBER
@@ -58,10 +63,12 @@ enum Action {
 	TRANSFER_COMPETITION_OWNERSHIP
 	TRANSFER_EVENT_OWNERSHIP
 	TRANSFER_ORGANIZATION_OWNERSHIP
+	UPDATE_AGENDA
+	UPDATE_BLOG_ARTICLE
 	UPDATE_COMMENT
 	UPDATE_COMPETITION
+	UPDATE_COMPETITION_ACCESS
 	UPDATE_EVENT
-	UPDATE_AGENDA
 	UPDATE_FORUM
 	UPDATE_ORGANIZATION
 	UPDATE_ORGANIZATION_MEMBERSHIP
@@ -209,7 +216,96 @@ enum Badge {
 	Global Participant - Q2B Hackathon 2024
 	"""
 	Q2B2024_REMOTE
+	"""
+	Malicious Login Detection 2024 by NovaceneAI – Winner
+	"""
+	NOVACENE_2024
+	"""
+	QInnovision Challenge 2024-2025 Winner!
+	"""
+	QINNOVISION_2025_WINNER
+	"""
+	QInnovision Challenge 2024-2025 Finalist!
+	"""
+	QINNOVISION_2025_FINALIST
+	"""
+	Quantum Trading Oracle  – 1st Place
+	"""
+	QUANTUM_SIGNALS_LOB_2025_FIRST
+	"""
+	Schrödinger’s Trader – 2nd Place - Second Prize
+	"""
+	QUANTUM_SIGNALS_LOB_2025_SECOND
 	UNKNOWN
+}
+
+type Blog implements ForumOwner {
+	id: ID!
+	slug: String!
+	forum: Forum!
+	forumOwnerKind: ForumOwnerKind!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+}
+
+type BlogArticle implements Node {
+	shortDescription: String!
+	blurHash: String
+	seoTitle: String
+	seoDescription: String
+	imageAlt: String
+	id: ID!
+	image: Url
+	authors(after: String, before: String, first: Int, last: Int): BlogArticleAuthorConnection!
+	topic: Topic!
+	title: String!
+	slugLower: String!
+	content: String
+	createdAt: DateTime!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+}
+
+type BlogArticleAuthorConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [EntityEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Entity!]!
+}
+
+type BlogArticleConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [BlogArticleEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [BlogArticle!]!
+}
+
+"""
+An edge in a connection.
+"""
+type BlogArticleEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: BlogArticle!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 
@@ -224,6 +320,8 @@ type Comment implements Votable & Node {
 	parent: Comment
 	numChildren: Int!
 	voted: EntityVote
+	voterCount: Int!
+	voters(after: String, before: String, first: Int, last: Int): VotersConnection!
 	children(after: String, before: String, first: Int, last: Int, order: VotableOrder): CommentConnection!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 }
@@ -258,17 +356,20 @@ type CommentEdge {
 	cursor: String!
 }
 
-type Competition implements ForumOwner & Node {
+type Competition implements ForumOwner & Subscribable & Node {
 	slug: String!
 	title: String!
 	shortDescription: String!
 	createdAt: DateTime!
 	visibility: ActivityVisibility!
 	requiresApproval: Boolean!
-	leaderboardSize: Int!
 	hasLeaderboard: Boolean!
+	grantHostSubmissionAccess: Boolean!
+	noCode: Boolean!
 	id: ID!
+	forumOwnerKind: ForumOwnerKind!
 	description: String
+	submissionPreamble: String
 	isPrivate: Boolean!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	host: Entity!
@@ -278,13 +379,14 @@ type Competition implements ForumOwner & Node {
 	entityRuleAgreements(after: String, before: String, first: Int, last: Int, entity: UsernameOrID, latest: Boolean): CompetitionRuleAgreementConnection!
 	banner: Url
 	thumbnail: Url
-	leaderboard(after: String, before: String, first: Int, last: Int): ProjectVersionEvaluationConnection!
+	leaderboard(after: String, before: String, first: Int, last: Int): SubmissionRankingConnection!
 	submissions(after: String, before: String, first: Int, last: Int, entityId: ID, needsApproval: Boolean): SubmissionConnection!
 	submission(entity: UsernameOrID): Submission
 	forum: Forum!
 	membership(entity: UsernameOrID): CompetitionMembership
-	members(after: String, before: String, first: Int, last: Int): CompetitionMembershipConnection!
+	members(after: String, before: String, first: Int, last: Int, search: String): CompetitionMembershipConnection!
 	tags(after: String, before: String, first: Int, last: Int): CompetitionTagConnection!
+	entitySubscription(entity: UsernameOrID): SubjectSubscription
 }
 
 type CompetitionConnection {
@@ -360,9 +462,9 @@ enum CompetitionMembershipKind {
 }
 
 type CompetitionRule implements Node {
-	text: String!
 	createdAt: DateTime!
 	id: ID!
+	text: String!
 	competition: Competition!
 	entityAgreement(entity: UsernameOrID): CompetitionRuleAgreement
 }
@@ -432,6 +534,16 @@ type CompetitionRuleEdge {
 	cursor: String!
 }
 
+type CompetitionSubscription implements SubjectSubscription & Node {
+	createdAt: DateTime!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	id: ID!
+	entity: Entity!
+	kind: SubjectKind!
+	competition: Competition!
+	subject: Subscribable!
+}
+
 type CompetitionTagConnection {
 	"""
 	Information to aid in pagination.
@@ -447,6 +559,17 @@ type CompetitionTagConnection {
 	nodes: [Tag!]!
 }
 
+input CreateBlogArticleInput {
+	title: String!
+	content: String!
+	shortDescription: String!
+	image: Upload
+	authorsIds: [ID!]!
+	seoTitle: String
+	seoDescription: String
+	imageAlt: String
+}
+
 input CreateCommentInput {
 	content: String!
 }
@@ -460,8 +583,11 @@ input CreateCompetitionInput {
 	thumbnail: Upload
 	visibility: ActivityVisibility! = UNAUTHENTICATED
 	requiresApproval: Boolean
+	grantHostSubmissionAccess: Boolean
 	tagIds: [ID]
 	hasLeaderboard: Boolean
+	noCode: Boolean! = false
+	submissionPreamble: String = null
 }
 
 input CreateEventInput {
@@ -494,6 +620,7 @@ input CreateOrganizationInput {
 	displayName: String!
 	github: String
 	linkedin: String
+	googleScholar: String
 	website: Url
 	location: String
 	bio: String
@@ -527,6 +654,19 @@ type DeletedComment {
 	commentId: ID!
 }
 
+type EmailSignupRequest implements Node {
+	lastEmailSentAt: DateTime!
+	emailSentCount: Int!
+	expiresAt: DateTime!
+	id: ID!
+	emailCanResendAt: DateTime!
+}
+
+input EmailSignupVerficationInput {
+	id: ID!
+	token: String!
+}
+
 interface Entity {
 	id: ID!
 	kind: EntityKind!
@@ -536,6 +676,7 @@ interface Entity {
 	imageThumbnail: Url
 	location: String
 	github: String
+	googleScholar: String
 	linkedin: String
 	website: String
 	bio: String
@@ -637,6 +778,7 @@ type Event implements ForumOwner & Node {
 	createdAt: DateTime!
 	visibility: ActivityVisibility!
 	id: ID!
+	forumOwnerKind: ForumOwnerKind!
 	description: String
 	isPrivate: Boolean!
 	agenda: JSON
@@ -646,11 +788,15 @@ type Event implements ForumOwner & Node {
 	banner: Url
 	thumbnail: Url
 	membership(entity: UsernameOrID): EventMembership
-	members(after: String, before: String, first: Int, last: Int, userIsOrgMember: ID): EventMembershipConnection!
+	members(after: String, before: String, first: Int, last: Int, search: String): EventMembershipConnection!
+	teams(after: String, before: String, first: Int, last: Int): OrganizationConnection!
+	invitations(after: String, before: String, first: Int, last: Int): EventInvitationConnection!
+	invitationsCount: Int!
 	competitions(after: String, before: String, first: Int, last: Int): EventCompetitionConnection!
 	latestRule: EventRule!
 	rules(after: String, before: String, first: Int, last: Int): EventRuleConnection!
 	entityRuleAgreements(after: String, before: String, first: Int, last: Int, entity: UsernameOrID, latest: Boolean): EventRuleAgreementConnection!
+	invite: EventPublicInvite!
 }
 
 type EventCompetition implements Node {
@@ -718,6 +864,69 @@ type EventEdge {
 	cursor: String!
 }
 
+type EventInvitation implements Node {
+	username: String
+	email: String!
+	id: ID!
+	event: Event!
+	organization: Organization
+	registeredAs: User
+}
+
+type EventInvitationConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [EventInvitationEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [EventInvitation!]!
+}
+
+"""
+An edge in a connection.
+"""
+type EventInvitationEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: EventInvitation!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+interface EventInvite {
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	event: Event!
+	title: String!
+	shortDescription: String!
+	thumbnail: Url
+	latestRuleText: String!
+}
+
+input EventMemberInvite {
+	"""
+	Optional username used to send invitation email when the member has not registered yet.
+	"""
+	username: String
+	"""
+	Required email used to find registered members, or send invitation email otherwise.
+	"""
+	email: String!
+	"""
+	Optional team name used to create teams for the event.
+	"""
+	team: String
+}
+
 type EventMembership implements Node {
 	kind: EventMembershipKind!
 	id: ID!
@@ -761,10 +970,31 @@ enum EventMembershipKind {
 	PARTICIPANT
 }
 
+type EventPrivateInvite implements Node & EventInvite {
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	event: Event!
+	title: String!
+	shortDescription: String!
+	thumbnail: Url
+	latestRuleText: String!
+}
+
+type EventPublicInvite implements Node & EventInvite {
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	event: Event!
+	code: String
+	title: String!
+	shortDescription: String!
+	thumbnail: Url
+	latestRuleText: String!
+}
+
 type EventRule implements Node {
-	text: String!
 	createdAt: DateTime!
 	id: ID!
+	text: String!
 	event: Event!
 	entityAgreement(entity: UsernameOrID): EventRuleAgreement
 }
@@ -902,7 +1132,7 @@ input FinishUploadFileInput {
 
 
 type Forum implements ForumOwner & Subscribable & Node {
-	ownerKind: ForumOwnerKind!
+	forumOwnerKind: ForumOwnerKind!
 	slug: String!
 	title: String!
 	shortDescription: String!
@@ -910,6 +1140,7 @@ type Forum implements ForumOwner & Subscribable & Node {
 	orderingPriority: Int!
 	createdAt: DateTime!
 	id: ID!
+	description: String
 	owner: ForumOwner!
 	forum: Forum!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
@@ -951,11 +1182,13 @@ interface ForumOwner {
 	id: ID!
 	slug: String!
 	forum: Forum!
+	forumOwnerKind: ForumOwnerKind!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 }
 
 enum ForumOwnerKind {
 	TOP_LEVEL
+	BLOG
 	COMPETITION
 	EVENT
 }
@@ -1028,7 +1261,7 @@ type Mutation {
 	signupUser(input: SignupUserInput!): UserEdge!
 	loginUser(input: LoginUserInput!): UserEdge!
 	logoutUser: Boolean!
-	createPasswordReset(input: CreatePasswordResetInput!): Boolean!
+	createPasswordReset(input: CreatePasswordResetInput!): PasswordReset!
 	resetPassword(input: ResetPasswordInput!): Boolean!
 	updateUser(id: ID!, input: UpdateUserInput!): UserEdge!
 	deleteUser(id: ID!): ID!
@@ -1038,6 +1271,11 @@ type Mutation {
 	setCompetitionOrderingPriority(id: ID!, priority: Int!): CompetitionEdge!
 	createSubmissionVersion(competitionId: ID!, input: UpdateSubmissionInput!, asEntity: UsernameOrID): ProjectVersionEdge!
 	validateSubmissionVersion(projectVersionId: ID!): ProjectVersionEdge!
+	"""
+	Submit files for a "no-code" competition. This feature is not available for regular
+	competitions.
+	"""
+	uploadNoCodeSubmissionVersion(competitionId: ID!, input: UploadNoCodeSubmissionInput!, asEntity: UsernameOrID): ProjectVersionEdge!
 	createTopic(forumId: ID!, input: CreateTopicInput!): TopicEdge!
 	updateTopic(id: ID!, input: UpdateTopicInput!): Topic!
 	deleteTopic(id: ID!): ID!
@@ -1071,6 +1309,7 @@ type Mutation {
 	updateEvent(id: ID!, input: UpdateEventInput!): EventEdge!
 	deleteEvent(id: ID!): ID!
 	updateEventAgenda(input: UpdateAgendaInput!, eventId: ID!): EventEdge!
+	inviteEventMembers(eventId: ID!, invites: [EventMemberInvite!]!): Event!
 	addEventMember(eventId: ID!, entityId: ID!): EventMembershipEdge!
 	joinEvent(eventId: ID!, asEntity: UsernameOrID): EventMembershipEdge!
 	removeEventMember(id: ID!): ID!
@@ -1093,6 +1332,17 @@ type Mutation {
 	createProjectVersionApproval(projectVersionId: ID!): ProjectVersionApprovalEdge!
 	deleteProjectVersionApproval(projectVersionApprovalId: ID!): ID!
 	fetchWebsiteMetadata(url: Url!): WebsiteMetadata!
+	generateEventInviteCode(id: ID!): EventPublicInvite!
+	removeEventInviteCode(id: ID!): EventPublicInvite!
+	acceptEventInvite(id: ID!, code: String, asEntity: UsernameOrID): EventInvite!
+	createBlogArticle(input: CreateBlogArticleInput!): BlogArticleEdge!
+	updateBlogArticle(id: ID!, input: UpdateBlogArticleInput!): BlogArticleEdge!
+	deleteBlogArticle(id: ID!): ID!
+	sendEmailSignupVerification(input: SendEmailSignupVerificationInput!): EmailSignupRequest!
+	resendEmailSignupVerification(id: ID!): EmailSignupRequest!
+	checkEmailSignupVerification(input: EmailSignupVerficationInput!): EmailSignupRequest!
+	createOauth2AuthRequest(provider: Oauth2Provider!): Url!
+	checkOauth2Auth(code: String!, state: String!): Oauth2AuthResponse!
 }
 
 """
@@ -1121,6 +1371,19 @@ enum NotificationKind {
 	SYSTEM
 }
 
+enum Oauth2Action {
+	LOGGED_IN
+	SIGNUP_REQUIRED
+}
+
+interface Oauth2AuthResponse {
+	action: Oauth2Action!
+}
+
+type Oauth2AuthorizationCode {
+	code: String!
+}
+
 input Oauth2AuthorizeInput {
 	clientId: String!
 	state: String
@@ -1133,9 +1396,38 @@ type Oauth2AuthorizeOutput {
 	unauthorized: Boolean!
 }
 
+type Oauth2LoggedIn implements Oauth2AuthResponse {
+	user: User!
+	action: Oauth2Action!
+}
+
+enum Oauth2Provider {
+	GITHUB
+	GOOGLE
+}
+
+input Oauth2RedirectInput {
+	authorizationUrl: Url!
+	signature: String!
+}
+
 input Oauth2RefreshInput {
 	clientId: String!
 	refreshToken: String!
+}
+
+type Oauth2Signup {
+	secret: String!
+}
+
+input Oauth2SignupInput {
+	secret: String!
+}
+
+type Oauth2SignupRequired implements Oauth2AuthResponse {
+	oauth2Signup: Oauth2Signup!
+	userInfo: Oauth2UserInfo!
+	action: Oauth2Action!
 }
 
 type Oauth2Token {
@@ -1157,12 +1449,21 @@ type Oauth2TokenOutput {
 	unauthorized: Boolean!
 }
 
+type Oauth2UserInfo {
+	email: String!
+	name: String
+	username: String
+	avatarUrl: Url
+	bio: String
+}
+
 type Organization implements Entity & Node {
 	username: String!
 	displayName: String!
 	location: String
 	linkedin: String
 	github: String
+	googleScholar: String
 	website: String
 	bio: String
 	createdAt: DateTime!
@@ -1179,6 +1480,21 @@ type Organization implements Entity & Node {
 	projectVersionApprovals(projectVersionId: UUID, after: String, before: String, first: Int, last: Int): ProjectVersionApprovalConnection!
 	rank: Int!
 	points: Int!
+}
+
+type OrganizationConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [OrganizationEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Organization!]!
 }
 
 """
@@ -1259,6 +1575,12 @@ type PageInfo {
 	When paginating forwards, the cursor to continue.
 	"""
 	endCursor: String
+}
+
+type PasswordReset {
+	expiresAt: DateTime!
+	createdAt: DateTime!
+	canResendAt: DateTime!
 }
 
 input Permission {
@@ -1375,41 +1697,10 @@ type ProjectVersionEvaluation implements Node {
 	max: Boolean!
 	finalizedAt: DateTime
 	createdAt: DateTime!
-	rank: Int
 	id: ID!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	projectVersion: ProjectVersion!
 	submission: Submission!
-	points: Int!
-}
-
-type ProjectVersionEvaluationConnection {
-	"""
-	Information to aid in pagination.
-	"""
-	pageInfo: PageInfo!
-	"""
-	A list of edges.
-	"""
-	edges: [ProjectVersionEvaluationEdge!]!
-	"""
-	A list of nodes.
-	"""
-	nodes: [ProjectVersionEvaluation!]!
-}
-
-"""
-An edge in a connection.
-"""
-type ProjectVersionEvaluationEdge {
-	"""
-	The item at the end of the edge
-	"""
-	node: ProjectVersionEvaluation!
-	"""
-	A cursor for use in pagination
-	"""
-	cursor: String!
 }
 
 type ProjectVersionFile implements Node {
@@ -1452,6 +1743,9 @@ type Query {
 	tags(after: String, before: String, first: Int, last: Int): TagConnection!
 	forums(after: String, before: String, first: Int, last: Int, search: String): ForumConnection!
 	forumBySlug(slug: String!): Forum
+	blogArticles(after: String, before: String, first: Int, last: Int): BlogArticleConnection!
+	blogArticleBySlug(slug: String!): BlogArticle
+	oauth2Providers: [Oauth2Provider!]!
 }
 
 input ResetPasswordInput {
@@ -1461,17 +1755,28 @@ input ResetPasswordInput {
 
 scalar Semver
 
+input SendEmailSignupVerificationInput {
+	email: String!
+	password: String!
+	agreeToTermsAndPrivacyPolicy: Boolean!
+}
+
+input SignupInput @oneOf {
+	email: EmailSignupVerficationInput
+	oauth2: Oauth2SignupInput
+}
+
 input SignupUserInput {
 	username: String!
 	displayName: String!
 	github: String
 	linkedin: String
+	googleScholar: String
 	website: Url
 	location: String
 	bio: String
 	image: Upload
-	email: String!
-	password: String!
+	signup: SignupInput!
 	subscribePromotionalNewsletter: Boolean
 }
 
@@ -1479,6 +1784,7 @@ input SignupUserInput {
 enum SubjectKind {
 	TOPIC
 	FORUM
+	COMPETITION
 }
 
 interface SubjectSubscription {
@@ -1560,6 +1866,38 @@ type SubmissionEdge {
 	cursor: String!
 }
 
+type SubmissionRankingConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [SubmissionRankingSubmissionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Submission!]!
+}
+
+"""
+An edge in a connection.
+"""
+type SubmissionRankingSubmissionEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Submission!
+	rank: Int!
+	evaluation: ProjectVersionEvaluation!
+	points: Int!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
 interface Subscribable {
 	id: ID!
 	entitySubscription(entity: UsernameOrID): SubjectSubscription
@@ -1572,6 +1910,7 @@ type Subscription {
 	updatedComments(topicId: ID): CommentEdge!
 	projectVersionStatusUpdate(competitionId: ID, entityId: ID, projectId: ID, projectVersionId: ID): ProjectVersion!
 	updatedEntity(id: ID): Entity!
+	oauth2Redirect(input: Oauth2RedirectInput!): Oauth2AuthorizationCode!
 }
 
 type Tag implements Node {
@@ -1612,6 +1951,7 @@ type TagEdge {
 type Topic implements Votable & Subscribable & Node {
 	title: String!
 	url: String
+	slugLower: String!
 	votes: Int!
 	createdAt: DateTime!
 	id: ID!
@@ -1621,6 +1961,8 @@ type Topic implements Votable & Subscribable & Node {
 	forum: Forum!
 	commentCount: Int!
 	voted: EntityVote
+	voterCount: Int!
+	voters(after: String, before: String, first: Int, last: Int): VotersConnection!
 	comments(after: String, before: String, first: Int, last: Int, order: VotableOrder): CommentConnection!
 	entitySubscription(entity: UsernameOrID): SubjectSubscription
 }
@@ -1681,6 +2023,17 @@ input UpdateAgendaInput {
 	agenda: JSON
 }
 
+input UpdateBlogArticleInput {
+	title: String
+	shortDescription: String
+	content: String
+	image: Upload
+	authorsIds: [ID!]
+	seoTitle: String
+	seoDescription: String
+	imageAlt: String
+}
+
 input UpdateCommentInput {
 	content: String!
 }
@@ -1695,8 +2048,11 @@ input UpdateCompetitionInput {
 	rules: String
 	visibility: ActivityVisibility
 	requiresApproval: Boolean
+	grantHostSubmissionAccess: Boolean
 	hasLeaderboard: Boolean
 	tagIds: [ID]
+	noCode: Boolean = null
+	submissionPreamble: String
 }
 
 input UpdateEventInput {
@@ -1725,6 +2081,7 @@ input UpdateOrganizationInput {
 	displayName: String
 	github: String
 	linkedin: String
+	googleScholar: String
 	website: Url
 	location: String
 	bio: String
@@ -1754,6 +2111,7 @@ input UpdateUserInput {
 	displayName: String
 	github: String
 	linkedin: String
+	googleScholar: String
 	website: Url
 	location: String
 	bio: String
@@ -1767,6 +2125,10 @@ input UpdateUserInput {
 }
 
 scalar Upload
+
+input UploadNoCodeSubmissionInput {
+	files: [Upload!]!
+}
 
 """
 URL is a String implementing the [URL Standard](http://url.spec.whatwg.org/)
@@ -1789,6 +2151,7 @@ type User implements Entity & Node {
 	location: String
 	linkedin: String
 	github: String
+	googleScholar: String
 	website: String
 	bio: String
 	isAvailableOnQuantumJobs: Boolean!
@@ -1880,8 +2243,10 @@ type Version {
 interface Votable {
 	id: ID!
 	votes: Int!
+	voterCount: Int!
 	voted: EntityVote
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	voters(after: String, before: String, first: Int, last: Int): VotersConnection!
 }
 
 """
@@ -1909,12 +2274,28 @@ enum VoteKind {
 	DOWNVOTE
 }
 
+type VotersConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [EntityEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Entity!]!
+}
+
 type WebsiteMetadata {
 	title: String
 	description: String
 }
 
 directive @include(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+directive @oneOf on INPUT_OBJECT
 directive @skip(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
 directive @specifiedBy(url: String!) on SCALAR
 schema {

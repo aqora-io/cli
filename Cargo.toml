@@ -21,7 +21,11 @@ default = []
 extension-module = ["pyo3/extension-module", "pyo3/abi3-py39", "pyo3/abi3"]
 
 [dependencies]
-aqora-archiver = { path = "archiver", features = ["indicatif", "tokio", "tracing"] }
+aqora-archiver = { path = "archiver", features = [
+  "indicatif",
+  "tokio",
+  "tracing",
+] }
 aqora-config = { path = "config" }
 aqora-runner = { path = "runner", features = ["clap"] }
 aqora-template = { path = "template" }
@@ -92,7 +96,14 @@ tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 url = { version = "2.5", features = ["serde"] }
 uuid = "1.7"
 which = "6.0"
-git2 = { version = "0.19.0" , default-features = false }
+git2 = { version = "0.19.0", default-features = false }
+ring = "0.17.14"
+graphql-ws-client = { version = "0.11", features = [
+  "client-graphql-client",
+  "tungstenite",
+] }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+qrcode = { version = "0.14.1", default-features = false }
 
 [build-dependencies]
 toml_edit = "0.22"
