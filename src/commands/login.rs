@@ -2,14 +2,8 @@ use crate::{
     commands::GlobalArgs,
     credentials::{get_credentials, with_locked_credentials, Credentials},
     error::{self, Result},
+    graphql_client::GraphQLClient,
     progress_bar::default_spinner,
-    shutdown::shutdown_signal,
-};
-use axum::{
-    extract::{Query, State},
-    response::Html,
-    routing::get,
-    Router,
 };
 use base64::prelude::*;
 use chrono::{Duration, Utc};
@@ -17,13 +11,9 @@ use clap::Args;
 use futures::prelude::*;
 use graphql_client::GraphQLQuery;
 use indicatif::{MultiProgress, ProgressBar};
-use serde::{Deserialize, Serialize};
+use ring::signature::KeyPair;
+use serde::Serialize;
 use std::io::{BufRead, Write};
-use std::{future::IntoFuture, sync::Arc};
-use tokio::{
-    net::TcpListener,
-    sync::{oneshot, Mutex},
-};
 use url::Url;
 
 const CLIENT_ID_PREFIX: &str = "localhost-";
@@ -55,122 +45,86 @@ impl GlobalArgs {
     }
 }
 
-#[derive(Deserialize, Debug)]
-pub struct LoginResponse {
-    code: String,
-    state: String,
-}
-
-async fn login_callback(
-    State(state): State<ServerState<LoginResponse>>,
-    Query(response): Query<LoginResponse>,
-) -> Html<&'static str> {
-    state.send(response).await;
-    Html(include_str!("../html/login_response.html"))
-}
-
-struct ServerState<T> {
-    tx: Arc<Mutex<Option<oneshot::Sender<T>>>>,
-}
-
-impl<T> Clone for ServerState<T> {
-    fn clone(&self) -> Self {
-        ServerState {
-            tx: self.tx.clone(),
-        }
-    }
-}
-
-impl<T> ServerState<T>
-where
-    T: Send + 'static,
-{
-    fn new(tx: oneshot::Sender<T>) -> Self {
-        ServerState {
-            tx: Arc::new(Mutex::new(Some(tx))),
-        }
-    }
-
-    async fn send(&self, value: T) {
-        if let Some(tx) = self.tx.lock().await.take() {
-            tokio::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                if tx.send(value).is_err() {
-                    tracing::error!("Failed to send OAuth callback response!");
-                }
-            });
-        }
-    }
-}
-
-async fn open_that(url: Url) -> bool {
-    tokio::task::spawn_blocking(move || open::that(url.as_str()))
-        .await
-        .is_ok()
-}
+#[derive(GraphQLQuery)]
+#[graphql(
+    query_path = "src/graphql/oauth2_redirect_subscription.graphql",
+    schema_path = "src/graphql/schema.graphql",
+    response_derives = "Debug"
+)]
+pub struct Oauth2RedirectSubscription;
 
 async fn get_oauth_code(
     global: &GlobalArgs,
     client_id: &str,
     progress: &ProgressBar,
-    interactive: bool,
 ) -> Result<Option<(Url, String)>> {
-    let (tx, rx) = oneshot::channel();
-    let state = ServerState::new(tx);
+    let rng = ring::rand::SystemRandom::new();
+    let keypair = ring::signature::Ed25519KeyPair::from_seed_unchecked(
+        &ring::rand::generate::<[u8; 32]>(&rng).unwrap().expose(),
+    )
+    .unwrap();
+    let state_bytes = ring::rand::generate::<[u8; 16]>(&rng).unwrap().expose();
 
-    let router = Router::<ServerState<LoginResponse>>::new()
-        .route("/", get(login_callback))
-        .with_state(state);
-    let listener = TcpListener::bind("127.0.0.1:0").await.map_err(|e| {
-        error::user(
-            &format!("Could not bind to any port for OAuth callback: {e:?}"),
-            "Make sure you have permission to bind to a network port",
-        )
-    })?;
-    let port = listener.local_addr()?.port();
-    let http = axum::serve(listener, router)
-        .with_graceful_shutdown(shutdown_signal())
-        .into_future();
+    let state = BASE64_URL_SAFE_NO_PAD.encode(state_bytes);
+    let public_key = BASE64_URL_SAFE_NO_PAD.encode(keypair.public_key().as_ref());
 
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    let session = BASE64_URL_SAFE_NO_PAD.encode(rand::random::<[u8; 16]>());
-    let redirect_uri = Url::parse(&format!("http://localhost:{port}"))?;
-    let authorize_url = global.authorize_url(client_id, &redirect_uri, &session)?;
+    let redirect_uri = Url::parse(&format!("https://aqora.io/oauth2/sub/{public_key}"))?;
+    let authorize_url = global.authorize_url(client_id, &redirect_uri, &state)?;
 
-    if !interactive {
-        progress.suspend(|| {
-            // NOTE: suspending here instead of just `progress.println(...)`
-            // because indicatif will drop out of screen characters instead of wrapping
-            println!("Please navigate to this url (it should open automatically):");
-            println!("{authorize_url}");
-            println!(
-                "If it does not open automatically, you can instead run the same command like:"
-            );
-            println!(" => aqora login --interactive");
-        });
-        progress.set_message("Waiting for browser response...");
-    }
+    let signature_bytes = keypair.sign(authorize_url.as_str().as_bytes());
+    let signature = BASE64_URL_SAFE_NO_PAD.encode(signature_bytes.as_ref());
 
-    if interactive || !open_that(authorize_url.clone()).await {
-        return login_interactive(global, client_id, progress).await;
-    }
+    let client = GraphQLClient::no_creds(global.graphql_url()?)?;
+    let mut subscription = client
+        .subscribe::<Oauth2RedirectSubscription>(oauth2_redirect_subscription::Variables {
+            auth_url: authorize_url.clone(),
+            signature,
+        })
+        .await?;
 
-    let res = tokio::select! {
-        state = rx => state?,
-        res = http => match res {
-            Ok(_) => return Ok(None),
-            Err(e) => return Err(error::user("Failed to start OAuth callback server", &format!("{:?}", e))),
-        },
-    };
+    let cloned_progress = progress.clone();
+    let opener = tokio::spawn(async move {
+        cloned_progress.set_message("Opening browser and waiting for response...");
 
-    if res.state != session {
+        if open::that(authorize_url.as_str()).is_err()
+            || tokio::time::sleep(std::time::Duration::from_secs(5))
+                .map(|_| true)
+                .await
+        {
+            let qr_string = qrcode::QrCode::new(authorize_url.as_str())
+                .map(|qrcode| {
+                    use qrcode::render::unicode;
+                    let string = qrcode
+                        .render::<unicode::Dense1x2>()
+                        .dark_color(unicode::Dense1x2::Light)
+                        .light_color(unicode::Dense1x2::Dark)
+                        .build();
+                    format!("\n{string}\n")
+                })
+                .unwrap_or_default();
+            cloned_progress.set_message(format!(
+                r#"Waiting for the browser response...
+
+Please navigate to this url:
+
+{authorize_url}
+{qr_string}
+If you do not have access to a browser
+you can instead run the following command:
+`aqora login --interactive`"#
+            ))
+        }
+    });
+
+    let Some(item) = subscription.next().await.transpose()? else {
         return Err(error::system(
-            "OAuth callback returned invalid state",
-            "This is a bug, please report it",
+            "No response from server",
+            "Please retry again",
         ));
-    }
+    };
+    opener.abort();
 
-    Ok(Some((redirect_uri, res.code)))
+    Ok(Some((redirect_uri, item.oauth2_redirect.code)))
 }
 
 fn prompt_line(prompt: Option<impl AsRef<str>>) -> std::io::Result<String> {
@@ -332,11 +286,11 @@ async fn do_login(args: Login, global: GlobalArgs, progress: ProgressBar) -> Res
         async move {
             progress.set_message("Logging in...");
             let client_id = client_id();
-            let (redirect_uri, code) = if let Some(res) =
-                get_oauth_code(&global, &client_id, &progress, args.interactive).await?
-            {
-                res
+            let Some((redirect_uri, code)) = (if args.interactive {
+                login_interactive(&global, &client_id, &progress).await?
             } else {
+                get_oauth_code(&global, &client_id, &progress).await?
+            }) else {
                 // cancelled
                 return Ok(());
             };
