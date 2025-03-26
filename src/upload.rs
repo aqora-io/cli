@@ -1,10 +1,12 @@
-use std::path::Path;
+use std::{convert::Infallible, path::Path};
 
 use futures::StreamExt as _;
 use graphql_client::GraphQLQuery;
 use indicatif::ProgressBar;
 use reqwest::{
-    header::{AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE},
+    header::{
+        HeaderName, HeaderValue, InvalidHeaderValue, AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE,
+    },
     Body, Response,
 };
 use serde::Deserialize;
@@ -72,6 +74,24 @@ enum UploadErrorCode {
     Unknown(String),
 }
 
+impl TryFrom<&Checksum> for HeaderName {
+    type Error = Infallible;
+
+    fn try_from(value: &Checksum) -> std::result::Result<Self, Self::Error> {
+        Ok(match value {
+            Checksum::Crc32(_) => HeaderName::from_static("x-amz-checksum-crc32"),
+        })
+    }
+}
+
+impl TryFrom<&Checksum> for HeaderValue {
+    type Error = InvalidHeaderValue;
+
+    fn try_from(value: &Checksum) -> std::result::Result<Self, Self::Error> {
+        Self::try_from(value.to_be_base64())
+    }
+}
+
 async fn do_upload(
     client: &reqwest::Client,
     mut body: impl AsyncRead + AsyncSeek + AsyncTryClone + Send + Unpin + 'static,
@@ -106,7 +126,7 @@ async fn do_upload(
             .put(upload_url.to_string())
             .header(AUTHORIZATION, "")
             .header(CONTENT_LENGTH, content_length)
-            .header(checksum.header_name(), checksum.header_value());
+            .header(&checksum, &checksum);
         if let Some(content_type) = content_type {
             request = request.header(CONTENT_TYPE, content_type);
         }
