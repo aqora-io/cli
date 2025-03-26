@@ -2,6 +2,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.13.0 - 2025-03-26
+#### Bug Fixes
+- **(ci)** uplaod artifact - (b935392) - Angel Dijoux
+- upgrade zip & other dependencies - (a50b07f) - Antoine Chauvin
+#### Continuous Integration
+- update actions - (5f6e88c) - Antoine Chauvin
+#### Features
+- login with subscription - (b721c35) - Julian Popescu
+
+- - -
+
 ## v0.12.0 - 2025-01-15
 #### Bug Fixes
 - template command creating a faulty directory - (3881a12) - Antoine Chauvin
