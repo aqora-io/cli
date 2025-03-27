@@ -1,20 +1,9 @@
-use std::{convert::Infallible, path::Path};
+use std::{convert::Infallible, io::SeekFrom, path::Path, pin::Pin};
 
-use futures::StreamExt as _;
 use graphql_client::GraphQLQuery;
 use indicatif::ProgressBar;
-use reqwest::{
-    header::{
-        HeaderName, HeaderValue, InvalidHeaderValue, AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE,
-    },
-    Body, Response,
-};
-use serde::Deserialize;
-use tokio::{
-    fs::File,
-    io::{AsyncRead, AsyncSeek, AsyncSeekExt},
-};
-use tokio_util::io::ReaderStream;
+use reqwest::header::{HeaderName, HeaderValue, InvalidHeaderValue};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt};
 use url::Url;
 
 use crate::{
@@ -22,8 +11,8 @@ use crate::{
     error::{self, Result},
     graphql_client::GraphQLClient,
     id::Id,
-    io_util::{AsyncTryClone, FilePart},
     progress_bar::{self, TempProgressStyle},
+    s3,
 };
 
 #[derive(GraphQLQuery)]
@@ -46,34 +35,6 @@ const MB: usize = 1024 * 1024;
 const CHUNK_SIZE: usize = 10 * MB;
 const MAX_RETRY_UPLOAD: usize = 3;
 
-#[derive(Deserialize, Debug)]
-#[serde(rename_all = "PascalCase")]
-#[cfg_attr(test, derive(Eq, PartialEq))]
-struct UploadError {
-    code: UploadErrorCodeValue,
-    message: String,
-    request_id: String,
-}
-
-#[derive(Deserialize, Debug)]
-#[cfg_attr(test, derive(Eq, PartialEq))]
-struct UploadErrorCodeValue {
-    #[serde(rename = "$value")]
-    value: UploadErrorCode,
-}
-
-#[derive(Deserialize, Debug)]
-#[cfg_attr(test, derive(Eq, PartialEq))]
-enum UploadErrorCode {
-    BadDigest,
-    InvalidArgument,
-    InvalidDigest,
-    InvalidSignature,
-    SignatureDoesNotMatch,
-    #[serde(untagged)]
-    Unknown(String),
-}
-
 impl TryFrom<&Checksum> for HeaderName {
     type Error = Infallible;
 
@@ -92,15 +53,68 @@ impl TryFrom<&Checksum> for HeaderValue {
     }
 }
 
-async fn do_upload(
+/// `FileRef` identifies a file by its path, an offset within the file, a length, and an ID.
+///
+/// It can either be:
+///   - a complete file, with `id=0`, `offset=0`, `length=N` where `N` is the full length of the file,
+///   - a chunk of `length=M` of a file, with `id` incrementally increasing along with `offset`
+///     where `M` is determined by the chunking algorithm (nb: fixed at the time of writing).
+///
+/// Users of this API cannot assume a single `FileRef` is complete or not.
+#[derive(Clone, Debug, PartialEq)]
+struct FileRef<'a> {
+    path: &'a Path,
+    id: u64,
+    offset: u64,
+    length: usize,
+}
+
+impl<'a> FileRef<'a> {
+    /// Logical chunking algorithm with fixed chunk size.
+    /// Returns at least one chunk, even when the file is empty.
+    async fn chunks(path: &'a Path, chunk_size: usize) -> std::io::Result<(Vec<Self>, usize)> {
+        let total_length = tokio::fs::File::open(path)
+            .await?
+            .seek(SeekFrom::End(0))
+            .await? as usize;
+
+        let chunk_size = std::cmp::max(1, total_length.div_ceil(chunk_size));
+
+        let mut chunks = Vec::with_capacity(chunk_size);
+        let mut remaining = total_length;
+        for index in 0..chunk_size {
+            let chunk_length = std::cmp::min(chunk_size, remaining);
+            remaining -= chunk_length;
+
+            chunks.push(FileRef {
+                path,
+                id: index as u64,
+                offset: (index * chunk_size) as u64,
+                length: chunk_length,
+            });
+        }
+
+        Ok((chunks, total_length))
+    }
+
+    /// Open the file in read-only mode, ready to be read at `offset` with exactly `length` bytes.
+    /// Returns a file descriptor that you can drop, and read monotonously.
+    async fn open(&self) -> std::io::Result<Pin<Box<dyn AsyncRead + Send + 'static>>> {
+        let mut file = tokio::fs::File::open(self.path).await?;
+        file.seek(SeekFrom::Start(self.offset)).await?;
+        let part = file.take(self.length as u64);
+        Ok(Box::pin(part))
+    }
+}
+
+async fn retry_upload(
     client: &reqwest::Client,
-    mut body: impl AsyncRead + AsyncSeek + AsyncTryClone + Send + Unpin + 'static,
+    part: FileRef<'_>,
     upload_url: &Url,
-    content_length: usize,
     content_type: Option<&str>,
     pb: &ProgressBar,
-) -> Result<Response> {
-    let checksum = Checksum::read_default_from(&mut body).await?;
+) -> Result<s3::UploadResponse> {
+    let cksum = Checksum::read_default_from(part.open().await?).await?;
 
     for retry in 0..MAX_RETRY_UPLOAD {
         if retry > 0 {
@@ -114,57 +128,21 @@ async fn do_upload(
         }
 
         // prepare request body
-        body.rewind().await?;
-        let body = ReaderStream::new(body.try_clone().await?);
-        let body = Body::wrap_stream(body.inspect({
-            let pb = pb.clone();
-            move |chunk| {
-                if let Ok(chunk) = chunk.as_ref() {
-                    pb.inc(chunk.len() as u64);
-                }
-            }
-        }));
+        let result = s3::upload(
+            client,
+            part.open().await?,
+            upload_url,
+            part.length,
+            content_type,
+            cksum.clone(),
+            pb,
+        )
+        .await;
 
-        // prepare request
-        let mut request = client
-            .put(upload_url.to_string())
-            .header(AUTHORIZATION, "")
-            .header(CONTENT_LENGTH, content_length)
-            .header(&checksum, &checksum);
-        if let Some(content_type) = content_type {
-            request = request.header(CONTENT_TYPE, content_type);
-        }
-        request = request.body(body);
-
-        // send request
-        let response = request.send().await?;
-        if response.status().is_success() {
-            return Ok(response);
-        }
-
-        // verify error
-        let status = response.status();
-        let error = response.text().await?;
-        let error: UploadError = quick_xml::de::from_str(&error)
-            .map_err(|_| error::system(&format!("Upload failed: {status}"), ""))?;
-        match &error.code.value {
-            UploadErrorCode::BadDigest
-            | UploadErrorCode::InvalidArgument
-            | UploadErrorCode::InvalidDigest
-            | UploadErrorCode::InvalidSignature
-            | UploadErrorCode::SignatureDoesNotMatch => {
-                // retry immediately when checksum verification fails
-            }
-            UploadErrorCode::Unknown(code) => {
-                // abort prematurely for any other failure
-                return Err(error::system(
-                    &format!(
-                        "Upload failed: {status:?} {} request_id={} {}",
-                        code, error.request_id, error.message
-                    ),
-                    "Please report this issue on our forums",
-                ));
-            }
+        match result {
+            Ok(response) => return Ok(response),
+            Err(s3::UploadError::Response { code, .. }) if code.is_retryable() => {}
+            Err(error) => return Err(error.into()),
         }
     }
 
@@ -177,94 +155,52 @@ async fn do_upload(
 
 async fn simple_upload(
     client: &reqwest::Client,
-    file: File,
+    file: FileRef<'_>,
     upload_url: &Url,
-    content_length: usize,
     content_type: Option<&str>,
     pb: &ProgressBar,
 ) -> Result<()> {
-    let _guard = TempProgressStyle::new(pb);
-    pb.reset();
-    pb.set_style(progress_bar::pretty_bytes());
-    pb.disable_steady_tick();
-    pb.set_position(0);
-    pb.set_length(content_length as u64);
-    let _ = do_upload(client, file, upload_url, content_length, content_type, pb).await?;
+    let _ = retry_upload(client, file, upload_url, content_type, pb).await?;
     Ok(())
 }
 
 async fn upload_part(
     client: &reqwest::Client,
-    path: impl AsRef<Path>,
-    chunk_number: u64,
-    content_length: usize,
-    content_type: Option<&str>,
+    part: FileRef<'_>,
     upload_url: Url,
+    content_type: Option<&str>,
     pb: &ProgressBar,
 ) -> Result<String> {
-    let file = tokio::fs::File::open(path).await?;
-    let chunk = FilePart::slice(file, chunk_number * CHUNK_SIZE as u64, CHUNK_SIZE).await?;
-    let response = do_upload(client, chunk, &upload_url, content_length, content_type, pb).await?;
-    Ok(response
-        .headers()
-        .get("ETag")
-        .ok_or_else(|| error::system("ETag header not found in response", ""))?
-        .to_str()
-        .map_err(|_| error::system("ETag header is not valid UTF-8", ""))?
-        .to_string())
+    Ok(retry_upload(client, part, &upload_url, content_type, pb)
+        .await?
+        .e_tag)
 }
 
 async fn multipart_upload(
     client: &GraphQLClient,
-    path: impl AsRef<Path>,
+    parts: Vec<FileRef<'_>>,
     id: &Id,
-    content_length: usize,
     content_type: Option<&str>,
     pb: &ProgressBar,
 ) -> Result<()> {
-    let mut chunks = [CHUNK_SIZE].repeat(content_length / CHUNK_SIZE);
-    if content_length % CHUNK_SIZE != 0 {
-        chunks.push(content_length % CHUNK_SIZE);
-    }
     let create_multipart_upload = client
         .send::<CreateMultipartUpload>(create_multipart_upload::Variables {
             id: id.to_node_id(),
-            chunks: chunks.iter().map(|&x| x as i64).collect(),
+            chunks: parts.iter().map(|x| x.id as i64).collect(),
         })
         .await?
         .create_project_version_file_multipart_upload;
 
-    let _guard = TempProgressStyle::new(pb);
-    pb.reset();
-    pb.set_style(progress_bar::pretty_bytes());
-    pb.disable_steady_tick();
-    pb.set_position(0);
-    pb.set_length(content_length as u64);
+    if create_multipart_upload.urls.len() != parts.len() {
+        return Err(error::system(
+            "Multipart upload preparation is invalid",
+            "Please report this bug to our support",
+        ));
+    }
 
     let e_tags = futures::future::try_join_all(
-        create_multipart_upload
-            .urls
-            .into_iter()
-            .enumerate()
-            .map(|(i, url)| {
-                chunks
-                    .get(i)
-                    .ok_or_else(|| error::system("Chunk index out of bounds", ""))
-                    .map(|content_length| (i, url, *content_length))
-            })
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .map(|(i, url, content_length)| {
-                upload_part(
-                    client.inner(),
-                    path.as_ref(),
-                    i as u64,
-                    content_length,
-                    content_type,
-                    url,
-                    pb,
-                )
-            }),
+        std::iter::zip(parts, create_multipart_upload.urls)
+            .map(|(part, url)| upload_part(client.inner(), part.clone(), url, content_type, pb)),
     )
     .await?;
 
@@ -285,74 +221,23 @@ pub async fn upload_project_version_file(
     path: impl AsRef<Path> + std::fmt::Debug,
     id: &Id,
     content_type: Option<&str>,
-    upload_url: Option<&Url>,
+    upload_url: &Url,
     pb: &ProgressBar,
 ) -> Result<()> {
-    let file = tokio::fs::File::open(path.as_ref()).await?;
-    let content_len = file.metadata().await?.len() as usize;
-    if content_len < CHUNK_SIZE && upload_url.is_some() {
-        simple_upload(
-            client.inner(),
-            file,
-            upload_url.unwrap(),
-            content_len,
-            content_type,
-            pb,
-        )
-        .await
+    let (parts, total_length) = FileRef::chunks(path.as_ref(), CHUNK_SIZE).await?;
+
+    let _guard = TempProgressStyle::new(pb);
+    pb.reset();
+    pb.set_style(progress_bar::pretty_bytes());
+    pb.disable_steady_tick();
+    pb.set_position(0);
+    pb.set_length(total_length as u64);
+
+    if parts.len() == 1 {
+        let mut parts = parts;
+        let file = parts.pop().expect("Vec is unexpectly empty");
+        simple_upload(client.inner(), file, upload_url, content_type, pb).await
     } else {
-        multipart_upload(client, path, id, content_len, content_type, pb).await
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{UploadError, UploadErrorCode, UploadErrorCodeValue};
-
-    #[test]
-    fn test_de_upload_error_response() {
-        assert_eq!(
-            UploadError {
-                code: UploadErrorCodeValue {
-                    value: UploadErrorCode::Unknown("NoSuchKey".to_string())
-                },
-                message: "The resource you requested does not exist".to_string(),
-                request_id: "4442587FB7D0A2F9".to_string(),
-            },
-            quick_xml::de::from_str(
-                r#"
-<?xml version="1.0" encoding="UTF-8"?>
-<Error>
-  <Code>NoSuchKey</Code>
-  <Message>The resource you requested does not exist</Message>
-  <Resource>/mybucket/myfoto.jpg</Resource>
-  <RequestId>4442587FB7D0A2F9</RequestId>
-</Error>
-        "#,
-            )
-            .unwrap(),
-        );
-
-        assert_eq!(
-            UploadError {
-                code: UploadErrorCodeValue {
-                    value: UploadErrorCode::BadDigest
-                },
-                message: "foobar".to_string(),
-                request_id: "4 8 15 16 23 42".to_string(),
-            },
-            quick_xml::de::from_str(
-                r#"
-<?xml version="1.0" encoding="UTF-8"?>
-<Error>
-  <Code>BadDigest</Code>
-  <Message>foobar</Message>
-  <Resource>buzz</Resource>
-  <RequestId>4 8 15 16 23 42</RequestId>
-</Error>
-        "#,
-            )
-            .unwrap(),
-        );
+        multipart_upload(client, parts, id, content_type, pb).await
     }
 }

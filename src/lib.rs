@@ -13,7 +13,6 @@ mod evaluate;
 mod git;
 mod graphql_client;
 mod id;
-mod io_util;
 mod ipynb;
 mod manifest;
 #[cfg(feature = "extension-module")]
@@ -25,6 +24,7 @@ mod python;
 mod readme;
 mod revert_file;
 mod run;
+mod s3;
 pub mod sentry;
 mod shutdown;
 mod upload;
