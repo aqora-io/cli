@@ -105,7 +105,11 @@ async fn do_upload(
     for retry in 0..MAX_RETRY_UPLOAD {
         if retry > 0 {
             pb.suspend(|| {
-                tracing::error!("Retrying upload...");
+                tracing::warn!(
+                    "Retrying upload... ({} of {} max)",
+                    retry + 1,
+                    MAX_RETRY_UPLOAD
+                );
             });
         }
 
