@@ -562,7 +562,7 @@ pub async fn upload_use_case(
                 data_tar_file,
                 &id,
                 Some(DEFAULT_ARCH_MIME_TYPE),
-                Some(upload_url),
+                upload_url,
                 &data_pb_cloned,
             )
             .await
@@ -615,7 +615,7 @@ pub async fn upload_use_case(
                     template_tar_file,
                     &id,
                     Some(DEFAULT_ARCH_MIME_TYPE),
-                    Some(upload_url),
+                    upload_url,
                     &template_pb_cloned,
                 )
                 .await
@@ -669,7 +669,7 @@ pub async fn upload_use_case(
                 package_tar_file,
                 &id,
                 Some(DEFAULT_ARCH_MIME_TYPE),
-                Some(upload_url),
+                upload_url,
                 &package_pb_cloned,
             )
             .await
@@ -1048,7 +1048,7 @@ Do you want to run the tests now?"#,
                 evaluation_tar_file,
                 &id,
                 Some(DEFAULT_ARCH_MIME_TYPE),
-                Some(upload_url),
+                upload_url,
                 &evaluation_pb_cloned,
             )
             .await
@@ -1098,7 +1098,7 @@ Do you want to run the tests now?"#,
                 package_tar_file,
                 &id,
                 Some(DEFAULT_ARCH_MIME_TYPE),
-                Some(upload_url),
+                upload_url,
                 &package_pb_cloned,
             )
             .await
