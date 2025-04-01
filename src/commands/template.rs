@@ -54,24 +54,41 @@ pub async fn template(args: Template, global: GlobalArgs) -> Result<()> {
         .destination
         .unwrap_or_else(|| PathBuf::from(args.competition.clone()));
 
-    if destination.exists()
-        && (destination.is_file()
-            || destination.is_symlink()
-            || tokio::fs::read_dir(&destination)
-                .await?
-                .next_entry()
-                .await?
-                .is_some())
-    {
-        return Err(error::user(
-            &format!("Destination '{}' already exists", destination.display()),
-            "Please specify a different destination",
-        ));
-    }
-
     let mut pb = ProgressBar::new_spinner().with_message("Fetching competition...");
     pb.enable_steady_tick(std::time::Duration::from_millis(100));
     pb = m.add(pb);
+
+    if destination.exists() {
+        if let Ok(mut read_dir) = tokio::fs::read_dir(&destination).await {
+            if read_dir.next_entry().await?.is_some() {
+                let unpack = pb.suspend(|| {
+                    global
+                        .confirm()
+                        .with_prompt(format!(
+                            "The destination '{}' already exists and is not empty.
+This may overwrite files. Do you want to continue?",
+                            destination.display()
+                        ))
+                        .default(true)
+                        .interact()
+                })?;
+                if !unpack {
+                    pb.finish_with_message(
+                        "Aborted. Please choose a different destination directory",
+                    );
+                    return Ok(());
+                }
+            }
+        } else {
+            return Err(error::user(
+                &format!(
+                    "Destination directory '{}' could not be read",
+                    destination.display()
+                ),
+                "Please check the permissions or specify a different destination",
+            ));
+        }
+    }
 
     let competition = client
         .send::<GetCompetitionTemplate>(get_competition_template::Variables {

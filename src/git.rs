@@ -1,4 +1,4 @@
-use git2::{Repository, RepositoryInitOptions};
+use git2::{ErrorCode, Repository, RepositoryInitOptions};
 use indicatif::ProgressBar;
 use std::path::Path;
 
@@ -22,10 +22,16 @@ pub fn init_repository(
             pb.set_message("Repository initialized successfully.");
             Ok(())
         }
-        Err(error) => Err(format_permission_error(
-            "init a local Git repository",
-            dest.as_ref(),
-            &error,
-        )),
+        Err(error) => match error.code() {
+            ErrorCode::Exists => {
+                pb.set_message("Repository already initialized.");
+                Ok(())
+            }
+            _ => Err(format_permission_error(
+                "init a local Git repository",
+                dest.as_ref(),
+                &error,
+            )),
+        },
     }
 }
