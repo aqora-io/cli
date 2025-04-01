@@ -3,7 +3,6 @@ use crate::{
     credentials::{get_credentials, with_locked_credentials, Credentials},
     error::{self, Result},
     graphql_client::GraphQLClient,
-    progress_bar::default_spinner,
 };
 use base64::prelude::*;
 use chrono::{Duration, Utc};
@@ -336,7 +335,8 @@ async fn do_login(args: Login, global: GlobalArgs, progress: ProgressBar) -> Res
 }
 
 pub async fn login(args: Login, global: GlobalArgs) -> Result<()> {
-    do_login(args, global, default_spinner()).await
+    let pb = global.spinner();
+    do_login(args, global, pb).await
 }
 
 pub async fn check_login(global: GlobalArgs, multi_progress: &MultiProgress) -> Result<bool> {
@@ -357,12 +357,8 @@ pub async fn check_login(global: GlobalArgs, multi_progress: &MultiProgress) -> 
             .interact()
     })?;
     if confirmation {
-        do_login(
-            Login::default(),
-            global,
-            multi_progress.add(default_spinner()),
-        )
-        .await?;
+        let pb = multi_progress.add(global.spinner());
+        do_login(Login::default(), global, pb).await?;
     }
     Ok(confirmation)
 }

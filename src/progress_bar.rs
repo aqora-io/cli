@@ -22,9 +22,14 @@ impl<'a> Drop for TempProgressStyle<'a> {
     }
 }
 
-pub fn default_spinner() -> ProgressBar {
+pub fn default_spinner(tick: bool) -> ProgressBar {
     let progress = ProgressBar::new_spinner();
-    progress.enable_steady_tick(std::time::Duration::from_millis(100));
+    if tick {
+        progress.enable_steady_tick(std::time::Duration::from_millis(100));
+    } else {
+        let style = ProgressStyle::default_spinner().tick_chars("+ ");
+        progress.set_style(style);
+    }
     progress
 }
 

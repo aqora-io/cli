@@ -12,9 +12,8 @@ use aqora_config::{
 };
 use aqora_runner::python::{PipOptions, PipPackage};
 use clap::Args;
-use indicatif::ProgressBar;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, time::Duration};
+use std::collections::HashMap;
 use tokio::fs;
 use toml_edit::DocumentMut;
 
@@ -168,9 +167,9 @@ pub async fn add(args: Add, global: GlobalArgs) -> Result<()> {
         deps.push(req);
     }
     let _ = read_pyproject(&global.project).await?;
-    let progress = ProgressBar::new_spinner();
-    progress.set_message("Initializing virtual environment");
-    progress.enable_steady_tick(Duration::from_millis(100));
+    let progress = global
+        .spinner()
+        .with_message("Initializing virtual environment");
     let env = global.init_venv(&progress).await?;
     let project_file = RevertFile::save(pyproject_path(&global.project))?;
     let mut toml = fs::read_to_string(&project_file)
