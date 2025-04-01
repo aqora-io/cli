@@ -9,7 +9,6 @@ use crate::{
     graphql_client::{custom_scalars::*, GraphQLClient},
     id::Id,
     ipynb::convert_project_notebooks,
-    progress_bar::default_spinner,
     python::{build_package, LastRunResult},
     readme::read_readme,
     revert_file::RevertFile,
@@ -434,10 +433,11 @@ pub async fn upload_use_case(
         )
     })?;
 
-    let mut venv_pb =
-        ProgressBar::new_spinner().with_message("Initializing virtual environment...");
-    venv_pb.enable_steady_tick(std::time::Duration::from_millis(100));
-    venv_pb = m.add(venv_pb);
+    let venv_pb = m.add(
+        global
+            .spinner()
+            .with_message("Initializing virtual environment..."),
+    );
 
     let env = global.init_venv(&venv_pb).await?;
 
@@ -477,9 +477,7 @@ pub async fn upload_use_case(
         ));
     }
 
-    let mut use_case_pb = ProgressBar::new_spinner().with_message("Updating version");
-    use_case_pb.enable_steady_tick(std::time::Duration::from_millis(100));
-    use_case_pb = m.add(use_case_pb);
+    let use_case_pb = m.add(global.spinner().with_message("Updating version"));
 
     let client = global.graphql_client().await?;
     let competition = get_competition_by_slug(&client, slug).await?;
@@ -540,9 +538,7 @@ pub async fn upload_use_case(
         let data_tar_file = tempdir.path().join(format!(
             "{package_name}-{version}.data.{DEFAULT_ARCH_EXTENSION}"
         ));
-        let mut data_pb = ProgressBar::new_spinner().with_message("Compressing data");
-        data_pb.enable_steady_tick(std::time::Duration::from_millis(100));
-        data_pb = m.add(data_pb);
+        let data_pb = m.add(global.spinner().with_message("Compressing data"));
 
         let data_pb_cloned = data_pb.clone();
         let client = client.clone();
@@ -587,9 +583,7 @@ pub async fn upload_use_case(
             let template_tar_file = tempdir.path().join(format!(
                 "{package_name}-{version}.template.{DEFAULT_ARCH_EXTENSION}"
             ));
-            let mut template_pb = ProgressBar::new_spinner().with_message("Compressing template");
-            template_pb.enable_steady_tick(std::time::Duration::from_millis(100));
-            template_pb = m.add(template_pb);
+            let template_pb = m.add(global.spinner().with_message("Compressing template"));
 
             let template_pb_cloned = template_pb.clone();
             let client = client.clone();
@@ -641,26 +635,19 @@ pub async fn upload_use_case(
         )?;
         let package_build_path = tempdir.path().join("dist");
         let package_tar_file = package_build_path.join(format!("{package_name}-{version}.tar.gz"));
-        let mut package_pb = ProgressBar::new_spinner().with_message("Building package");
-        package_pb.enable_steady_tick(std::time::Duration::from_millis(100));
-        package_pb = m.add(package_pb);
+        let package_pb = m.add(global.spinner().with_message("Building package"));
 
         let package_pb_cloned = package_pb.clone();
         let client = client.clone();
+        let project_path = global.project.clone();
         async move {
             package_pb_cloned.set_message("Building package");
-            let project_file = RevertFile::save(pyproject_path(&global.project))?;
+            let project_file = RevertFile::save(pyproject_path(&project_path))?;
             let mut new_project = project.clone();
             new_project.set_name(package_name);
             convert_project_notebooks(&env, new_project.aqora_mut().unwrap()).await?;
             std::fs::write(&project_file, new_project.toml()?)?;
-            build_package(
-                &env,
-                &global.project,
-                &package_build_path,
-                &package_pb_cloned,
-            )
-            .await?;
+            build_package(&env, &project_path, &package_build_path, &package_pb_cloned).await?;
             project_file.revert()?;
 
             package_pb_cloned.set_message("Uploading package");
@@ -689,9 +676,7 @@ pub async fn upload_use_case(
         .instrument(tracing::debug_span!("try_join_all"))
         .await?;
 
-    let mut validate_pb = ProgressBar::new_spinner().with_message("Validating use case");
-    validate_pb.enable_steady_tick(std::time::Duration::from_millis(100));
-    validate_pb = m.add(validate_pb);
+    let validate_pb = m.add(global.spinner().with_message("Validating use case"));
 
     let _ = client
         .send::<ValidateUseCaseMutation>(validate_use_case_mutation::Variables {
@@ -727,18 +712,17 @@ pub async fn upload_submission(
         )
     })?;
 
-    let mut venv_pb =
-        ProgressBar::new_spinner().with_message("Initializing virtual environment...");
-    venv_pb.enable_steady_tick(std::time::Duration::from_millis(100));
-    venv_pb = m.add(venv_pb);
+    let venv_pb = m.add(
+        global
+            .spinner()
+            .with_message("Initializing virtual environment..."),
+    );
 
     let env = global.init_venv(&venv_pb).await?;
 
     venv_pb.finish_with_message("Virtual environment initialized");
 
-    let mut use_case_pb = ProgressBar::new_spinner().with_message("Updating version");
-    use_case_pb.enable_steady_tick(std::time::Duration::from_millis(100));
-    use_case_pb = m.add(use_case_pb);
+    let use_case_pb = m.add(global.spinner().with_message("Updating version"));
 
     let tempdir = tempdir().map_err(|err| {
         error::user(
@@ -847,7 +831,7 @@ pub async fn upload_submission(
                 &format!("Please agree to the competition rules at {url}",),
             ));
         }
-        let pb = m.add(default_spinner().with_message("Accepting rules..."));
+        let pb = m.add(global.spinner().with_message("Accepting rules..."));
         if !is_member {
             client
                 .send::<JoinCompetition>(join_competition::Variables {
@@ -1022,9 +1006,7 @@ Do you want to run the tests now?"#,
         let evaluation_tar_file = tempdir.path().join(format!(
             "{package_name}-{version}.evaluation.{DEFAULT_ARCH_EXTENSION}"
         ));
-        let mut evaluation_pb = ProgressBar::new_spinner().with_message("Compressing evaluation");
-        evaluation_pb.enable_steady_tick(std::time::Duration::from_millis(100));
-        evaluation_pb = m.add(evaluation_pb);
+        let evaluation_pb = m.add(global.spinner().with_message("Compressing evaluation"));
 
         let evaluation_pb_cloned = evaluation_pb.clone();
         let client = client.clone();
@@ -1071,25 +1053,18 @@ Do you want to run the tests now?"#,
         )?;
         let package_build_path = tempdir.path().join("dist");
         let package_tar_file = package_build_path.join(format!("{package_name}-{version}.tar.gz"));
-        let mut package_pb = ProgressBar::new_spinner().with_message("Building package");
-        package_pb.enable_steady_tick(std::time::Duration::from_millis(100));
-        package_pb = m.add(package_pb);
+        let package_pb = m.add(global.spinner().with_message("Building package"));
 
         let package_pb_cloned = package_pb.clone();
         let client = client.clone();
+        let project_path = global.project.clone();
         async move {
-            let project_file = RevertFile::save(pyproject_path(&global.project))?;
+            let project_file = RevertFile::save(pyproject_path(&project_path))?;
             let mut new_project = project.clone();
             new_project.set_name(package_name);
             convert_project_notebooks(&env, new_project.aqora_mut().unwrap()).await?;
             std::fs::write(&project_file, new_project.toml()?)?;
-            build_package(
-                &env,
-                &global.project,
-                package_build_path,
-                &package_pb_cloned,
-            )
-            .await?;
+            build_package(&env, &project_path, package_build_path, &package_pb_cloned).await?;
             project_file.revert()?;
 
             package_pb_cloned.set_message("Uploading package");
@@ -1116,9 +1091,7 @@ Do you want to run the tests now?"#,
 
     futures::future::try_join_all([evaluation_fut, package_fut]).await?;
 
-    let mut validate_pb = ProgressBar::new_spinner().with_message("Validating submission");
-    validate_pb.enable_steady_tick(std::time::Duration::from_millis(100));
-    validate_pb = m.add(validate_pb);
+    let validate_pb = m.add(global.spinner().with_message("Validating submission"));
 
     let _ = client
         .send::<ValidateSubmissionMutation>(validate_submission_mutation::Variables {

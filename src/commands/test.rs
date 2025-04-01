@@ -288,11 +288,11 @@ pub async fn run_submission_tests(
             )
         })?;
 
-    let mut pipeline_pb = ProgressBar::new_spinner().with_message("Starting pipeline...");
-    pipeline_pb.enable_steady_tick(std::time::Duration::from_millis(100));
-    pipeline_pb = m.add(pipeline_pb);
-
-    pipeline_pb.set_message("Setting up virtual environment...");
+    let pipeline_pb = m.add(
+        global
+            .spinner()
+            .with_message("Setting up virtual environment..."),
+    );
 
     let env = global.init_venv(&pipeline_pb).await?;
 
@@ -428,7 +428,7 @@ pub async fn test_submission(args: Test, global: GlobalArgs, project: PyProject)
 }
 
 async fn test_use_case_test(
-    m: &MultiProgress,
+    pb: &ProgressBar,
     env: &PyEnv,
     max_concurrency: usize,
     last_run_dir: &Path,
@@ -436,11 +436,7 @@ async fn test_use_case_test(
     name: &str,
     indexes: Vec<usize>,
 ) -> Result<()> {
-    let pb = m.insert_from_back(
-        1,
-        ProgressBar::new_spinner().with_message(format!("Running test {name}...")),
-    );
-    pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    pb.set_message(format!("Running test {name}..."));
 
     let modified_use_case = use_case.for_test(name).map_err(|err| {
         pb.finish_with_message("Failed to run pipeline for {name}");
@@ -477,7 +473,7 @@ async fn test_use_case_test(
             max_concurrency,
         },
         Some(name),
-        &pb,
+        pb,
     )?;
 
     let result = match aggregated {
@@ -619,9 +615,11 @@ async fn test_use_case(args: Test, global: GlobalArgs, project: PyProject) -> Re
         )?
     };
 
-    let venv_pb =
-        m.add(ProgressBar::new_spinner().with_message("Setting up virtual environment..."));
-    venv_pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    let venv_pb = m.add(
+        global
+            .spinner()
+            .with_message("Setting up virtual environment..."),
+    );
 
     let env = global.init_venv(&venv_pb).await?;
 
@@ -630,16 +628,16 @@ async fn test_use_case(args: Test, global: GlobalArgs, project: PyProject) -> Re
 
     venv_pb.finish_with_message("Virtual environment ready");
 
-    let test_pb = m.add(ProgressBar::new_spinner().with_message("Running tests..."));
-    test_pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    let test_pb = m.add(global.spinner().with_message("Running tests..."));
 
     wrap_python_output(&test_pb)?;
 
     let last_run_dir = project_last_run_dir(&global.project);
     for (name, indexes) in tests {
         let indexes = indexes.unwrap_or_default();
+        let pb = m.insert_from_back(1, global.spinner());
         test_use_case_test(
-            &m,
+            &pb,
             &env,
             global.max_concurrency,
             &last_run_dir,

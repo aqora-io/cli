@@ -4,6 +4,7 @@ use crate::{
     dirs::{init_venv, opt_init_venv},
     error::{self, Result},
     graphql_client::{graphql_url, GraphQLClient},
+    progress_bar::default_spinner,
 };
 use aqora_runner::python::{ColorChoice, LinkMode, PipOptions, PyEnv};
 use clap::Args;
@@ -55,6 +56,14 @@ pub struct GlobalArgs {
         global = true
     )]
     pub no_prompt: bool,
+    #[arg(
+        short = 'k',
+        long = "no-tick",
+        help = "Do not use a steady tick for progress bars",
+        default_value_t = false,
+        global = true
+    )]
+    pub no_tick: bool,
 }
 
 impl GlobalArgs {
@@ -155,5 +164,9 @@ impl GlobalArgs {
         FuzzySelect::new()
             .with_theme(self.color.dialoguer())
             .no_prompt(self.no_prompt)
+    }
+
+    pub fn spinner(&self) -> ProgressBar {
+        default_spinner(!self.no_tick)
     }
 }

@@ -8,9 +8,7 @@ use crate::{
 use aqora_config::{PackageName, Requirement};
 use aqora_runner::python::PipPackage;
 use clap::Args;
-use indicatif::ProgressBar;
 use serde::Serialize;
-use std::time::Duration;
 use tokio::fs;
 use toml_edit::DocumentMut;
 
@@ -73,9 +71,9 @@ pub async fn remove(args: Remove, global: GlobalArgs) -> Result<()> {
         deps.push(req);
     }
     let _ = read_pyproject(&global.project).await?;
-    let progress = ProgressBar::new_spinner();
-    progress.set_message("Initializing virtual environment");
-    progress.enable_steady_tick(Duration::from_millis(100));
+    let progress = global
+        .spinner()
+        .with_message("Initializing virtual environment");
     let env = global.init_venv(&progress).await?;
     let project_file = RevertFile::save(pyproject_path(&global.project))?;
     let mut toml = fs::read_to_string(&project_file)

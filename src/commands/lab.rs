@@ -189,8 +189,9 @@ pub struct Lab {
 }
 
 pub async fn lab(args: Lab, global_args: GlobalArgs) -> Result<()> {
-    let pb = ProgressBar::new_spinner().with_message("Setting up virtual environment");
-    pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    let pb = global_args
+        .spinner()
+        .with_message("Setting up virtual environment");
 
     let env = global_args.init_venv(&pb).await?;
 

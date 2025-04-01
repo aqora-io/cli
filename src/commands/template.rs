@@ -12,7 +12,7 @@ use crate::{
 };
 use clap::Args;
 use graphql_client::GraphQLQuery;
-use indicatif::{MultiProgress, ProgressBar};
+use indicatif::MultiProgress;
 use owo_colors::OwoColorize;
 use serde::Serialize;
 use std::path::PathBuf;
@@ -53,9 +53,7 @@ pub async fn template(args: Template, global: GlobalArgs) -> Result<()> {
         .destination
         .unwrap_or_else(|| PathBuf::from(args.competition.clone()));
 
-    let mut pb = ProgressBar::new_spinner().with_message("Fetching competition...");
-    pb.enable_steady_tick(std::time::Duration::from_millis(100));
-    pb = m.add(pb);
+    let pb = m.add(global.spinner().with_message("Fetching competition..."));
 
     if destination.exists() {
         if let Ok(mut read_dir) = tokio::fs::read_dir(&destination).await {

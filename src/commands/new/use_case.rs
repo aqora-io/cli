@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use aqora_template::UseCaseTemplate;
 use clap::Args;
 use graphql_client::GraphQLQuery;
-use indicatif::ProgressBar;
 use serde::Serialize;
 
 use crate::error::{self, format_permission_error, Result};
@@ -27,9 +26,9 @@ pub struct UseCase {
 struct UseCaseTemplateInfo;
 
 pub async fn use_case(args: UseCase, global: GlobalArgs) -> Result<()> {
-    let pb = ProgressBar::new_spinner()
+    let pb = global
+        .spinner()
         .with_message(format!("Creating use case for '{}'", args.competition));
-    pb.enable_steady_tick(std::time::Duration::from_millis(100));
 
     let client = global.graphql_client().await?;
     let competition = client

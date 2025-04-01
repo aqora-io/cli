@@ -15,7 +15,7 @@ use aqora_runner::python::{PipOptions, PipPackage};
 use clap::Args;
 use futures::prelude::*;
 use graphql_client::GraphQLQuery;
-use indicatif::{MultiProgress, ProgressBar};
+use indicatif::MultiProgress;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use url::Url;
@@ -72,12 +72,12 @@ pub async fn install_submission(
 
     let m = MultiProgress::new();
 
-    let mut venv_pb = ProgressBar::new_spinner().with_message("Setting up virtual environment");
-    venv_pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    let mut venv_pb = global
+        .spinner()
+        .with_message("Setting up virtual environment");
     venv_pb = m.add(venv_pb);
 
-    let mut use_case_pb = ProgressBar::new_spinner().with_message("Getting use case...");
-    use_case_pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    let mut use_case_pb = global.spinner().with_message("Getting use case...");
     use_case_pb = m.insert_before(&venv_pb, use_case_pb);
 
     let config = project
@@ -172,9 +172,9 @@ pub async fn install_submission(
     let should_update = args.upgrade || old_version.is_none() || new_version > old_version.unwrap();
 
     if should_update {
-        let mut download_pb =
-            ProgressBar::new_spinner().with_message("Downloading use case data...");
-        download_pb.enable_steady_tick(std::time::Duration::from_millis(100));
+        let mut download_pb = global
+            .spinner()
+            .with_message("Downloading use case data...");
         download_pb = m.insert_before(&venv_pb, download_pb);
 
         let use_case_data_url = use_case_res
@@ -227,8 +227,7 @@ pub async fn install_submission(
             }
         });
 
-        let mut use_case_pb = ProgressBar::new_spinner().with_message("Installing packages...");
-        use_case_pb.enable_steady_tick(std::time::Duration::from_millis(100));
+        let mut use_case_pb = global.spinner().with_message("Installing packages...");
         use_case_pb = m.insert_before(&venv_pb, use_case_pb);
 
         let cloned_pb = use_case_pb.clone();
@@ -283,8 +282,9 @@ pub async fn install_use_case(args: Install, global: GlobalArgs, project: PyProj
         .and_then(|aqora| aqora.as_use_case())
         .ok_or_else(|| error::user("Use case config is not valid", ""))?;
 
-    let mut pb = ProgressBar::new_spinner().with_message("Setting up virtual environment");
-    pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    let mut pb = global
+        .spinner()
+        .with_message("Setting up virtual environment");
     pb = m.add(pb);
 
     let env = global.init_venv(&pb).await?;
