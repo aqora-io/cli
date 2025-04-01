@@ -2,8 +2,8 @@ use crate::{
     colors::ColorChoiceExt,
     dialog::{Confirm, FuzzySelect},
     dirs::{init_venv, opt_init_venv},
-    error::Result,
-    graphql_client::graphql_url,
+    error::{self, Result},
+    graphql_client::{graphql_url, GraphQLClient},
 };
 use aqora_runner::python::{ColorChoice, LinkMode, PipOptions, PyEnv};
 use clap::Args;
@@ -31,6 +31,8 @@ pub struct GlobalArgs {
         hide = true
     )]
     pub url: String,
+    #[arg(long, env = "AQORA_CONFIG_HOME", global = true)]
+    pub config_home: Option<PathBuf>,
     #[arg(short, long, default_value = ".", global = true)]
     pub project: PathBuf,
     #[arg(long, global = true)]
@@ -69,6 +71,44 @@ impl GlobalArgs {
 
     pub fn graphql_url(&self) -> Result<Url> {
         graphql_url(&self.aqora_url()?)
+    }
+
+    pub async fn config_home(&self) -> Result<PathBuf> {
+        let path = match &self.config_home {
+            Some(path) => path.clone(),
+            None => dirs::data_dir()
+                .or_else(dirs::config_dir)
+                .ok_or_else(|| {
+                    error::system(
+                        "Could not find config directory",
+                        "This is a bug, please report it",
+                    )
+                })?
+                .join("aqora"),
+        };
+        if tokio::fs::read_dir(&path).await.is_err() {
+            tokio::fs::create_dir_all(&path).await.map_err(|e| {
+                error::user(
+                    &format!(
+                        "Failed to create config directory at {}: {}",
+                        path.display(),
+                        e
+                    ),
+                    "Make sure you have the necessary permissions",
+                )
+            })?;
+        }
+        Ok(path)
+    }
+
+    pub async fn graphql_client(&self) -> Result<GraphQLClient> {
+        match self.config_home().await {
+            Ok(config_home) => Ok(GraphQLClient::new(config_home, self.aqora_url()?).await?),
+            Err(err) => {
+                tracing::warn!("Could not access credentials: {}", err.description());
+                Ok(GraphQLClient::no_creds(self.aqora_url()?)?)
+            }
+        }
     }
 
     pub fn pip_options(&self) -> PipOptions {

@@ -1,5 +1,5 @@
 use crate::{
-    dirs::config_dir,
+    dirs::credentials_path,
     error::{self, Result},
     graphql_client::graphql_url,
 };
@@ -8,7 +8,7 @@ use fs4::tokio::AsyncFileExt;
 use futures::{future::BoxFuture, prelude::*};
 use graphql_client::GraphQLQuery;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, path::Path};
 use tokio::{
     fs::{File, OpenOptions},
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
@@ -74,10 +74,6 @@ impl Credentials {
 )]
 pub struct Oauth2TokenMutation;
 
-pub async fn credentials_path() -> Result<std::path::PathBuf> {
-    Ok(config_dir().await?.join("credentials.json"))
-}
-
 #[derive(Deserialize, Serialize, Debug, Eq, PartialEq, Clone)]
 pub struct CredentialsFile {
     pub credentials: HashMap<Url, Credentials>,
@@ -91,11 +87,12 @@ async fn replace_file(file: &mut File, contents: impl AsRef<[u8]>) -> std::io::R
     Ok(())
 }
 
-pub async fn with_locked_credentials<T, F>(f: F) -> Result<T>
+pub async fn with_locked_credentials<P, T, F>(config_home: P, f: F) -> Result<T>
 where
+    P: AsRef<Path>,
     F: for<'a> FnOnce(&'a mut CredentialsFile) -> BoxFuture<'a, Result<T>>,
 {
-    let path = credentials_path().await?;
+    let path = credentials_path(config_home);
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -196,8 +193,11 @@ where
 )]
 pub struct Oauth2RefreshMutation;
 
-pub async fn get_credentials(url: Url) -> Result<Option<Credentials>> {
-    let credentials = with_locked_credentials(|file| {
+pub async fn get_credentials(
+    config_home: impl AsRef<Path>,
+    url: Url,
+) -> Result<Option<Credentials>> {
+    let credentials = with_locked_credentials(config_home, |file| {
         async move {
             let credentials = match file.credentials.get(&url).cloned() {
                 Some(credentials) => credentials,

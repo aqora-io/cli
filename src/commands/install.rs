@@ -7,7 +7,7 @@ use crate::{
     },
     download::download_archive,
     error::{self, Result},
-    graphql_client::{custom_scalars::*, GraphQLClient},
+    graphql_client::custom_scalars::*,
     python::pip_install,
 };
 use aqora_config::PyProject;
@@ -68,7 +68,7 @@ pub async fn install_submission(
     global: GlobalArgs,
     project: PyProject,
 ) -> Result<()> {
-    let client = GraphQLClient::new(global.url.parse()?).await?;
+    let client = global.graphql_client().await?;
 
     let m = MultiProgress::new();
 

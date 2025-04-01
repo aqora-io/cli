@@ -8,7 +8,7 @@ use serde::Serialize;
 
 use crate::error::{self, format_permission_error, Result};
 use crate::git::init_repository;
-use crate::graphql_client::{custom_scalars::*, GraphQLClient};
+use crate::graphql_client::custom_scalars::*;
 
 use super::GlobalArgs;
 
@@ -31,7 +31,7 @@ pub async fn use_case(args: UseCase, global: GlobalArgs) -> Result<()> {
         .with_message(format!("Creating use case for '{}'", args.competition));
     pb.enable_steady_tick(std::time::Duration::from_millis(100));
 
-    let client = GraphQLClient::new(global.url.parse()?).await?;
+    let client = global.graphql_client().await?;
     let competition = client
         .send::<UseCaseTemplateInfo>(use_case_template_info::Variables {
             slug: args.competition.clone(),

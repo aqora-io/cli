@@ -282,7 +282,7 @@ async fn login_interactive(
 pub struct Oauth2TokenMutation;
 
 async fn do_login(args: Login, global: GlobalArgs, progress: ProgressBar) -> Result<()> {
-    with_locked_credentials(|file| {
+    with_locked_credentials(global.config_home().await?, |file| {
         async move {
             progress.set_message("Logging in...");
             let client_id = client_id();
@@ -340,7 +340,10 @@ pub async fn login(args: Login, global: GlobalArgs) -> Result<()> {
 }
 
 pub async fn check_login(global: GlobalArgs, multi_progress: &MultiProgress) -> Result<bool> {
-    if get_credentials(global.aqora_url()?).await?.is_some() {
+    if get_credentials(global.config_home().await?, global.aqora_url()?)
+        .await?
+        .is_some()
+    {
         return Ok(true);
     }
     let confirmation = multi_progress.suspend(|| {
