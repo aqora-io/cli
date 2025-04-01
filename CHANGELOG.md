@@ -2,6 +2,20 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.14.0 - 2025-04-01
+#### Bug Fixes
+- retry upload on checksum failure - (59fa0e9) - Antoine Chauvin
+#### Features
+- disable auto tick - (0f96505) - Julian Popescu
+- unpack in existing directory - (687ee50) - Julian Popescu
+- make aqora config directory configurable - (20d8167) - Julian Popescu
+#### Refactoring
+- simplify file reading - (ed866b0) - Antoine Chauvin
+- improve upload retry log message - (7b875de) - Antoine Chauvin
+- simplify checksums - (2db63ce) - Antoine Chauvin
+
+- - -
+
 ## v0.13.0 - 2025-03-26
 #### Bug Fixes
 - **(ci)** uplaod artifact - (b935392) - Angel Dijoux
