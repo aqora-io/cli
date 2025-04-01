@@ -133,6 +133,7 @@ dependencies = [
  "mime",
  "open",
  "owo-colors",
+ "parking_lot",
  "passterm",
  "pretty_assertions",
  "pyo3",

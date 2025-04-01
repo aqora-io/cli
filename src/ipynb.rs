@@ -14,12 +14,6 @@ use std::{
 use thiserror::Error;
 use tokio::io::AsyncWriteExt;
 
-const PARAMETERS_TAG: &str = "parameters";
-
-const AQORA_PARAMETERS: &str = r#"input = __aqora__args[0]
-context = __aqora__kwargs.get("context")
-original_input = __aqora__kwargs.get("original_input")"#;
-
 #[derive(Default, Serialize)]
 pub struct CellSource(Vec<String>);
 
@@ -105,16 +99,6 @@ pub enum Cell {
     },
 }
 
-impl Cell {
-    fn metadata(&self) -> &Metadata {
-        match self {
-            Cell::Code { metadata, .. } => metadata,
-            Cell::Markdown { metadata, .. } => metadata,
-            Cell::Raw { metadata, .. } => metadata,
-        }
-    }
-}
-
 #[derive(Deserialize, Serialize, Default)]
 pub struct Ipynb {
     #[serde(default)]
@@ -125,45 +109,6 @@ pub struct Ipynb {
     pub nbformat_minor: Option<usize>,
     #[serde(flatten)]
     pub rest: Option<serde_json::Value>,
-}
-
-fn inject_parameters(cells: &mut Vec<Cell>) {
-    let mut parameter_indices = cells
-        .iter()
-        .enumerate()
-        .filter_map(|(i, cell)| {
-            if cell
-                .metadata()
-                .tags
-                .as_ref()
-                .map(|tags| tags.contains(&PARAMETERS_TAG.to_string()))
-                .unwrap_or(false)
-            {
-                Some(i)
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>();
-    let mut offset = 0;
-    if parameter_indices.is_empty() {
-        parameter_indices.push(0);
-    } else {
-        offset += 1;
-    }
-    for i in parameter_indices {
-        cells.insert(
-            i + offset,
-            Cell::Code {
-                source: CellSource::from(AQORA_PARAMETERS),
-                execution_count: Default::default(),
-                metadata: Default::default(),
-                outputs: Default::default(),
-                rest: Default::default(),
-            },
-        );
-        offset += 1;
-    }
 }
 
 #[derive(Error, Debug)]
@@ -281,13 +226,11 @@ async fn notebook_to_script(
         }
     }
 
-    let mut ipynb: Ipynb = serde_json::from_reader(
+    let ipynb: Ipynb = serde_json::from_reader(
         std::fs::File::open(&input_path)
             .map_err(|e| NotebookToPythonFunctionError::Read(input_path.clone(), e))?,
     )
     .map_err(|e| NotebookToPythonFunctionError::Json(input_path.clone(), e))?;
-
-    inject_parameters(&mut ipynb.cells);
 
     let ipynb_json = serde_json::to_string(&ipynb)
         .map_err(|e| NotebookToPythonFunctionError::Json(input_path.clone(), e))?;
@@ -388,15 +331,8 @@ __aqora__path = Path(__file__).parent / '{name}.converted.py'
 with open(__aqora__path) as f:
     __aqora__script = compile(f.read(), __aqora__path, 'exec', flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
 
-async def __aqora__(*__aqora__args, **__aqora__kwargs):
-    globals().update(locals())
-    coroutine = eval(__aqora__script, globals())
-    if coroutine is not None:
-        await coroutine
-    if 'output' in globals():
-        return globals()['output']
-    else:
-        raise NameError("No 'output' variable found in the notebook")
+def __aqora__(**kwargs):
+    return eval(__aqora__script, dict(kwargs))
 "#,
             name = self.generated_name
         )
@@ -405,6 +341,7 @@ async def __aqora__(*__aqora__args, **__aqora__kwargs):
     fn module_function_def(&self) -> String {
         format!(
             r#"
+from aqora_cli import _run_real_submission
 spec_{name} = importlib.util.spec_from_file_location(
     '{module_name}',
     dir_path / 'generated' / '{name}.py')
@@ -412,8 +349,8 @@ module_{name} = importlib.util.module_from_spec(spec_{name})
 sys.modules['{module_name}'] = module_{name}
 spec_{name}.loader.exec_module(module_{name})
 
-async def {func}(*__aqora__args, **__aqora__kwargs):
-    return await module_{name}.__aqora__(*__aqora__args, **__aqora__kwargs)
+def {func}(*__aqora__args, **__aqora__kwargs):
+    return _run_real_submission(module_{name}.__aqora__, *__aqora__args, **__aqora__kwargs)
 "#,
             func = self.function_name(),
             module_name = self.path,
@@ -719,14 +656,6 @@ print("Hello world!")
 
 
 # This block has parameters tag
-
-
-# In[ ]:
-
-
-input = __aqora__args[0]
-context = __aqora__kwargs.get("context")
-original_input = __aqora__kwargs.get("original_input")
 
 
 # This is a markdown block
