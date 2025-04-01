@@ -99,7 +99,7 @@ async fn handle_vscode_integration(
 ) -> Result<()> {
     is_vscode_available(pb).await?;
 
-    if UserVSCodeSettings::load()
+    if UserVSCodeSettings::load(global_args.config_home().await?)
         .await?
         .can_install_extensions
         .unwrap_or(false)
@@ -117,7 +117,7 @@ async fn ask_for_install_vscode_extensions(
     pb: &ProgressBar,
     global_args: &GlobalArgs,
 ) -> Result<()> {
-    let mut vscode_settings = UserVSCodeSettings::load().await?;
+    let mut vscode_settings = UserVSCodeSettings::load(global_args.config_home().await?).await?;
 
     if let Some(allow) = allow_vscode_extensions {
         vscode_settings.can_install_extensions(allow).save().await?;
@@ -195,7 +195,7 @@ pub async fn lab(args: Lab, global_args: GlobalArgs) -> Result<()> {
     let env = global_args.init_venv(&pb).await?;
 
     if !args.jupyter_notebook {
-        if UserVSCodeSettings::load()
+        if UserVSCodeSettings::load(global_args.config_home().await?)
             .await?
             .can_install_extensions
             .is_none()

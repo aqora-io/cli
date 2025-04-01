@@ -9,7 +9,6 @@ use crate::{
     download::download_archive,
     error::{self, Result},
     git::init_repository,
-    graphql_client::GraphQLClient,
 };
 use clap::Args;
 use graphql_client::GraphQLQuery;
@@ -48,7 +47,7 @@ pub async fn template(args: Template, global: GlobalArgs) -> Result<()> {
     let m = MultiProgress::new();
     let logged_in = check_login(global.clone(), &m).await?;
 
-    let client = GraphQLClient::new(global.url.parse()?).await?;
+    let client = global.graphql_client().await?;
 
     let destination = args
         .destination

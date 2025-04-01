@@ -5,6 +5,7 @@ use crate::{
 use futures::prelude::*;
 use graphql_client::GraphQLQuery;
 use reqwest::header::{HeaderMap, AUTHORIZATION, USER_AGENT};
+use std::path::Path;
 use thiserror::Error;
 use url::Url;
 
@@ -96,8 +97,8 @@ impl GraphQLClient {
             credentials,
         })
     }
-    pub async fn new(url: Url) -> Result<Self> {
-        Self::with_creds(url.clone(), get_credentials(url).await?)
+    pub async fn new(config_home: impl AsRef<Path>, url: Url) -> Result<Self> {
+        Self::with_creds(url.clone(), get_credentials(config_home, url).await?)
     }
 
     pub fn no_creds(url: Url) -> Result<Self> {

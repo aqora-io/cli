@@ -481,7 +481,7 @@ pub async fn upload_use_case(
     use_case_pb.enable_steady_tick(std::time::Duration::from_millis(100));
     use_case_pb = m.add(use_case_pb);
 
-    let client = GraphQLClient::new(global.url.parse()?).await?;
+    let client = global.graphql_client().await?;
     let competition = get_competition_by_slug(&client, slug).await?;
 
     let version = update_project_version(
@@ -790,7 +790,7 @@ pub async fn upload_submission(
             )
         })?;
 
-    let client = GraphQLClient::new(global.url.parse()?).await?;
+    let client = global.graphql_client().await?;
 
     let SubmissionUploadInfoResponse {
         entity_id,

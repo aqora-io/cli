@@ -1,8 +1,7 @@
 use crate::{
     commands::{version::python_version, GlobalArgs},
-    dirs::{config_dir, locate_uv},
+    dirs::locate_uv,
     error::Result,
-    graphql_client::GraphQLClient,
     manifest::manifest_version,
 };
 use clap::Args;
@@ -22,7 +21,8 @@ use which::which;
 pub struct ViewerInfo;
 
 pub async fn get_viewer_info(global: &GlobalArgs) -> Result<viewer_info::ViewerInfoViewer> {
-    Ok(GraphQLClient::new(global.url.parse()?)
+    Ok(global
+        .graphql_client()
         .await?
         .send::<ViewerInfo>(viewer_info::Variables {})
         .await?
@@ -81,7 +81,8 @@ pub async fn info(_: Info, global: GlobalArgs) -> Result<()> {
     );
     tracing::info!(
         "Config {}",
-        config_dir()
+        global
+            .config_home()
             .await
             .map(|p| p.display().to_string())
             .unwrap_or_else(|err| format!("[error: {err}]"))
