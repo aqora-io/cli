@@ -1,0 +1,13 @@
+{
+  "fields": [
+    {
+      "name": "id",
+      "data_type": "UInt64"
+    },
+    {
+      "name": "name",
+      "data_type": "Utf8",
+      "nullable": true
+    }
+  ]
+}

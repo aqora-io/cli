@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["archiver", "config", "runner", "template"]
+members = ["archiver", "config", "runner", "template", "data-utils"]
 
 [package]
 name = "aqora"
@@ -29,6 +29,8 @@ aqora-archiver = { path = "archiver", features = [
 aqora-config = { path = "config" }
 aqora-runner = { path = "runner", features = ["clap"] }
 aqora-template = { path = "template" }
+aqora-data-utils = { path = "data-utils" }
+
 async-tempfile = "0.6"
 axum = "0.7"
 base32 = "0.5"
@@ -106,6 +108,11 @@ graphql-ws-client = { version = "0.11", features = [
 ] }
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 qrcode = { version = "0.14.1", default-features = false }
+regex = "1.11.1"
+comfy-table = "7.1.4"
+ron = { version = "0.10", features = ["indexmap"] }
+parquet = { version = "55" }
+async-trait = "0.1"
 
 [build-dependencies]
 toml_edit = "0.22"

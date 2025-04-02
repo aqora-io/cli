@@ -8,6 +8,7 @@ use crate::{
 };
 use aqora_runner::python::{ColorChoice, LinkMode, PipOptions, PyEnv};
 use clap::Args;
+use comfy_table::Table;
 use indicatif::ProgressBar;
 use serde::Serialize;
 use std::path::PathBuf;
@@ -19,12 +20,15 @@ lazy_static::lazy_static! {
         .unwrap_or(1);
 }
 
+const HELP_HEADING: &str = "Global options";
+
 /// Aqora respects your privacy and follows https://consoledonottrack.com/ :
 /// when $DO_NOT_TRACK environment variable is defined, Aqora will not
 /// record any statistics or report any incidents.
 #[derive(Args, Debug, Serialize, Clone)]
 pub struct GlobalArgs {
     #[arg(
+        help_heading = HELP_HEADING,
         long,
         default_value = "https://aqora.io",
         env = "AQORA_URL",
@@ -32,23 +36,57 @@ pub struct GlobalArgs {
         hide = true
     )]
     pub url: String,
-    #[arg(long, env = "AQORA_CONFIG_HOME", global = true)]
+    #[arg(
+        help_heading = HELP_HEADING,
+        long,
+        env = "AQORA_CONFIG_HOME",
+        global = true
+    )]
     pub config_home: Option<PathBuf>,
-    #[arg(short, long, default_value = ".", global = true)]
+    #[arg(
+        help_heading = HELP_HEADING,
+        short,
+        long,
+        default_value = ".",
+        global = true
+    )]
     pub project: PathBuf,
-    #[arg(long, global = true)]
+    #[arg(help_heading = HELP_HEADING, long, global = true)]
     pub uv: Option<PathBuf>,
-    #[arg(long, global = true)]
+    #[arg(help_heading = HELP_HEADING, long, global = true)]
     pub python: Option<String>,
-    #[arg(long, global = true, default_value = "false")]
+    #[arg(
+        help_heading = HELP_HEADING,
+        long,
+        global = true,
+        default_value = "false"
+    )]
     pub ignore_venv_aqora: bool,
-    #[arg(long, default_value_t = *DEFAULT_PARALLELISM, global = true)]
+    #[arg(
+        help_heading = HELP_HEADING,
+        long,
+        default_value_t = *DEFAULT_PARALLELISM,
+        global = true
+    )]
     pub max_concurrency: usize,
-    #[arg(value_enum, long, default_value_t = ColorChoice::Auto, global = true)]
+    #[arg(
+        help_heading = HELP_HEADING,
+        value_enum,
+        long,
+        default_value_t = ColorChoice::Auto,
+        global = true
+    )]
     pub color: ColorChoice,
-    #[arg(value_enum, long, default_value_t = LinkMode::Copy, global = true)]
+    #[arg(
+        help_heading = HELP_HEADING,
+        value_enum,
+        long,
+        default_value_t = LinkMode::Copy,
+        global = true
+    )]
     pub dep_link_mode: LinkMode,
     #[arg(
+        help_heading = HELP_HEADING,
         short = 'y',
         long = "no-prompt",
         help = "Skip interactive dialogs and automatically confirm",
@@ -57,6 +95,7 @@ pub struct GlobalArgs {
     )]
     pub no_prompt: bool,
     #[arg(
+        help_heading = HELP_HEADING,
         short = 'k',
         long = "no-tick",
         help = "Do not use a steady tick for progress bars",
@@ -168,5 +207,15 @@ impl GlobalArgs {
 
     pub fn spinner(&self) -> ProgressBar {
         default_spinner(!self.no_tick)
+    }
+
+    pub fn table(&self) -> Table {
+        let mut table = Table::new();
+        if matches!(self.color.forced(), ColorChoice::Always) {
+            table
+                .load_preset(comfy_table::presets::UTF8_FULL)
+                .apply_modifier(comfy_table::modifiers::UTF8_ROUND_CORNERS);
+        }
+        table
     }
 }

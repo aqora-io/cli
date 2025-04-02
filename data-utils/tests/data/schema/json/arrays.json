@@ -1,0 +1,30 @@
+{
+  "fields": [
+    {
+      "name": "a",
+      "data_type": "Int64"
+    },
+    {
+      "name": "b",
+      "data_type": "List",
+      "field": {
+        "name": "element",
+        "data_type": "Float64",
+        "nullable": true
+      }
+    },
+    {
+      "name": "c",
+      "data_type": "List",
+      "field": {
+        "name": "element",
+        "data_type": "Boolean",
+        "nullable": true
+      }
+    },
+    {
+      "name": "d",
+      "data_type": "Utf8"
+    }
+  ]
+}
