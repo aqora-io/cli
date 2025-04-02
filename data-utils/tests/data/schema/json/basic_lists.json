@@ -1,0 +1,40 @@
+{
+  "fields": [
+    {
+      "name": "a",
+      "data_type": "Int64"
+    },
+    {
+      "name": "b",
+      "data_type": "Float64"
+    },
+    {
+      "name": "c",
+      "data_type": "Boolean"
+    },
+    {
+      "name": "d",
+      "data_type": "Utf8"
+    },
+    {
+      "name": "e",
+      "data_type": "Date32",
+      "nullable": true
+    },
+    {
+      "name": "f",
+      "data_type": "Utf8"
+    },
+    {
+      "name": "g",
+      "data_type": "Timestamp",
+      "unit": "Millisecond",
+      "nullable": true
+    },
+    {
+      "name": "h",
+      "data_type": "Float64",
+      "nullable": true
+    }
+  ]
+}
