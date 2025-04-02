@@ -1,0 +1,56 @@
+[package]
+name = "aqora-data-utils"
+version = "0.13.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["all-formats"]
+default-wasm = ["wasm", "console_error_panic_hook", "all-formats"]
+all-formats = ["json", "csv"]
+csv = ["dep:csv", "csv-core"]
+json = ["serde_json"]
+wasm = ["wasm-bindgen", "wasm-bindgen-futures", "web-sys", "js-sys"]
+fs = ["tokio/fs"]
+
+[dependencies]
+wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true, features = [
+  "futures-core-03-stream",
+] }
+js-sys = { version = "0.3", optional = true }
+web-sys = { version = "0.3", optional = true, features = [
+  "console",
+  "Blob",
+  "ReadableStream",
+] }
+console_error_panic_hook = { version = "0.1", optional = true }
+wasm-bindgen-test = { version = "0.3", optional = true }
+
+arrow = { version = "54", default-features = false }
+serde_arrow = { version = "0.13", features = ["arrow-54"] }
+parquet = { version = "54", default-features = false, features = [
+  "arrow",
+  "async",
+] }
+thiserror = "2"
+tokio = { version = "1", default-features = false, features = [
+  "io-util",
+  "rt",
+  "sync",
+  "macros",
+] }
+futures = { version = "0.3", default-features = false, features = ["std"] }
+serde_json = { version = "1.0", optional = true, features = ["preserve_order"] }
+csv = { version = "1.3", optional = true }
+csv-core = { version = "0.1", optional = true }
+bytes = "1.10"
+serde = "1.0"
+pin-project-lite = "0.2"
+regex = "1.11"
+indexmap = { version = "2.9", features = ["serde"] }
+ron = { version = "0.10.1", features = ["indexmap"] }
+chrono = "0.4"
