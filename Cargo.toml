@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["archiver", "config", "runner", "template", "client"]
+members = ["archiver", "config", "runner", "template", "data-utils", "client"]
 
 [package]
 name = "aqora"
@@ -30,6 +30,8 @@ aqora-archiver = { path = "archiver", features = [
 aqora-config = { path = "config" }
 aqora-runner = { path = "runner", features = ["clap"] }
 aqora-template = { path = "template" }
+aqora-data-utils = { path = "data-utils" }
+
 axum = "0.7"
 base32 = "0.5"
 base64 = "0.22"
@@ -100,6 +102,10 @@ which = "6.0"
 git2 = { version = "0.19.0", default-features = false }
 ring = "0.17.14"
 qrcode = { version = "0.14.1", default-features = false }
+regex = "1.11.1"
+comfy-table = "7.1.4"
+ron = { version = "0.10", features = ["indexmap"] }
+parquet = { version = "55" }
 async-trait = "0.1"
 bytes = "1.10"
 content_disposition = "0.4.0"

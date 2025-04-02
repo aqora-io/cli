@@ -160,3 +160,44 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  npm:
+    name: Build and publish npm package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Setup node"
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          registry-url: "https://npm.pkg.github.com"
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.9
+      - name: Set Rust caching env vars
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Build package
+        run: |
+          cargo test export_bindings --features "wasm-test"
+          wasm-pack build --target web --out-name index --release --weak-refs --reference-types --no-default-features --features default-wasm
+          sh configure-pkg.sh "${{ github.server_url }}/${{ github.repository }}" "${{ github.repository_owner }}"
+        working-directory: data-utils
+        env:
+          TS_RS_EXPORT_DIR: "pkg"
+      - name: Publish to Github NPM package registry dry run
+        run: npm publish --dry-run
+        working-directory: data-utils/pkg
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish to Github NPM package registry
+        if: startsWith(github.ref, 'refs/tags/')
+        run: npm publish
+        working-directory: data-utils/pkg
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
