@@ -1,0 +1,27 @@
+{
+  "fields": [
+    {
+      "name": "a",
+      "data_type": "Struct",
+      "fields": [
+        {
+          "name": "b",
+          "data_type": "Boolean"
+        },
+        {
+          "name": "c",
+          "data_type": "Struct",
+          "fields": [
+            {
+              "name": "d",
+              "data_type": "Utf8"
+            }
+          ],
+          "strategy": "MapAsStruct",
+          "nullable": true
+        }
+      ],
+      "strategy": "MapAsStruct"
+    }
+  ]
+}
