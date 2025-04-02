@@ -1,0 +1,1 @@
+{ "format": "csv", "has_headers": true, "regex": { "null": "^nil$" } }

@@ -1,0 +1,12 @@
+{
+  "fields": [
+    {
+      "name": "item0",
+      "data_type": "Float64"
+    },
+    {
+      "name": "item1",
+      "data_type": "Utf8"
+    }
+  ]
+}
