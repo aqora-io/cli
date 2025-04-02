@@ -1,0 +1,88 @@
+[package]
+name = "aqora-data-utils"
+version = "0.13.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["all-formats", "all-codecs", "fs"]
+default-wasm = ["wasm", "console_error_panic_hook", "all-formats", "zstd"]
+all-formats = ["json", "csv"]
+all-codecs = ["brotli", "flate2", "lz4", "zstd", "snap"]
+csv = ["dep:csv", "csv-core"]
+json = ["serde_json"]
+brotli = ["parquet/brotli"]
+flate2 = ["parquet/flate2"]
+lz4 = ["parquet/lz4"]
+zstd = ["parquet/zstd"]
+snap = ["parquet/snap"]
+wasm = [
+  "wasm-bindgen",
+  "wasm-bindgen-futures",
+  "wasm-streams",
+  "futures-io",
+  "tokio-util",
+  "web-sys",
+  "js-sys",
+  "serde-wasm-bindgen",
+  "ts-rs",
+]
+wasm-test = ["default-wasm", "wasm-bindgen-test", "include_dir", "all-codecs"]
+fs = ["tokio/fs", "rand"]
+
+[dependencies]
+wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true, features = [
+  "futures-core-03-stream",
+] }
+serde-wasm-bindgen = { version = "0.6", optional = true }
+js-sys = { version = "0.3", optional = true }
+web-sys = { version = "0.3", optional = true, features = [
+  "console",
+  "Blob",
+  "BlobPropertyBag",
+  "ReadableStream",
+  "ReadableStreamDefaultReader",
+  "FileReaderSync",
+] }
+ts-rs = { version = "11.0", optional = true }
+console_error_panic_hook = { version = "0.1", optional = true }
+wasm-streams = { version = "0.4", optional = true }
+wasm-bindgen-test = { version = "0.3", optional = true }
+include_dir = { version = "0.7", optional = true }
+
+arrow = { version = "55", default-features = false }
+serde_arrow = { version = "0.13.3", features = ["arrow-55"] }
+parquet = { version = "55", default-features = false, features = [
+  "arrow",
+  "async",
+  "simdutf8",
+] }
+thiserror = "2"
+tokio = { version = "1", default-features = false, features = [
+  "io-util",
+  "rt",
+  "sync",
+  "macros",
+  "bytes",
+] }
+tokio-util = { version = "0.7", optional = true, features = ["compat"] }
+futures = { version = "0.3", default-features = false, features = ["std"] }
+futures-io = { version = "0.3", optional = true }
+serde_json = { version = "1.0", optional = true, features = ["preserve_order"] }
+csv = { version = "1.3", optional = true }
+csv-core = { version = "0.1", optional = true }
+bytes = "1.10"
+serde = "1.0"
+pin-project-lite = "0.2"
+regex = "1.11"
+regex-syntax = { version = "0.8", default-features = false }
+indexmap = { version = "2.9", features = ["serde"] }
+ron = { version = "0.10.1", features = ["indexmap"] }
+chrono = "0.4"
+async-trait = "0.1"
+lazy_static = "1.5"
+rand = { version = "0.9", optional = true }

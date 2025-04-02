@@ -1,0 +1,17 @@
+{
+  "fields": [
+    {
+      "name": "events",
+      "data_type": "List",
+      "field": {
+        "name": "element",
+        "data_type": "Utf8",
+        "nullable": true
+      }
+    },
+    {
+      "name": "machine",
+      "data_type": "Utf8"
+    }
+  ]
+}
