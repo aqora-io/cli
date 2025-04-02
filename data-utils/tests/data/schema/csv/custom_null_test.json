@@ -1,0 +1,21 @@
+{
+  "fields": [
+    {
+      "name": "c_bool",
+      "data_type": "Utf8"
+    },
+    {
+      "name": "c_float",
+      "data_type": "Utf8"
+    },
+    {
+      "name": "c_int",
+      "data_type": "Utf8"
+    },
+    {
+      "name": "c_string",
+      "data_type": "Utf8",
+      "nullable": true
+    }
+  ]
+}
