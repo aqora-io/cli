@@ -9,7 +9,7 @@ on:
 
 jobs:
   test:
-    name: Test
+    name: Test Workspace
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,3 +30,54 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
       - run: cargo run -- --version
+
+  check-wasm:
+    name: Check WASM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.9
+      - name: Set Rust caching env vars
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+      - run: rustup component add clippy
+      - name: Run clippy on data-utils with wasm features
+        run: cargo clippy --no-default-features --features wasm-test -- -D warnings
+        working-directory: data-utils
+
+  test-wasm:
+    name: Test WASM
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        browser: [chrome, firefox, safari]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.9
+      - name: Set Rust caching env vars
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Set up Homebrew
+        id: set-up-homebrew
+        uses: Homebrew/actions/setup-homebrew@master
+      - name: Install LLVM clang
+        run: brew install llvm
+      - name: Use LLVM clang
+        run: echo PATH="/opt/homebrew/opt/llvm/bin:$PATH" >> $GITHUB_ENV
+      - name: Install chrome
+        uses: browser-actions/setup-chrome@v1
+        if: ${{ matrix.browser == 'chrome' }}
+      - name: Install firefox
+        uses: browser-actions/setup-firefox@v1
+        if: ${{ matrix.browser == 'firefox' }}
+      - name: Run browser tests
+        run: wasm-pack test --${{ matrix.browser }} --headless --no-default-features --features "wasm-test"
+        working-directory: data-utils
+        env:
+          WASM_BINDGEN_TEST_DRIVER_TIMEOUT: "60"
