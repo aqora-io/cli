@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["archiver", "config", "runner", "template"]
+members = ["archiver", "config", "runner", "template", "data-utils"]
 
 [package]
 name = "aqora"
