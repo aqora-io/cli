@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.14.1 - 2025-04-04
+#### Bug Fixes
+- FileRef::chunks was not sound - (5024f74) - Antoine Chauvin
+
+- - -
+
 ## v0.14.0 - 2025-04-01
 #### Bug Fixes
 - retry upload on checksum failure - (59fa0e9) - Antoine Chauvin
