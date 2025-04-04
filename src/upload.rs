@@ -78,11 +78,11 @@ impl<'a> FileRef<'a> {
             .seek(SeekFrom::End(0))
             .await? as usize;
 
-        let chunk_size = std::cmp::max(1, total_length.div_ceil(chunk_size));
+        let chunk_count = std::cmp::max(1, total_length.div_ceil(chunk_size));
 
-        let mut chunks = Vec::with_capacity(chunk_size);
+        let mut chunks = Vec::with_capacity(chunk_count);
         let mut remaining = total_length;
-        for index in 0..chunk_size {
+        for index in 0..chunk_count {
             let chunk_length = std::cmp::min(chunk_size, remaining);
             remaining -= chunk_length;
 
@@ -239,5 +239,34 @@ pub async fn upload_project_version_file(
         simple_upload(client.inner(), file, upload_url, content_type, pb).await
     } else {
         multipart_upload(client, parts, id, content_type, pb).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{io::Write, path::Path};
+
+    use rand::{thread_rng, RngCore};
+    use tempfile::NamedTempFile;
+
+    #[tokio::test]
+    async fn test_chunks() {
+        let mut file = NamedTempFile::new().unwrap();
+        let mut buf = vec![0u8; 512 * 1024];
+        for _ in 0..50 {
+            thread_rng().fill_bytes(&mut buf[..]);
+            file.write_all(&buf[..]).unwrap();
+        }
+
+        let path = file.into_temp_path();
+        let (chunks, total_size) = super::FileRef::chunks(path.as_ref(), 1024 * 1024)
+            .await
+            .unwrap();
+        assert_eq!(total_size, 50 * 512 * 1024);
+        assert_eq!(chunks.len(), 25);
+        assert_eq!(chunks[0].id, 0);
+        assert_eq!(chunks[0].offset, 0);
+        assert_eq!(chunks[0].length, 1024 * 1024);
+        assert_eq!(chunks[0].path, path.as_ref() as &Path);
     }
 }
