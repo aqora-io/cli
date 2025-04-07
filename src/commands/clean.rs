@@ -63,10 +63,10 @@ async fn clean_dir(path: impl AsRef<Path>) -> Result<()> {
                 continue;
             }
             if entry.is_dir()
-                && (entry.extension().map_or(false, |ext| ext == "egg-info")
+                && (entry.extension().is_some_and(|ext| ext == "egg-info")
                     || entry
                         .file_name()
-                        .map_or(false, |name| name == "__pycache__" || name == "__aqora__"))
+                        .is_some_and(|name| name == "__pycache__" || name == "__aqora__"))
             {
                 if let Err(err) = tokio::fs::remove_dir_all(&entry).await {
                     tracing::warn!("Failed to remove directory at {}: {}", entry.display(), err);
@@ -75,7 +75,7 @@ async fn clean_dir(path: impl AsRef<Path>) -> Result<()> {
                 && entry
                     .extension()
                     .and_then(|ext| ext.to_str())
-                    .map_or(false, |ext| matches!(ext, "pyc" | "pyo" | "pyd" | "egg"))
+                    .is_some_and(|ext| matches!(ext, "pyc" | "pyo" | "pyd" | "egg"))
             {
                 if let Err(err) = tokio::fs::remove_file(&entry).await {
                     tracing::warn!("Failed to remove file at {}: {}", entry.display(), err);

@@ -15,7 +15,7 @@ impl<'a> TempProgressStyle<'a> {
     }
 }
 
-impl<'a> Drop for TempProgressStyle<'a> {
+impl Drop for TempProgressStyle<'_> {
     fn drop(&mut self) {
         self.pb.reset();
         self.pb.set_style(self.style.clone());
