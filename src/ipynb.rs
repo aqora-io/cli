@@ -209,7 +209,7 @@ fn notebook_path(env: &PyEnv, path: &PathStr) -> Result<PathBuf, NotebookToPytho
     ))
 }
 
-fn python_exporter(py: Python<'_>) -> PyResult<&PyAny> {
+fn python_exporter(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
     let templates = PyDict::new(py);
     let template_name = pyo3::intern!(py, "aqora");
     templates.set_item(
@@ -246,13 +246,13 @@ fn python_exporter(py: Python<'_>) -> PyResult<&PyAny> {
     let kwargs = PyDict::new(py);
     kwargs.set_item(
         pyo3::intern!(py, "extra_loaders"),
-        PyList::new(py, [loader]),
+        PyList::new(py, [loader])?,
     )?;
     kwargs.set_item(pyo3::intern!(py, "template_file"), template_name)?;
     py.import(pyo3::intern!(py, "nbconvert"))?.call_method(
         pyo3::intern!(py, "PythonExporter"),
         (),
-        Some(kwargs),
+        Some(&kwargs),
     )
 }
 
@@ -311,7 +311,7 @@ async fn notebook_to_script(
         let notebook = py.import(pyo3::intern!(py, "nbformat"))?.call_method(
             pyo3::intern!(py, "reads"),
             (ipynb_json,),
-            Some(reads_kwargs),
+            Some(&reads_kwargs),
         )?;
 
         Ok(python_exporter(py)?

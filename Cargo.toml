@@ -51,8 +51,11 @@ mime = "0.3"
 open = "5.0"
 owo-colors = { version = "4.0", features = ["supports-colors"] }
 passterm = "2.0"
-pyo3 = { version = "0.20", features = ["serde"] }
-pyo3-asyncio = { version = "0.20", features = ["attributes", "tokio-runtime"] }
+pyo3 = { version = "0.24", features = ["serde", "py-clone"] }
+pyo3-async-runtimes = { version = "0.24", features = [
+  "attributes",
+  "tokio-runtime",
+] }
 quick-xml = { version = "0.37", features = ["serialize"] }
 rand = "0.8"
 reqwest = { version = "0.11", default-features = false, features = [
@@ -78,16 +81,7 @@ serde_json = { version = "1.0", features = [
 supports-color = "3.0"
 tempfile = "3.9"
 thiserror = "1.0"
-tokio = { version = "1", features = [
-  "macros",
-  "rt",
-  "rt-multi-thread",
-  "sync",
-  "signal",
-  "fs",
-  "process",
-  "io-util",
-] }
+tokio = { version = "1.15", features = ["full", "tracing"] }
 tokio-stream = { version = "0.1", features = ["io-util"] }
 tokio-util = { version = "0.7", features = ["io"] }
 toml = "0.8"
@@ -106,6 +100,7 @@ graphql-ws-client = { version = "0.11", features = [
 ] }
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 qrcode = { version = "0.14.1", default-features = false }
+console-subscriber = "0.4.1"
 
 [build-dependencies]
 toml_edit = "0.22"
