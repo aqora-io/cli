@@ -7,7 +7,7 @@ use crate::{
 use clap::Args;
 use graphql_client::GraphQLQuery;
 use indicatif::ProgressBar;
-use pyo3::Python;
+use pyo3::{prelude::PyAnyMethods, Python};
 use serde::Serialize;
 use std::env::{args, current_exe};
 use which::which;

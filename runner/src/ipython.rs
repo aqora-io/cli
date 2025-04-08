@@ -21,8 +21,8 @@ impl IPython {
     fn run_line_magic(
         &self,
         name: &str,
-        _args: &PyTuple,
-        _kwargs: Option<&PyDict>,
+        _args: Py<PyTuple>,
+        _kwargs: Option<Py<PyDict>>,
     ) -> PyResult<()> {
         Err(pyo3::exceptions::PyAttributeError::new_err(format!(
             "aqora's 'ipython' does not support '%{name}'",
@@ -33,8 +33,8 @@ impl IPython {
     fn run_cell_magic(
         &self,
         name: &str,
-        _args: &PyTuple,
-        _kwargs: Option<&PyDict>,
+        _args: Py<PyTuple>,
+        _kwargs: Option<Py<PyDict>>,
     ) -> PyResult<()> {
         Err(pyo3::exceptions::PyAttributeError::new_err(format!(
             "aqora's 'ipython' does not support '%%{name}'",

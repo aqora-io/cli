@@ -1,14 +1,12 @@
 use crate::ipython::override_get_ipython;
+use ::tokio::io;
+use ::tokio::process::Command;
 use aqora_config::{PackageName, PathStr};
 #[cfg(feature = "clap")]
 use clap::{builder::PossibleValue, ValueEnum};
 use futures::prelude::*;
-use pyo3::{
-    intern,
-    prelude::*,
-    pyclass::IterANextOutput,
-    types::{PyString, PyType},
-};
+use pyo3::{intern, prelude::*, types::PyType, IntoPyObjectExt};
+use pyo3_async_runtimes::tokio;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::{
@@ -16,7 +14,6 @@ use std::{
     path::{Path, PathBuf},
 };
 use thiserror::Error;
-use tokio::process::Command;
 
 lazy_static::lazy_static! {
     static ref PYTHON_VERSION: String = Python::with_gil(|py| {
@@ -192,7 +189,7 @@ pub struct PyEnv {
 #[derive(Error, Debug)]
 pub enum EnvError {
     #[error("Error processing {0}: {1}")]
-    Io(PathBuf, tokio::io::Error),
+    Io(PathBuf, io::Error),
     #[error("{}", format_err(_0))]
     Python(#[from] PyErr),
     #[error("Failed to setup virtualenv: {0} ({1})")]
@@ -214,7 +211,7 @@ impl PyEnv {
         options: PyEnvOptions,
     ) -> Result<Self, EnvError> {
         let cache_path = if let Some(cache_path) = options.cache_path.as_ref() {
-            tokio::fs::create_dir_all(&cache_path)
+            ::tokio::fs::create_dir_all(&cache_path)
                 .await
                 .map_err(|err| EnvError::Io(cache_path.to_path_buf(), err))?;
             Some(
@@ -401,9 +398,10 @@ impl PyEnv {
         cmd
     }
 
-    pub fn import_path<'py>(&self, py: Python<'py>, path: &PathStr) -> PyResult<&'py PyAny> {
-        let module = PyModule::import(py, PyString::new(py, &path.module().to_string()))?;
-        module.getattr(PyString::new(py, path.name()))
+    pub fn import_path<'py>(&self, py: Python<'py>, path: &PathStr) -> PyResult<Bound<'py, PyAny>> {
+        let module_name = path.module().to_string();
+        let module = PyModule::import(py, &module_name)?;
+        Ok(module.getattr(path.name())?)
     }
 
     pub fn find_spec_search_locations(&self, py: Python, path: &PathStr) -> PyResult<Vec<PathBuf>> {
@@ -419,12 +417,13 @@ impl PyEnv {
             return Ok(Vec::new());
         }
         locations
-            .iter()?
+            .try_iter()?
             .map(|path| path.and_then(|p| p.extract::<PathBuf>()))
             .collect()
     }
 }
 
+#[macro_export]
 macro_rules! async_python_run {
     ($($closure:tt)*) => {
         Python::with_gil(|py| {
@@ -433,9 +432,9 @@ macro_rules! async_python_run {
                 Ok(awaitable) => awaitable,
                 Err(err) => return Err(err),
             };
-            pyo3_asyncio::into_future_with_locals(
-                &pyo3_asyncio::tokio::get_current_locals(py)?,
-                awaitable,
+            pyo3_async_runtimes::into_future_with_locals(
+                &pyo3_async_runtimes::tokio::get_current_locals(py)?,
+                awaitable
             )
         })
     };
@@ -445,17 +444,18 @@ pub(crate) use async_python_run;
 pub fn async_generator(generator: PyObject) -> PyResult<impl Stream<Item = PyResult<PyObject>>> {
     let generator = Python::with_gil(move |py| {
         generator
-            .as_ref(py)
+            .bind_borrowed(py)
             .call_method0(pyo3::intern!(py, "__aiter__"))?;
         PyResult::Ok(generator)
     })?;
+
     Ok(
         futures::stream::unfold(generator, move |generator| async move {
             let result = match Python::with_gil(|py| {
-                pyo3_asyncio::into_future_with_locals(
-                    &pyo3_asyncio::tokio::get_current_locals(py)?,
+                pyo3_async_runtimes::into_future_with_locals(
+                    &pyo3_async_runtimes::tokio::get_current_locals(py)?,
                     generator
-                        .as_ref(py)
+                        .bind_borrowed(py)
                         .call_method0(pyo3::intern!(py, "__anext__"))?,
                 )
             }) {
@@ -467,7 +467,7 @@ pub fn async_generator(generator: PyObject) -> PyResult<impl Stream<Item = PyRes
                 Err(err) => {
                     if err
                         .get_type(py)
-                        .is(PyType::new::<pyo3::exceptions::PyStopAsyncIteration>(py))
+                        .is(&PyType::new::<pyo3::exceptions::PyStopAsyncIteration>(py))
                     {
                         None
                     } else {
@@ -480,11 +480,11 @@ pub fn async_generator(generator: PyObject) -> PyResult<impl Stream<Item = PyRes
     )
 }
 
-pub fn deepcopy<'py>(py: Python<'py>, obj: &'py PyAny) -> PyResult<&'py PyAny> {
+pub fn deepcopy<'py>(py: Python<'py>, obj: &'py Py<PyAny>) -> PyResult<Py<PyAny>> {
     let copy = py
         .import(intern!(py, "copy"))?
         .getattr(intern!(py, "deepcopy"))?;
-    copy.call1((obj,))
+    Ok(copy.call1((obj,))?.into())
 }
 
 pub mod serde_pickle {
@@ -538,7 +538,7 @@ pub mod serde_pickle {
         let bytes = deserializer.deserialize_any(BytesVisitor)?;
         Python::with_gil(|py| {
             let out = py.import("pickle")?.getattr("loads")?.call1((bytes,))?;
-            FromPyObject::extract(out)
+            FromPyObject::extract_bound(&out)
         })
         .map_err(serde::de::Error::custom)
     }
@@ -606,7 +606,7 @@ pub mod serde_pickle_opt {
                     .import("pickle")?
                     .getattr("loads")?
                     .call1((bytes.as_ref(),))?;
-                FromPyObject::extract(out)
+                FromPyObject::extract_bound(&out)
             })
             .map_err(serde::de::Error::custom)
             .map(Some)
@@ -644,7 +644,7 @@ impl AsyncIterator {
 impl AsyncIterator {
     fn __aiter__(&self) -> PyResult<AsyncIteratorImpl> {
         Ok(AsyncIteratorImpl {
-            stream: std::sync::Arc::new(tokio::sync::Mutex::new(
+            stream: std::sync::Arc::new(::tokio::sync::Mutex::new(
                 self.stream
                     .lock()
                     .map_err(|err| {
@@ -663,23 +663,22 @@ impl AsyncIterator {
 
 #[pyclass]
 struct AsyncIteratorImpl {
-    stream: std::sync::Arc<tokio::sync::Mutex<AsyncIteratorStream>>,
+    stream: std::sync::Arc<::tokio::sync::Mutex<AsyncIteratorStream>>,
 }
 
 #[pymethods]
 impl AsyncIteratorImpl {
-    fn __anext__<'py>(&self, py: Python<'py>) -> PyResult<IterANextOutput<&'py PyAny, &'py PyAny>> {
+    fn __anext__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let stream = self.stream.clone();
-        let result = pyo3_asyncio::tokio::future_into_py_with_locals(
+        pyo3_async_runtimes::tokio::future_into_py_with_locals(
             py,
-            pyo3_asyncio::tokio::get_current_locals(py)?,
+            pyo3_async_runtimes::tokio::get_current_locals(py)?,
             async move {
                 match stream.lock().await.next().await {
                     Some(value) => Ok(value),
                     None => Err(pyo3::exceptions::PyStopAsyncIteration::new_err(())),
                 }
             },
-        )?;
-        Ok(IterANextOutput::Yield(result))
+        )
     }
 }

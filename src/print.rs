@@ -20,40 +20,41 @@ impl ProgressSuspendPyFunc {
     fn __call__(
         &self,
         py: Python<'_>,
-        args: &PyTuple,
-        kwargs: Option<&PyDict>,
+        args: Py<PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<PyObject> {
         self.progress.suspend(|| self.func.call(py, args, kwargs))
     }
 
-    fn __getattr__(&self, py: Python<'_>, name: &PyString) -> PyResult<PyObject> {
+    fn __getattr__(&self, py: Python<'_>, name: Py<PyString>) -> PyResult<PyObject> {
         self.func.getattr(py, name)
     }
 
-    fn __setattr__(&self, py: Python<'_>, name: &PyString, value: &PyAny) -> PyResult<()> {
+    fn __setattr__(&self, py: Python<'_>, name: Py<PyString>, value: Py<PyAny>) -> PyResult<()> {
         self.func.setattr(py, name, value)
     }
 
-    fn __delattr__(&self, py: Python<'_>, name: &PyString) -> PyResult<()> {
-        self.func.as_ref(py).delattr(name)
+    fn __delattr__(&self, py: Python<'_>, name: Py<PyString>) -> PyResult<()> {
+        self.func.bind_borrowed(py).delattr(name)
     }
 }
 
 fn override_module_func(
     py: Python,
-    module: &PyModule,
-    name: &PyString,
+    module: Bound<'_, PyModule>,
+    name: &Bound<'_, PyString>,
     progress: ProgressBar,
 ) -> PyResult<()> {
-    let old_func = module.getattr(name)?.to_object(py);
+    let old_func = module.getattr(name)?.into_pyobject(py)?;
+
     module.setattr(
         name,
         ProgressSuspendPyFunc {
             progress,
-            func: old_func,
-        }
-        .into_py(py),
+            func: old_func.unbind(),
+        },
     )?;
+
     Ok(())
 }
 
