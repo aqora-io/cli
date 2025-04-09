@@ -1,17 +1,16 @@
 use crate::python::{
     async_generator, async_python_run, deepcopy, format_err, serde_pickle, serde_pickle_opt,
-    AsyncIterator, PyEnv,
+    AsyncIterator, BoundPy, PyEnv,
 };
 use aqora_config::{AqoraUseCaseConfig, FunctionDef};
 use futures::prelude::*;
 use pyo3::{
-    conversion::FromPyObjectBound,
     exceptions::PyValueError,
     intern,
     prelude::*,
     pyclass,
     types::{PyDict, PyIterator, PyNone, PyTuple},
-    BoundObject,
+    BoundObject, IntoPyObjectExt,
 };
 use serde::{Deserialize, Serialize};
 use split_stream_by::{Either, SplitStreamByMapExt};
@@ -38,7 +37,7 @@ impl Clone for LayerFunction {
 }
 
 impl LayerFunction {
-    pub fn new<'py>(py: Python<'py>, func: Bound<'py, PyAny>) -> PyResult<Self> {
+    pub fn new<'py>(py: Python<'py>, func: BoundPy<'py>) -> PyResult<Self> {
         let inspect = py.import(intern!(py, "inspect"))?.into_pyobject(py)?;
         let parameter_cls = inspect.getattr(intern!(py, "Parameter"))?;
         let positional_only = parameter_cls.getattr(intern!(py, "POSITIONAL_ONLY"))?;
@@ -80,10 +79,8 @@ impl LayerFunction {
             }
         }
 
-        let func_object = func.into_pyobject(py)?.unbind();
-
         Ok(Self {
-            func: func_object.clone(),
+            func: func.into_pyobject(py)?.unbind(),
             takes_input_arg,
             takes_original_input_kwarg,
             takes_context_kwarg,
@@ -98,17 +95,23 @@ impl LayerFunction {
     ) -> PyResult<PyObject> {
         async_python_run!(|py| {
             let args = if self.takes_input_arg {
-                PyTuple::new(py, [deepcopy(py, input)?])?
+                PyTuple::new(py, [deepcopy(py, input.into_bound_py_any(py)?)?])?
             } else {
                 PyTuple::empty(py)
             };
 
             let kwargs = PyDict::new(py);
             if self.takes_original_input_kwarg {
-                kwargs.set_item(intern!(py, "original_input"), deepcopy(py, original_input)?)?;
+                kwargs.set_item(
+                    intern!(py, "original_input"),
+                    deepcopy(py, original_input.into_bound_py_any(py)?)?,
+                )?;
             }
             if self.takes_context_kwarg {
-                kwargs.set_item(intern!(py, "context"), deepcopy(py, context)?)?;
+                kwargs.set_item(
+                    intern!(py, "context"),
+                    deepcopy(py, context.into_bound_py_any(py)?)?,
+                )?;
             }
 
             Ok(self.func.call(py, args, Some(&kwargs))?.into_bound(py))
@@ -284,21 +287,21 @@ pub struct PipelineConfig {
 }
 
 impl PipelineConfig {
-    fn py_data<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    fn py_data<'py>(&self, py: Python<'py>) -> PyResult<BoundPy<'py>> {
         py.import("pathlib")?.getattr("Path")?.call1((&self.data,))
     }
 }
 
 #[pymethods]
 impl PipelineConfig {
-    fn __getitem__<'py>(&self, py: Python<'py>, key: &str) -> PyResult<Option<Bound<'py, PyAny>>> {
+    fn __getitem__<'py>(&self, py: Python<'py>, key: &str) -> PyResult<Option<BoundPy<'py>>> {
         match key {
             "data" => self.py_data(py).map(Some),
             _ => Ok(None),
         }
     }
     #[getter]
-    fn data<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    fn data<'py>(&self, py: Python<'py>) -> PyResult<BoundPy<'py>> {
         self.py_data(py)
     }
 }
@@ -347,7 +350,7 @@ impl Evaluator {
             }};
         }
         let original_input = Python::with_gil(|py| input.clone_ref(py));
-        let mut context = Python::with_gil(|py| PyNone::get(py).into_py(py));
+        let mut context = Python::with_gil(|py| PyNone::get(py).unbind().clone().into_any());
 
         let mut layer_index = 0;
         while layer_index < self.layers.len() {
@@ -460,8 +463,11 @@ impl Pipeline {
             + 'static,
     ) -> Result<Option<PyObject>, EvaluationError> {
         let (errs, results) = results.boxed().split_by_map(move |result| match result {
-            Ok(result) => Python::with_gil(|py| Either::Right(result.into_py(py))),
-            Err((_, err)) => Either::Left(Result::<PyObject, _>::Err(err)),
+            Ok(result) => Python::with_gil(|py| match result.into_pyobject(py) {
+                Ok(py_object) => Either::Right(py_object.into_any().unbind()),
+                Err(err) => Either::Left(Err(EvaluationError::Python(err))),
+            }),
+            Err((_, err)) => Either::Left(Err(err)),
         });
         let iterator = AsyncIterator::new(results);
         let result = futures::stream::once(

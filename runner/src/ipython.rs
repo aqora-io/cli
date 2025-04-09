@@ -1,6 +1,3 @@
-// NOTE: This should be removed when we update pyo3
-#![allow(non_local_definitions)]
-
 use pyo3::{
     prelude::*,
     types::{PyDict, PyTuple},
@@ -59,6 +56,8 @@ impl GetIPython {
 }
 
 pub fn override_get_ipython(py: Python<'_>) -> PyResult<()> {
-    py.import(pyo3::intern!(py, "builtins"))?
-        .setattr(pyo3::intern!(py, "get_ipython"), GetIPython.into_py(py))
+    py.import(pyo3::intern!(py, "builtins"))?.setattr(
+        pyo3::intern!(py, "get_ipython"),
+        GetIPython.into_pyobject(py)?,
+    )
 }
