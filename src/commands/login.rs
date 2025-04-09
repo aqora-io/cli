@@ -222,6 +222,7 @@ async fn login_interactive(
                     client_id: client_id.into(),
                     redirect_uri: Some(redirect_uri.clone()),
                     state: Some(BASE64_URL_SAFE_NO_PAD.encode(rand::random::<[u8; 16]>())),
+                    scope: None,
                 },
             });
         let response = client
@@ -315,6 +316,7 @@ async fn do_login(args: Login, global: GlobalArgs, progress: ProgressBar) -> Res
             if let Some(issued) = result.issued {
                 let credentials = Credentials {
                     client_id,
+                    client_secret: None,
                     access_token: issued.access_token,
                     refresh_token: issued.refresh_token,
                     expires_at: Utc::now() + Duration::try_seconds(issued.expires_in).unwrap(),

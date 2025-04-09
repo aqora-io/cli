@@ -17,6 +17,8 @@ pub mod custom_scalars {
 pub enum GraphQLError {
     #[error(transparent)]
     Request(#[from] reqwest::Error),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
     #[error("GraphQL response contained errors: {0:?}")]
     Response(Vec<graphql_client::Error>),
     #[error(transparent)]
@@ -36,6 +38,9 @@ impl From<GraphQLError> for Error {
         match error {
             GraphQLError::Request(error) => {
                 error::system(&format!("Request failed: {error:?}"), "")
+            }
+            GraphQLError::Json(error) => {
+                error::system(&format!("Failed to parse JSON: {error:?}"), "")
             }
             GraphQLError::Response(errors) => error::user(
                 &errors
@@ -84,6 +89,36 @@ fn get_data<Q: GraphQLQuery>(
     }
 }
 
+pub async fn post_graphql<Q: GraphQLQuery>(
+    client: &reqwest::Client,
+    url: Url,
+    variables: Q::Variables,
+    token: Option<String>,
+) -> Result<graphql_client::Response<Q::ResponseData>, GraphQLError> {
+    let mut headers = HeaderMap::new();
+
+    if let Some(token) = token {
+        headers.insert(AUTHORIZATION, token.parse()?);
+    }
+
+    let body = Q::build_query(variables);
+    tracing::debug!("sending request: {}", serde_json::to_string(&body)?);
+    let reqwest_response = client.post(url).headers(headers).json(&body).send().await?;
+
+    let json: serde_json::Value = reqwest_response.json().await?;
+    tracing::debug!("received response: {}", serde_json::to_string(&json)?);
+    Ok(serde_json::from_value(json)?)
+}
+
+pub async fn send<Q: GraphQLQuery>(
+    client: &reqwest::Client,
+    url: Url,
+    variables: Q::Variables,
+    token: Option<String>,
+) -> Result<Q::ResponseData, GraphQLError> {
+    get_data::<Q>(post_graphql::<Q>(client, url, variables, token).await?)
+}
+
 impl GraphQLClient {
     fn with_creds(url: Url, credentials: Option<Credentials>) -> Result<Self> {
         let mut headers = HeaderMap::new();
@@ -122,29 +157,13 @@ impl GraphQLClient {
         &self,
         variables: Q::Variables,
     ) -> Result<Q::ResponseData, GraphQLError> {
-        get_data::<Q>(self.post_graphql::<Q>(variables).await?)
-    }
-
-    async fn post_graphql<Q: GraphQLQuery>(
-        &self,
-        variables: Q::Variables,
-    ) -> Result<graphql_client::Response<Q::ResponseData>, GraphQLError> {
-        let mut headers = HeaderMap::new();
-
-        if let Some(token) = &self.bearer_token().await? {
-            headers.insert(AUTHORIZATION, token.parse()?);
-        }
-
-        let body = Q::build_query(variables);
-        let reqwest_response = self
-            .client
-            .post(self.url.clone())
-            .headers(headers)
-            .json(&body)
-            .send()
-            .await?;
-
-        Ok(reqwest_response.json().await?)
+        send::<Q>(
+            &self.client,
+            self.url.clone(),
+            variables,
+            self.bearer_token().await?,
+        )
+        .await
     }
 
     pub async fn subscribe<Q>(

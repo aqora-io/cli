@@ -1,7 +1,7 @@
 use crate::{
     dirs::credentials_path,
     error::{self, Result},
-    graphql_client::graphql_url,
+    graphql_client::{graphql_url, send as graphql_send},
 };
 use chrono::{DateTime, Duration, Utc};
 use fs4::tokio::AsyncFileExt;
@@ -20,6 +20,7 @@ const EXPIRATION_PADDING_SEC: i64 = 60;
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
 pub struct Credentials {
     pub client_id: String,
+    pub client_secret: Option<String>,
     pub access_token: String,
     pub refresh_token: String,
     pub expires_at: DateTime<Utc>,
@@ -32,22 +33,17 @@ impl Credentials {
         }
 
         let client = reqwest::Client::new();
-        let issued = graphql_client::reqwest::post_graphql::<Oauth2RefreshMutation, _>(
+        let issued = graphql_send::<Oauth2RefreshMutation>(
             &client,
             graphql_url(url)?,
             oauth2_refresh_mutation::Variables {
                 client_id: self.client_id.clone(),
+                client_secret: self.client_secret.clone(),
                 refresh_token: self.refresh_token,
             },
+            None,
         )
         .await?
-        .data
-        .ok_or_else(|| {
-            error::system(
-                "GraphQL response missing data",
-                "This is a bug, please report it",
-            )
-        })?
         .oauth2_refresh
         .issued
         .ok_or_else(|| {
@@ -59,6 +55,7 @@ impl Credentials {
 
         Ok(Some(Credentials {
             client_id: self.client_id,
+            client_secret: self.client_secret,
             access_token: issued.access_token,
             refresh_token: issued.refresh_token,
             expires_at: Utc::now() + Duration::try_seconds(issued.expires_in).unwrap(),

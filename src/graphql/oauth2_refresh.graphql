@@ -1,5 +1,15 @@
-mutation Oauth2RefreshMutation($client_id: String!, $refresh_token: String!) {
-  oauth2Refresh(input: { refreshToken: $refresh_token, clientId: $client_id }) {
+mutation Oauth2RefreshMutation(
+  $client_id: String!
+  $client_secret: String
+  $refresh_token: String!
+) {
+  oauth2Refresh(
+    input: {
+      refreshToken: $refresh_token
+      clientId: $client_id
+      clientSecret: $client_secret
+    }
+  ) {
     clientError
     unauthorized
     issued {
