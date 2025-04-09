@@ -11,6 +11,7 @@ enum Action {
 	CREATE_EVENT
 	CREATE_EVENT_RULE_AGREEMENT
 	CREATE_FORUM
+	CREATE_OAUTH_2_CONFIG
 	CREATE_ORGANIZATION
 	CREATE_PROJECT_VERSION_APPROVAL
 	CREATE_SUBJECT_SUBSCRIPTION
@@ -23,6 +24,7 @@ enum Action {
 	DELETE_COMPETITION
 	DELETE_EVENT
 	DELETE_FORUM
+	DELETE_OAUTH_2_CONFIG
 	DELETE_ORGANIZATION
 	DELETE_PROJECT_VERSION_APPROVAL
 	DELETE_SUBJECT_SUBSCRIPTION
@@ -32,6 +34,7 @@ enum Action {
 	FETCH_WEBSITE_METADATA
 	JOIN_COMPETITION
 	JOIN_EVENT
+	MANAGE_ENTITY_BAN
 	MANAGE_EVENT_INVITE_CODE
 	PUBLISH_VOTE
 	READ_ACTIVITY_TRACKER
@@ -46,6 +49,8 @@ enum Action {
 	READ_EVENT_MEMBERSHIP
 	READ_EVENT_RULE
 	READ_EVENT_RULE_AGREEMENT
+	READ_OAUTH_2_CONFIG
+	READ_OAUTH_2_CONFIG_SECRET
 	READ_PROJECT_VERSION
 	READ_PROJECT_VERSION_APPROVAL
 	READ_PROJECT_VERSION_EVALUATION
@@ -70,6 +75,7 @@ enum Action {
 	UPDATE_COMPETITION_ACCESS
 	UPDATE_EVENT
 	UPDATE_FORUM
+	UPDATE_OAUTH_2_CONFIG
 	UPDATE_ORGANIZATION
 	UPDATE_ORGANIZATION_MEMBERSHIP
 	UPDATE_PROJECT_VERSION
@@ -613,6 +619,12 @@ input CreateForumInput {
 type CreateMultipartUploadResponse {
 	uploadId: String!
 	urls: [Url!]!
+}
+
+input CreateOauth2ConfigInput {
+	name: String!
+	description: String
+	redirectUri: Url!
 }
 
 input CreateOrganizationInput {
@@ -1265,6 +1277,7 @@ type Mutation {
 	resetPassword(input: ResetPasswordInput!): Boolean!
 	updateUser(id: ID!, input: UpdateUserInput!): UserEdge!
 	deleteUser(id: ID!): ID!
+	setUserIsBanned(entityId: ID!, isBanned: Boolean!): User!
 	createCompetition(input: CreateCompetitionInput!): CompetitionEdge!
 	updateCompetition(id: ID!, input: UpdateCompetitionInput!): CompetitionEdge!
 	deleteCompetition(id: ID!): ID!
@@ -1289,7 +1302,7 @@ type Mutation {
 	updateOrganizationMembership(organizationId: ID!, userId: ID!, kind: OrganizationMembershipKind!): OrganizationMembershipEdge!
 	removeOrganizationMember(id: ID!): ID!
 	transferOrganizationOwnership(organizationId: ID!, toUserId: ID!): [OrganizationMembershipEdge!]!
-	oauth2Authorize(input: Oauth2AuthorizeInput!): Oauth2AuthorizeOutput!
+	oauth2Authorize(input: Oauth2AuthorizeInput!, consent: Boolean! = true): Oauth2AuthorizeOutput!
 	oauth2Token(input: Oauth2TokenInput!): Oauth2TokenOutput!
 	oauth2Refresh(input: Oauth2RefreshInput!): Oauth2TokenOutput!
 	createUseCaseVersion(competitionId: ID!, input: UpdateUseCaseInput!): ProjectVersionEdge!
@@ -1343,6 +1356,9 @@ type Mutation {
 	checkEmailSignupVerification(input: EmailSignupVerficationInput!): EmailSignupRequest!
 	createOauth2AuthRequest(provider: Oauth2Provider!): Url!
 	checkOauth2Auth(code: String!, state: String!): Oauth2AuthResponse!
+	createOauth2Config(input: CreateOauth2ConfigInput!, asEntity: UsernameOrID): Oauth2ConfigEdge!
+	updateOauth2Config(oauth2ConfigId: ID!, input: UpdateOauth2ConfigInput!): Oauth2ConfigEdge!
+	deleteOauth2Config(oauth2ConfigId: ID!): ID!
 }
 
 """
@@ -1388,6 +1404,7 @@ input Oauth2AuthorizeInput {
 	clientId: String!
 	state: String
 	redirectUri: Url
+	scope: String
 }
 
 type Oauth2AuthorizeOutput {
@@ -1396,9 +1413,57 @@ type Oauth2AuthorizeOutput {
 	unauthorized: Boolean!
 }
 
+type Oauth2Config implements Node {
+	name: String!
+	description: String
+	redirectUri: String!
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	entity: Entity!
+	secret: String!
+}
+
+type Oauth2ConfigConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [Oauth2ConfigEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Oauth2Config!]!
+}
+
+"""
+An edge in a connection.
+"""
+type Oauth2ConfigEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Oauth2Config!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
 type Oauth2LoggedIn implements Oauth2AuthResponse {
 	user: User!
 	action: Oauth2Action!
+}
+
+type Oauth2PreGrant {
+	clientId: String!
+	redirectUri: Url
+	scope: [Scope!]!
+	state: String
+	valid: Boolean!
+	oauth2Config: Oauth2Config
 }
 
 enum Oauth2Provider {
@@ -1413,6 +1478,7 @@ input Oauth2RedirectInput {
 
 input Oauth2RefreshInput {
 	clientId: String!
+	clientSecret: String
 	refreshToken: String!
 }
 
@@ -1746,11 +1812,18 @@ type Query {
 	blogArticles(after: String, before: String, first: Int, last: Int): BlogArticleConnection!
 	blogArticleBySlug(slug: String!): BlogArticle
 	oauth2Providers: [Oauth2Provider!]!
+	oauth2Configs(after: String, before: String, first: Int, last: Int): Oauth2ConfigConnection!
+	oauth2Authorize(input: Oauth2AuthorizeInput!): Oauth2PreGrant
 }
 
 input ResetPasswordInput {
 	secret: String!
 	password: String!
+}
+
+enum Scope {
+	ALL
+	DEFAULT
 }
 
 scalar Semver
@@ -2076,6 +2149,13 @@ input UpdateForumInput {
 	orderingPriority: Int
 }
 
+input UpdateOauth2ConfigInput {
+	name: String
+	description: String
+	redirectUri: Url
+	refreshSecret: Boolean
+}
+
 input UpdateOrganizationInput {
 	username: String
 	displayName: String
@@ -2182,6 +2262,7 @@ type User implements Entity & Node {
 	rank: Int!
 	points: Int!
 	activities(after: String, before: String, first: Int, last: Int, kinds: [EntityActivitiesConnectionKind!]): ActivityConnection!
+	isBanned: Boolean!
 }
 
 """
