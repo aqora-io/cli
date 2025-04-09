@@ -5,8 +5,7 @@ use aqora_config::{PackageName, PathStr};
 #[cfg(feature = "clap")]
 use clap::{builder::PossibleValue, ValueEnum};
 use futures::prelude::*;
-use pyo3::{intern, prelude::*, types::PyType, IntoPyObjectExt};
-use pyo3_async_runtimes::tokio;
+use pyo3::{intern, prelude::*, types::PyType};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::{
@@ -21,6 +20,8 @@ lazy_static::lazy_static! {
         format!("{}.{}", version.major, version.minor)
     });
 }
+
+pub type BoundPy<'py> = Bound<'py, PyAny>;
 
 #[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -398,10 +399,10 @@ impl PyEnv {
         cmd
     }
 
-    pub fn import_path<'py>(&self, py: Python<'py>, path: &PathStr) -> PyResult<Bound<'py, PyAny>> {
+    pub fn import_path<'py>(&self, py: Python<'py>, path: &PathStr) -> PyResult<BoundPy<'py>> {
         let module_name = path.module().to_string();
         let module = PyModule::import(py, &module_name)?;
-        Ok(module.getattr(path.name())?)
+        module.getattr(path.name())
     }
 
     pub fn find_spec_search_locations(&self, py: Python, path: &PathStr) -> PyResult<Vec<PathBuf>> {
@@ -480,13 +481,16 @@ pub fn async_generator(generator: PyObject) -> PyResult<impl Stream<Item = PyRes
     )
 }
 
-pub fn deepcopy<'py>(py: Python<'py>, obj: &'py Py<PyAny>) -> PyResult<Py<PyAny>> {
-    let copy = py
+pub fn deepcopy<'py>(py: Python<'py>, obj: BoundPy<'py>) -> PyResult<Py<PyAny>> {
+    Ok(py
         .import(intern!(py, "copy"))?
-        .getattr(intern!(py, "deepcopy"))?;
-    Ok(copy.call1((obj,))?.into())
+        .getattr(intern!(py, "deepcopy"))?
+        .call1((obj,))?
+        .unbind())
 }
 
+#[allow(deprecated)]
+// TODO: Investigate and implement a proper solution to make this compatible with `IntoPythonObject<'_>`.
 pub mod serde_pickle {
     use pyo3::prelude::*;
     use std::borrow::Cow;
@@ -559,6 +563,7 @@ pub mod serde_pickle {
     }
 }
 
+#[allow(deprecated)]
 pub mod serde_pickle_opt {
     use super::serde_pickle;
     use pyo3::prelude::*;
@@ -668,7 +673,7 @@ struct AsyncIteratorImpl {
 
 #[pymethods]
 impl AsyncIteratorImpl {
-    fn __anext__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    fn __anext__<'py>(&self, py: Python<'py>) -> PyResult<BoundPy<'py>> {
         let stream = self.stream.clone();
         pyo3_async_runtimes::tokio::future_into_py_with_locals(
             py,

@@ -81,7 +81,16 @@ serde_json = { version = "1.0", features = [
 supports-color = "3.0"
 tempfile = "3.9"
 thiserror = "1.0"
-tokio = { version = "1.15", features = ["full", "tracing"] }
+tokio = { version = "1", features = [
+  "macros",
+  "rt",
+  "rt-multi-thread",
+  "sync",
+  "signal",
+  "fs",
+  "process",
+  "io-util",
+] }
 tokio-stream = { version = "0.1", features = ["io-util"] }
 tokio-util = { version = "0.7", features = ["io"] }
 toml = "0.8"
@@ -100,7 +109,6 @@ graphql-ws-client = { version = "0.11", features = [
 ] }
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 qrcode = { version = "0.14.1", default-features = false }
-console-subscriber = "0.4.1"
 
 [build-dependencies]
 toml_edit = "0.22"

@@ -1,6 +1,3 @@
-// NOTE: should be removed when we update py03
-#![allow(non_local_definitions)]
-
 use crate::error::{self, Result};
 use indicatif::ProgressBar;
 use pyo3::{
