@@ -189,7 +189,7 @@ fn run_pipeline(
     let run_name = name.map(|n| n.to_string());
     Ok(
         match pyo3::Python::with_gil(move |py| {
-            pyo3_asyncio::tokio::run(py, async move {
+            pyo3_async_runtimes::tokio::run(py, async move {
                 Ok(do_run_pipeline(run_env, config, run_name, run_pb).await)
             })
         }) {
@@ -397,7 +397,7 @@ pub async fn run_submission_tests(
         &LastRunResult {
             info: EvaluateAllInfo {
                 score: if tests.is_empty() {
-                    result.as_ref().ok().cloned()
+                    Python::with_gil(|_| result.as_ref().ok().cloned())
                 } else {
                     None
                 },
