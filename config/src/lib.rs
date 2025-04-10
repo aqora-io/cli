@@ -67,6 +67,10 @@ impl PyProject {
         self.tool.as_mut().and_then(|tool| tool.aqora.as_mut())
     }
 
+    pub fn into_aqora(self) -> Option<AqoraConfig> {
+        self.tool.and_then(|tool| tool.aqora)
+    }
+
     pub fn from_toml(s: impl AsRef<str>) -> Result<Self, toml::de::Error> {
         toml::from_str(s.as_ref())
     }
@@ -106,7 +110,21 @@ impl AqoraConfig {
         }
     }
 
+    pub fn into_use_case(self) -> Option<AqoraUseCaseConfig> {
+        match self {
+            AqoraConfig::UseCase(use_case) => Some(use_case),
+            AqoraConfig::Submission(_) => None,
+        }
+    }
+
     pub fn as_submission(&self) -> Option<&AqoraSubmissionConfig> {
+        match self {
+            AqoraConfig::UseCase(_) => None,
+            AqoraConfig::Submission(submission) => Some(submission),
+        }
+    }
+
+    pub fn into_submission(self) -> Option<AqoraSubmissionConfig> {
         match self {
             AqoraConfig::UseCase(_) => None,
             AqoraConfig::Submission(submission) => Some(submission),
@@ -330,6 +348,12 @@ pub struct PathStr<'a>(Cow<'a, [String]>);
 pub enum PathStrReplaceError {
     #[error("Ref not found: {0}")]
     RefNotFound(String),
+}
+
+impl PathStr<'static> {
+    pub fn new(i: impl IntoIterator<Item = String>) -> Self {
+        Self(i.into_iter().collect())
+    }
 }
 
 impl<'a> PathStr<'a> {

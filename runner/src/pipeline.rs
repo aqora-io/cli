@@ -5,7 +5,7 @@ use crate::python::{
 use aqora_config::{AqoraUseCaseConfig, FunctionDef};
 use futures::prelude::*;
 use pyo3::{
-    exceptions::PyValueError,
+    exceptions::{PyRuntimeError, PyValueError},
     intern,
     prelude::*,
     pyclass,
@@ -260,6 +260,67 @@ impl Layer {
             branch,
         })
     }
+
+    pub async fn evaluate_result(
+        &self,
+        result: PyObject,
+        input: &PyObject,
+        original_input: &PyObject,
+        context: &PyObject,
+        default: Option<&LayerEvaluation>,
+    ) -> PyResult<LayerEvaluation> {
+        let context = match &self.context {
+            LayerFunctionDef::Some(func) => func.call(input, original_input, context).await?,
+            LayerFunctionDef::UseDefault => {
+                if let Some(default) = default {
+                    default.context.clone()
+                } else {
+                    return Err(PyErr::new::<PyValueError, _>(
+                        "Context function is ignored but no default is provided",
+                    ));
+                }
+            }
+            LayerFunctionDef::None => context.clone(),
+        };
+        let metric = match &self.metric {
+            LayerFunctionDef::Some(func) => {
+                Some(func.call(&result, original_input, &context).await?)
+            }
+            LayerFunctionDef::UseDefault => {
+                if let Some(metric) = default.as_ref().and_then(|default| default.metric.as_ref()) {
+                    Some(metric.clone())
+                } else {
+                    return Err(PyErr::new::<PyValueError, _>(
+                        "Metric function is ignored but no default is provided",
+                    ));
+                }
+            }
+            LayerFunctionDef::None => None,
+        };
+
+        let branch = match &self.branch {
+            LayerFunctionDef::Some(func) => {
+                Some(func.call(&result, original_input, &context).await?)
+            }
+            LayerFunctionDef::UseDefault => {
+                if let Some(branch) = default.as_ref().and_then(|default| default.branch.as_ref()) {
+                    Some(branch.clone())
+                } else {
+                    return Err(PyErr::new::<PyValueError, _>(
+                        "Branch function is ignored but no default is provided",
+                    ));
+                }
+            }
+            LayerFunctionDef::None => None,
+        };
+
+        Ok(LayerEvaluation {
+            transform: result,
+            context,
+            metric,
+            branch,
+        })
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -316,48 +377,134 @@ impl EvaluationError {
     }
 }
 
+impl From<EvaluationError> for PyErr {
+    fn from(value: EvaluationError) -> Self {
+        use EvaluationError::*;
+        match value {
+            Python(error) => error,
+            other => PyErr::new::<PyRuntimeError, _>(other.to_string()),
+        }
+    }
+}
+
+pub struct EvaluatorState {
+    pub out: EvaluationResult,
+    pub original_input: PyObject,
+    pub input: PyObject,
+    pub context: PyObject,
+    layer_index: usize,
+    defaults: Option<EvaluationResult>,
+}
+
+impl EvaluatorState {
+    pub fn new(input: PyObject, defaults: Option<EvaluationResult>) -> Self {
+        Self {
+            original_input: input.clone(),
+            input,
+            defaults,
+            out: EvaluationResult::new(),
+            context: Python::with_gil(|py| PyNone::get(py).into_py(py)),
+            layer_index: 0,
+        }
+    }
+}
+
 impl Evaluator {
+    pub fn finished(&self, state: &EvaluatorState) -> bool {
+        state.layer_index >= self.layers.len()
+    }
+
+    pub fn can_reach_layer(&self, state: &EvaluatorState, layer_name: &str) -> bool {
+        !self.finished(state)
+            && self.layers[state.layer_index..]
+                .iter()
+                .any(|layer| layer.name == layer_name)
+    }
+
+    pub fn layer_name(&self, state: &EvaluatorState) -> &str {
+        &self.layers[state.layer_index].name
+    }
+
+    pub async fn advance_layer<'a>(
+        &self,
+        state: &'a mut EvaluatorState,
+        result: PyObject,
+    ) -> Result<&'a LayerEvaluation, EvaluationError> {
+        let layer = &self.layers[state.layer_index];
+        let default = state
+            .defaults
+            .as_ref()
+            .and_then(|defaults| defaults.get(&layer.name))
+            .and_then(|defaults| defaults.get(state.out.get(&layer.name).map_or(0, |v| v.len())));
+        let result = layer
+            .evaluate_result(
+                result,
+                &state.input,
+                &state.original_input,
+                &state.context,
+                default,
+            )
+            .await?;
+        if let Some(branch) = result.branch_str()? {
+            state.layer_index = self
+                .layers
+                .iter()
+                .position(|layer| layer.name == branch)
+                .ok_or_else(|| EvaluationError::LayerNotFound(branch))?;
+        } else {
+            state.layer_index += 1;
+        }
+        state.input = result.transform.clone();
+        state.context = result.context.clone();
+        let layer_results = state.out.entry(layer.name.clone()).or_default();
+        layer_results.push(result);
+        Ok(layer_results.last().unwrap())
+    }
+
+    pub async fn evaluate_layer<'a>(
+        &self,
+        state: &'a mut EvaluatorState,
+    ) -> Result<&'a LayerEvaluation, EvaluationError> {
+        let layer = &self.layers[state.layer_index];
+        let default = state
+            .defaults
+            .as_ref()
+            .and_then(|defaults| defaults.get(&layer.name))
+            .and_then(|defaults| defaults.get(state.out.get(&layer.name).map_or(0, |v| v.len())));
+        let result = layer
+            .evaluate(&state.input, &state.original_input, &state.context, default)
+            .await?;
+        if let Some(branch) = result.branch_str()? {
+            state.layer_index = self
+                .layers
+                .iter()
+                .position(|layer| layer.name == branch)
+                .ok_or_else(|| EvaluationError::LayerNotFound(branch))?;
+        } else {
+            state.layer_index += 1;
+        }
+        state.input = result.transform.clone();
+        state.context = result.context.clone();
+        let layer_results = state.out.entry(layer.name.clone()).or_default();
+        layer_results.push(result);
+        Ok(layer_results.last().unwrap())
+    }
+
     pub async fn evaluate(
         &self,
-        mut input: PyObject,
-        defaults: Option<&EvaluationResult>,
+        input: PyObject,
+        defaults: Option<EvaluationResult>,
     ) -> Result<EvaluationResult, (EvaluationResult, EvaluationError)> {
-        let mut out = EvaluationResult::new();
-        macro_rules! try_or_bail {
-            ($expression:expr) => {{
-                match $expression {
-                    Ok(out) => out,
-                    Err(err) => return Err((out, EvaluationError::from(err))),
-                }
-            }};
+        let mut state = EvaluatorState::new(input, defaults);
+
+        while !self.finished(&state) {
+            match self.evaluate_layer(&mut state).await {
+                Ok(_) => {}
+                Err(error) => return Err((state.out, error)),
+            };
         }
-        let original_input = input.clone();
-        let mut context = Python::with_gil(|py| PyNone::get(py).into_py(py));
-        let mut layer_index = 0;
-        while layer_index < self.layers.len() {
-            let layer = &self.layers[layer_index];
-            let default = defaults
-                .and_then(|defaults| defaults.get(&layer.name))
-                .and_then(|defaults| defaults.get(out.get(&layer.name).map_or(0, |v| v.len())));
-            let result = try_or_bail!(
-                layer
-                    .evaluate(&input, &original_input, &context, default)
-                    .await
-            );
-            if let Some(branch) = try_or_bail!(result.branch_str()) {
-                layer_index = try_or_bail!(self
-                    .layers
-                    .iter()
-                    .position(|layer| layer.name == branch)
-                    .ok_or_else(|| EvaluationError::LayerNotFound(branch)));
-            } else {
-                layer_index += 1;
-            }
-            input = result.transform.clone();
-            context = result.context.clone();
-            out.entry(layer.name.clone()).or_default().push(result);
-        }
-        Ok(out)
+
+        Ok(state.out)
     }
 }
 
@@ -455,5 +602,24 @@ impl Pipeline {
         .boxed();
         let mut out_stream = futures::stream::select(result, errs);
         out_stream.next().await.transpose()
+    }
+
+    pub async fn aggregate_vec(
+        &self,
+        results: Vec<PyObject>,
+    ) -> Result<Option<PyObject>, EvaluationError> {
+        let iterator = AsyncIterator::new(futures::stream::iter(results));
+        let result = Python::with_gil(move |py| {
+            let aggregate = self.aggregator.as_ref(py).call1((iterator,))?;
+            pyo3_asyncio::tokio::into_future(aggregate)
+        })?;
+        let result = result.await?;
+        Python::with_gil(|py| {
+            if result.is_none(py) {
+                Ok(None)
+            } else {
+                Ok(Some(result))
+            }
+        })
     }
 }
