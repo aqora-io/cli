@@ -1,6 +1,6 @@
 use crate::python::{
     async_generator, async_python_run, deepcopy, format_err, serde_pickle, serde_pickle_opt,
-    AsyncIterator, BoundPy, PyEnv,
+    AsyncIterator, PyBoundObject, PyEnv,
 };
 use aqora_config::{AqoraUseCaseConfig, FunctionDef};
 use futures::prelude::*;
@@ -10,7 +10,7 @@ use pyo3::{
     prelude::*,
     pyclass,
     types::{PyDict, PyIterator, PyNone, PyTuple},
-    BoundObject, IntoPyObjectExt,
+    BoundObject,
 };
 use serde::{Deserialize, Serialize};
 use split_stream_by::{Either, SplitStreamByMapExt};
@@ -37,7 +37,7 @@ impl Clone for LayerFunction {
 }
 
 impl LayerFunction {
-    pub fn new<'py>(py: Python<'py>, func: BoundPy<'py>) -> PyResult<Self> {
+    pub fn new<'py>(py: Python<'py>, func: PyBoundObject<'py>) -> PyResult<Self> {
         let inspect = py.import(intern!(py, "inspect"))?.into_pyobject(py)?;
         let parameter_cls = inspect.getattr(intern!(py, "Parameter"))?;
         let positional_only = parameter_cls.getattr(intern!(py, "POSITIONAL_ONLY"))?;
@@ -58,16 +58,16 @@ impl LayerFunction {
         for parameter in parameters {
             let parameter = parameter?;
             let kind = parameter.getattr(intern!(py, "kind"))?;
-            if kind.eq(positional_only.clone())? || kind.eq(var_positional.clone())? {
+            if kind.eq(&positional_only)? || kind.eq(&var_positional)? {
                 takes_input_arg = true;
                 continue;
             }
-            if kind.eq(var_keyword.clone())? {
+            if kind.eq(&var_keyword)? {
                 takes_original_input_kwarg = true;
                 takes_context_kwarg = true;
                 continue;
             }
-            if kind.eq(positional_or_keyword.clone())? && !takes_input_arg {
+            if kind.eq(&positional_or_keyword)? && !takes_input_arg {
                 takes_input_arg = true;
                 continue;
             }
@@ -80,7 +80,7 @@ impl LayerFunction {
         }
 
         Ok(Self {
-            func: func.into_pyobject(py)?.unbind(),
+            func: func.unbind(),
             takes_input_arg,
             takes_original_input_kwarg,
             takes_context_kwarg,
@@ -95,7 +95,7 @@ impl LayerFunction {
     ) -> PyResult<PyObject> {
         async_python_run!(|py| {
             let args = if self.takes_input_arg {
-                PyTuple::new(py, [deepcopy(py, input.into_bound_py_any(py)?)?])?
+                PyTuple::new(py, [deepcopy(input.bind(py))?])?
             } else {
                 PyTuple::empty(py)
             };
@@ -104,14 +104,11 @@ impl LayerFunction {
             if self.takes_original_input_kwarg {
                 kwargs.set_item(
                     intern!(py, "original_input"),
-                    deepcopy(py, original_input.into_bound_py_any(py)?)?,
+                    deepcopy(original_input.bind(py))?,
                 )?;
             }
             if self.takes_context_kwarg {
-                kwargs.set_item(
-                    intern!(py, "context"),
-                    deepcopy(py, context.into_bound_py_any(py)?)?,
-                )?;
+                kwargs.set_item(intern!(py, "context"), deepcopy(context.bind(py))?)?;
             }
 
             Ok(self.func.call(py, args, Some(&kwargs))?.into_bound(py))
@@ -287,21 +284,21 @@ pub struct PipelineConfig {
 }
 
 impl PipelineConfig {
-    fn py_data<'py>(&self, py: Python<'py>) -> PyResult<BoundPy<'py>> {
+    fn py_data<'py>(&self, py: Python<'py>) -> PyResult<PyBoundObject<'py>> {
         py.import("pathlib")?.getattr("Path")?.call1((&self.data,))
     }
 }
 
 #[pymethods]
 impl PipelineConfig {
-    fn __getitem__<'py>(&self, py: Python<'py>, key: &str) -> PyResult<Option<BoundPy<'py>>> {
+    fn __getitem__<'py>(&self, py: Python<'py>, key: &str) -> PyResult<Option<PyBoundObject<'py>>> {
         match key {
             "data" => self.py_data(py).map(Some),
             _ => Ok(None),
         }
     }
     #[getter]
-    fn data<'py>(&self, py: Python<'py>) -> PyResult<BoundPy<'py>> {
+    fn data<'py>(&self, py: Python<'py>) -> PyResult<PyBoundObject<'py>> {
         self.py_data(py)
     }
 }
@@ -349,8 +346,13 @@ impl Evaluator {
                 }
             }};
         }
-        let original_input = Python::with_gil(|py| input.clone_ref(py));
-        let mut context = Python::with_gil(|py| PyNone::get(py).unbind().clone().into_any());
+
+        let (original_input, mut context) = Python::with_gil(|py| {
+            (
+                input.clone_ref(py),
+                PyNone::get(py).unbind().clone_ref(py).into_any(),
+            )
+        });
 
         let mut layer_index = 0;
         while layer_index < self.layers.len() {
@@ -372,8 +374,10 @@ impl Evaluator {
             } else {
                 layer_index += 1;
             }
-            input = Python::with_gil(|py| result.transform.clone_ref(py));
-            context = Python::with_gil(|py| result.context.clone_ref(py));
+            Python::with_gil(|py| {
+                input = result.transform.clone_ref(py);
+                context = result.context.clone_ref(py);
+            });
             out.entry(layer.name.clone()).or_default().push(result);
         }
         Ok(out)

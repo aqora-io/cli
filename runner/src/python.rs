@@ -21,7 +21,7 @@ lazy_static::lazy_static! {
     });
 }
 
-pub type BoundPy<'py> = Bound<'py, PyAny>;
+pub type PyBoundObject<'py> = Bound<'py, PyAny>;
 
 #[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -399,7 +399,11 @@ impl PyEnv {
         cmd
     }
 
-    pub fn import_path<'py>(&self, py: Python<'py>, path: &PathStr) -> PyResult<BoundPy<'py>> {
+    pub fn import_path<'py>(
+        &self,
+        py: Python<'py>,
+        path: &PathStr,
+    ) -> PyResult<PyBoundObject<'py>> {
         let module_name = path.module().to_string();
         let module = PyModule::import(py, &module_name)?;
         module.getattr(path.name())
@@ -481,12 +485,11 @@ pub fn async_generator(generator: PyObject) -> PyResult<impl Stream<Item = PyRes
     )
 }
 
-pub fn deepcopy<'py>(py: Python<'py>, obj: BoundPy<'py>) -> PyResult<Py<PyAny>> {
-    Ok(py
-        .import(intern!(py, "copy"))?
+pub fn deepcopy<'py>(obj: &PyBoundObject<'py>) -> PyResult<PyBoundObject<'py>> {
+    let py = obj.py();
+    py.import(intern!(py, "copy"))?
         .getattr(intern!(py, "deepcopy"))?
-        .call1((obj,))?
-        .unbind())
+        .call1((obj,))
 }
 
 #[allow(deprecated)]
@@ -673,7 +676,7 @@ struct AsyncIteratorImpl {
 
 #[pymethods]
 impl AsyncIteratorImpl {
-    fn __anext__<'py>(&self, py: Python<'py>) -> PyResult<BoundPy<'py>> {
+    fn __anext__<'py>(&self, py: Python<'py>) -> PyResult<PyBoundObject<'py>> {
         let stream = self.stream.clone();
         pyo3_async_runtimes::tokio::future_into_py_with_locals(
             py,
