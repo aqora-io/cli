@@ -51,7 +51,7 @@ mime = "0.3"
 open = "5.0"
 owo-colors = { version = "4.0", features = ["supports-colors"] }
 passterm = "2.0"
-pyo3 = { version = "0.24", features = ["serde", "py-clone"] }
+pyo3 = { version = "0.24", features = ["serde"] }
 pyo3-async-runtimes = { version = "0.24", features = [
   "attributes",
   "tokio-runtime",
