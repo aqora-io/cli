@@ -1,6 +1,4 @@
 use crate::ipython::override_get_ipython;
-use ::tokio::io;
-use ::tokio::process::Command;
 use aqora_config::{PackageName, PathStr};
 #[cfg(feature = "clap")]
 use clap::{builder::PossibleValue, ValueEnum};
@@ -13,6 +11,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use thiserror::Error;
+use tokio::process::Command;
 
 lazy_static::lazy_static! {
     static ref PYTHON_VERSION: String = Python::with_gil(|py| {
@@ -190,7 +189,7 @@ pub struct PyEnv {
 #[derive(Error, Debug)]
 pub enum EnvError {
     #[error("Error processing {0}: {1}")]
-    Io(PathBuf, io::Error),
+    Io(PathBuf, std::io::Error),
     #[error("{}", format_err(_0))]
     Python(#[from] PyErr),
     #[error("Failed to setup virtualenv: {0} ({1})")]
@@ -212,7 +211,7 @@ impl PyEnv {
         options: PyEnvOptions,
     ) -> Result<Self, EnvError> {
         let cache_path = if let Some(cache_path) = options.cache_path.as_ref() {
-            ::tokio::fs::create_dir_all(&cache_path)
+            tokio::fs::create_dir_all(&cache_path)
                 .await
                 .map_err(|err| EnvError::Io(cache_path.to_path_buf(), err))?;
             Some(
@@ -492,8 +491,6 @@ pub fn deepcopy<'py>(obj: &PyBoundObject<'py>) -> PyResult<PyBoundObject<'py>> {
         .call1((obj,))
 }
 
-#[allow(deprecated)]
-// TODO: Investigate and implement a proper solution to make this compatible with `IntoPythonObject<'_>`.
 pub mod serde_pickle {
     use pyo3::prelude::*;
     use std::borrow::Cow;
@@ -522,7 +519,7 @@ pub mod serde_pickle {
     pub fn serialize<S, T>(value: T, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::ser::Serializer,
-        T: IntoPy<PyObject>,
+        T: for<'py> IntoPyObject<'py>,
     {
         Python::with_gil(|py| {
             let out = py
@@ -530,7 +527,7 @@ pub mod serde_pickle {
                 .map_err(serde::ser::Error::custom)?
                 .getattr("dumps")
                 .map_err(serde::ser::Error::custom)?
-                .call1((value.into_py(py),))
+                .call1((value,))
                 .map_err(serde::ser::Error::custom)?;
             let bytes = out.extract().map_err(serde::ser::Error::custom)?;
             serializer.serialize_bytes(bytes)
@@ -566,7 +563,6 @@ pub mod serde_pickle {
     }
 }
 
-#[allow(deprecated)]
 pub mod serde_pickle_opt {
     use super::serde_pickle;
     use pyo3::prelude::*;
@@ -591,10 +587,12 @@ pub mod serde_pickle_opt {
         }
     }
 
-    pub fn serialize<'a, S, T>(value: &'a Option<T>, serializer: S) -> Result<S::Ok, S::Error>
+    // NOTE: We can only use unbound types here because of recursion on the trait implementation on
+    // the borrowed &'a T and we don't want to use clone unnecessarily
+    pub fn serialize<'a, S, T>(value: &'a Option<Py<T>>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::ser::Serializer,
-        &'a T: IntoPy<PyObject>,
+        &'a Py<T>: for<'py> IntoPyObject<'py>,
     {
         match value {
             Some(value) => serde_pickle::serialize(value, serializer),
@@ -652,7 +650,7 @@ impl AsyncIterator {
 impl AsyncIterator {
     fn __aiter__(&self) -> PyResult<AsyncIteratorImpl> {
         Ok(AsyncIteratorImpl {
-            stream: std::sync::Arc::new(::tokio::sync::Mutex::new(
+            stream: std::sync::Arc::new(tokio::sync::Mutex::new(
                 self.stream
                     .lock()
                     .map_err(|err| {
@@ -671,7 +669,7 @@ impl AsyncIterator {
 
 #[pyclass]
 struct AsyncIteratorImpl {
-    stream: std::sync::Arc<::tokio::sync::Mutex<AsyncIteratorStream>>,
+    stream: std::sync::Arc<tokio::sync::Mutex<AsyncIteratorStream>>,
 }
 
 #[pymethods]

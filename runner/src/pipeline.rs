@@ -25,17 +25,6 @@ pub struct LayerFunction {
     takes_context_kwarg: bool,
 }
 
-impl Clone for LayerFunction {
-    fn clone(&self) -> Self {
-        Python::with_gil(|py| Self {
-            func: self.func.clone_ref(py),
-            takes_input_arg: self.takes_input_arg,
-            takes_original_input_kwarg: self.takes_original_input_kwarg,
-            takes_context_kwarg: self.takes_context_kwarg,
-        })
-    }
-}
-
 impl LayerFunction {
     pub fn new<'py>(py: Python<'py>, func: PyBoundObject<'py>) -> PyResult<Self> {
         let inspect = py.import(intern!(py, "inspect"))?.into_pyobject(py)?;
@@ -87,6 +76,15 @@ impl LayerFunction {
         })
     }
 
+    pub fn clone_ref(&self, py: Python<'_>) -> Self {
+        Self {
+            func: self.func.clone_ref(py),
+            takes_input_arg: self.takes_input_arg,
+            takes_original_input_kwarg: self.takes_original_input_kwarg,
+            takes_context_kwarg: self.takes_context_kwarg,
+        }
+    }
+
     pub async fn call(
         &self,
         input: &PyObject,
@@ -117,14 +115,24 @@ impl LayerFunction {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum LayerFunctionDef {
     None,
     Some(LayerFunction),
     UseDefault,
 }
 
-#[derive(Debug, Clone)]
+impl LayerFunctionDef {
+    pub fn clone_ref(&self, py: Python<'_>) -> Self {
+        match self {
+            LayerFunctionDef::None => LayerFunctionDef::None,
+            LayerFunctionDef::Some(func) => LayerFunctionDef::Some(func.clone_ref(py)),
+            LayerFunctionDef::UseDefault => LayerFunctionDef::UseDefault,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct Layer {
     name: String,
     transform: LayerFunctionDef,
@@ -133,7 +141,19 @@ pub struct Layer {
     branch: LayerFunctionDef,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl Layer {
+    pub fn clone_ref(&self, py: Python<'_>) -> Self {
+        Self {
+            name: self.name.clone(),
+            transform: self.transform.clone_ref(py),
+            context: self.context.clone_ref(py),
+            metric: self.metric.clone_ref(py),
+            branch: self.branch.clone_ref(py),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 #[pyclass]
 pub struct LayerEvaluation {
     #[serde(with = "serde_pickle")]
@@ -194,7 +214,7 @@ pub struct EvaluateInputInfo {
     pub error: Option<EvaluationError>,
 }
 
-#[derive(Serialize, Deserialize, Default, Debug, Clone)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 pub struct EvaluateAllInfo {
     #[serde(with = "serde_pickle_opt")]
     pub score: Option<PyObject>,
@@ -303,9 +323,21 @@ impl PipelineConfig {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Evaluator {
     layers: Vec<Layer>,
+}
+
+impl Evaluator {
+    pub fn clone_ref(&self, py: Python<'_>) -> Self {
+        Self {
+            layers: self
+                .layers
+                .iter()
+                .map(|layer| layer.clone_ref(py))
+                .collect(),
+        }
+    }
 }
 
 #[derive(Error, Debug, Serialize, Deserialize)]
@@ -453,9 +485,13 @@ impl Pipeline {
         async_generator(generator)
     }
 
-    pub fn evaluator(&self) -> Evaluator {
+    pub fn evaluator(&self, py: Python<'_>) -> Evaluator {
         Evaluator {
-            layers: self.layers.clone(),
+            layers: self
+                .layers
+                .iter()
+                .map(|layer| layer.clone_ref(py))
+                .collect(),
         }
     }
 
