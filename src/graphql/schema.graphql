@@ -1,5 +1,6 @@
 enum Action {
 	ACCEPT_EVENT_INVITE
+	ADD_COMPETITION_JURY
 	ADD_COMPETITION_MEMBER
 	ADD_EVENT_COMPETITION
 	ADD_EVENT_MEMBER
@@ -56,15 +57,18 @@ enum Action {
 	READ_PROJECT_VERSION_EVALUATION
 	READ_PROJECT_VERSION_FILE
 	READ_SUBJECT_SUBSCRIPTION
+	READ_SUBMISSION
 	READ_TOPIC
 	READ_USER_EMAIL
 	READ_USER_NOTIFICATIONS
 	READ_USER_PERMISSIONS
+	REMOVE_COMPETITION_JURY
 	REMOVE_COMPETITION_MEMBER
 	REMOVE_EVENT_COMPETITION
 	REMOVE_EVENT_MEMBER
 	REMOVE_ORGANIZATION_MEMBER
 	SET_COMPETITION_ORDERING_PRIORITY
+	SET_EVENT_ORDERING_PRIORITY
 	TRANSFER_COMPETITION_OWNERSHIP
 	TRANSFER_EVENT_OWNERSHIP
 	TRANSFER_ORGANIZATION_OWNERSHIP
@@ -72,13 +76,13 @@ enum Action {
 	UPDATE_BLOG_ARTICLE
 	UPDATE_COMMENT
 	UPDATE_COMPETITION
-	UPDATE_COMPETITION_ACCESS
 	UPDATE_EVENT
 	UPDATE_FORUM
 	UPDATE_OAUTH_2_CONFIG
 	UPDATE_ORGANIZATION
 	UPDATE_ORGANIZATION_MEMBERSHIP
 	UPDATE_PROJECT_VERSION
+	UPDATE_PROJECT_VERSION_APPROVAL
 	UPDATE_PROJECT_VERSION_FILE
 	UPDATE_TOPIC
 	UPDATE_USER
@@ -369,10 +373,11 @@ type Competition implements ForumOwner & Subscribable & Node {
 	createdAt: DateTime!
 	visibility: ActivityVisibility!
 	requiresApproval: Boolean!
-	hasLeaderboard: Boolean!
-	grantHostSubmissionAccess: Boolean!
 	noCode: Boolean!
+	useJuryScore: Boolean!
+	showMetric: Boolean!
 	id: ID!
+	hasLeaderboard: Boolean!
 	forumOwnerKind: ForumOwnerKind!
 	description: String
 	submissionPreamble: String
@@ -393,6 +398,7 @@ type Competition implements ForumOwner & Subscribable & Node {
 	members(after: String, before: String, first: Int, last: Int, search: String): CompetitionMembershipConnection!
 	tags(after: String, before: String, first: Int, last: Int): CompetitionTagConnection!
 	entitySubscription(entity: UsernameOrID): SubjectSubscription
+	jury(after: String, before: String, first: Int, last: Int): CompetitionJuryConnection!
 }
 
 type CompetitionConnection {
@@ -418,6 +424,36 @@ type CompetitionEdge {
 	The item at the end of the edge
 	"""
 	node: Competition!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+type CompetitionJuryConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [CompetitionJuryEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Entity!]!
+}
+
+"""
+An edge in a connection.
+"""
+type CompetitionJuryEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Entity!
+	selectedOn: DateTime!
 	"""
 	A cursor for use in pagination
 	"""
@@ -588,12 +624,24 @@ input CreateCompetitionInput {
 	banner: Upload
 	thumbnail: Upload
 	visibility: ActivityVisibility! = UNAUTHENTICATED
-	requiresApproval: Boolean
-	grantHostSubmissionAccess: Boolean
 	tagIds: [ID]
-	hasLeaderboard: Boolean
-	noCode: Boolean! = false
 	submissionPreamble: String = null
+	"""
+	Enables jury system on competition
+	"""
+	requiresApproval: Boolean! = false
+	"""
+	Enables no-code system on competition. Requires jury system to work.
+	"""
+	noCode: Boolean! = false
+	"""
+	Use average jury score instead of automated use-case metric. Requires jury system to work.
+	"""
+	useJuryScore: Boolean! = false
+	"""
+	Show automated use-case metric.
+	"""
+	showMetric: Boolean! = true
 }
 
 input CreateEventInput {
@@ -1322,6 +1370,7 @@ type Mutation {
 	updateEvent(id: ID!, input: UpdateEventInput!): EventEdge!
 	deleteEvent(id: ID!): ID!
 	updateEventAgenda(input: UpdateAgendaInput!, eventId: ID!): EventEdge!
+	setEventOrderingPriority(id: ID!, priority: Int!): EventEdge!
 	inviteEventMembers(eventId: ID!, invites: [EventMemberInvite!]!): Event!
 	addEventMember(eventId: ID!, entityId: ID!): EventMembershipEdge!
 	joinEvent(eventId: ID!, asEntity: UsernameOrID): EventMembershipEdge!
@@ -1342,7 +1391,8 @@ type Mutation {
 	deleteForum(id: ID!): ID!
 	subscribeToSubject(subject: ID!, asEntity: UsernameOrID): SubjectSubscriptionEdge!
 	unsubscribeFromSubject(subscription: ID!): ID!
-	createProjectVersionApproval(projectVersionId: ID!): ProjectVersionApprovalEdge!
+	createProjectVersionApproval(projectVersionId: ID!, input: ProjectVersionApprovalInput!): ProjectVersionApprovalEdge!
+	updateProjectVersionApproval(projectVersionApprovalId: ID!, input: ProjectVersionApprovalInput!): ProjectVersionApprovalEdge!
 	deleteProjectVersionApproval(projectVersionApprovalId: ID!): ID!
 	fetchWebsiteMetadata(url: Url!): WebsiteMetadata!
 	generateEventInviteCode(id: ID!): EventPublicInvite!
@@ -1359,6 +1409,8 @@ type Mutation {
 	createOauth2Config(input: CreateOauth2ConfigInput!, asEntity: UsernameOrID): Oauth2ConfigEdge!
 	updateOauth2Config(oauth2ConfigId: ID!, input: UpdateOauth2ConfigInput!): Oauth2ConfigEdge!
 	deleteOauth2Config(oauth2ConfigId: ID!): ID!
+	addCompetitionJury(competitionId: ID!, entityId: ID!): CompetitionJuryEdge!
+	removeCompetitionJury(competitionId: ID!, entityId: ID!): Entity!
 }
 
 """
@@ -1686,11 +1738,19 @@ type ProjectVersion implements Node {
 }
 
 type ProjectVersionApproval implements Node {
+	accept: Boolean!
+	notes: String
+	score: Float
 	createdAt: DateTime!
 	id: ID!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	projectVersion: ProjectVersion!
 	entity: Entity!
+}
+
+input ProjectVersionApprovalAcceptInput {
+	notes: String
+	score: Float
 }
 
 type ProjectVersionApprovalConnection {
@@ -1720,6 +1780,15 @@ type ProjectVersionApprovalEdge {
 	A cursor for use in pagination
 	"""
 	cursor: String!
+}
+
+input ProjectVersionApprovalInput @oneOf {
+	accept: ProjectVersionApprovalAcceptInput
+	reject: ProjectVersionApprovalRejectInput
+}
+
+input ProjectVersionApprovalRejectInput {
+	reason: String!
 }
 
 enum ProjectVersionCompressor {
@@ -1824,6 +1893,8 @@ input ResetPasswordInput {
 enum Scope {
 	ALL
 	DEFAULT
+	READ_COMPETITION
+	READ_PROJECT
 }
 
 scalar Semver
@@ -1962,8 +2033,11 @@ type SubmissionRankingSubmissionEdge {
 	The item at the end of the edge
 	"""
 	node: Submission!
+	score: Float!
 	rank: Int!
-	evaluation: ProjectVersionEvaluation!
+	projectVersion: ProjectVersion!
+	validatedAt: DateTime!
+	entity: Entity!
 	points: Int!
 	"""
 	A cursor for use in pagination
@@ -2120,12 +2194,24 @@ input UpdateCompetitionInput {
 	thumbnail: Upload
 	rules: String
 	visibility: ActivityVisibility
-	requiresApproval: Boolean
-	grantHostSubmissionAccess: Boolean
-	hasLeaderboard: Boolean
 	tagIds: [ID]
-	noCode: Boolean = null
 	submissionPreamble: String
+	"""
+	Enables jury system on competition
+	"""
+	requiresApproval: Boolean = null
+	"""
+	Enables no-code system on competition. Requires jury system to work.
+	"""
+	noCode: Boolean = null
+	"""
+	Use average jury score instead of automated use-case metric. Requires jury system to work.
+	"""
+	useJuryScore: Boolean = null
+	"""
+	Show automated use-case metric.
+	"""
+	showMetric: Boolean = null
 }
 
 input UpdateEventInput {

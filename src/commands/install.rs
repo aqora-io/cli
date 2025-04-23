@@ -125,7 +125,7 @@ pub async fn install_submission(
     write_project_config_default(
         &global.project,
         &ProjectConfig {
-            show_score: competition.has_leaderboard,
+            show_score: competition.show_metric,
         },
     )
     .await?;
