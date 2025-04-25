@@ -2,6 +2,19 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.14.3 - 2025-04-25
+#### Bug Fixes
+- remove deprecated pyo3 functions - (477e2a3) - Julian Popescu
+- apply suggestions - (4f8d9df) - Angel Dijoux
+- migrate from into_py to into_pyobject function - (2040cd7) - Angel Dijoux
+#### Features
+- query Competition::show_metric - (e30adf5) - Antoine Chauvin
+#### Miscellaneous Chores
+- switch to pyo3 v0.24 - (f3e3988) - Angel Dijoux
+- update rust toolchain - (d55b031) - Julian Popescu
+
+- - -
+
 ## v0.14.2 - 2025-04-09
 #### Bug Fixes
 - add client_secret to oauth refresh - (d8006bb) - Julian Popescu
