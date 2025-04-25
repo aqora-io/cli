@@ -71,7 +71,7 @@ where
     };
 
     let tokio = tokio_runtime();
-    pyo3_asyncio::tokio::init_with_runtime(tokio).unwrap();
+    pyo3_async_runtimes::tokio::init_with_runtime(tokio).unwrap();
     let success = tokio.block_on(async { cli.run().await });
     if success {
         0

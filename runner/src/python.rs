@@ -3,12 +3,7 @@ use aqora_config::{PackageName, PathStr};
 #[cfg(feature = "clap")]
 use clap::{builder::PossibleValue, ValueEnum};
 use futures::prelude::*;
-use pyo3::{
-    intern,
-    prelude::*,
-    pyclass::IterANextOutput,
-    types::{PyString, PyType},
-};
+use pyo3::{intern, prelude::*, types::PyType};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::{
@@ -24,6 +19,8 @@ lazy_static::lazy_static! {
         format!("{}.{}", version.major, version.minor)
     });
 }
+
+pub type PyBoundObject<'py> = Bound<'py, PyAny>;
 
 #[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -192,7 +189,7 @@ pub struct PyEnv {
 #[derive(Error, Debug)]
 pub enum EnvError {
     #[error("Error processing {0}: {1}")]
-    Io(PathBuf, tokio::io::Error),
+    Io(PathBuf, std::io::Error),
     #[error("{}", format_err(_0))]
     Python(#[from] PyErr),
     #[error("Failed to setup virtualenv: {0} ({1})")]
@@ -401,9 +398,14 @@ impl PyEnv {
         cmd
     }
 
-    pub fn import_path<'py>(&self, py: Python<'py>, path: &PathStr) -> PyResult<&'py PyAny> {
-        let module = PyModule::import(py, PyString::new(py, &path.module().to_string()))?;
-        module.getattr(PyString::new(py, path.name()))
+    pub fn import_path<'py>(
+        &self,
+        py: Python<'py>,
+        path: &PathStr,
+    ) -> PyResult<PyBoundObject<'py>> {
+        let module_name = path.module().to_string();
+        let module = PyModule::import(py, &module_name)?;
+        module.getattr(path.name())
     }
 
     pub fn find_spec_search_locations(&self, py: Python, path: &PathStr) -> PyResult<Vec<PathBuf>> {
@@ -419,12 +421,13 @@ impl PyEnv {
             return Ok(Vec::new());
         }
         locations
-            .iter()?
+            .try_iter()?
             .map(|path| path.and_then(|p| p.extract::<PathBuf>()))
             .collect()
     }
 }
 
+#[macro_export]
 macro_rules! async_python_run {
     ($($closure:tt)*) => {
         Python::with_gil(|py| {
@@ -433,9 +436,9 @@ macro_rules! async_python_run {
                 Ok(awaitable) => awaitable,
                 Err(err) => return Err(err),
             };
-            pyo3_asyncio::into_future_with_locals(
-                &pyo3_asyncio::tokio::get_current_locals(py)?,
-                awaitable,
+            pyo3_async_runtimes::into_future_with_locals(
+                &pyo3_async_runtimes::tokio::get_current_locals(py)?,
+                awaitable
             )
         })
     };
@@ -445,17 +448,18 @@ pub(crate) use async_python_run;
 pub fn async_generator(generator: PyObject) -> PyResult<impl Stream<Item = PyResult<PyObject>>> {
     let generator = Python::with_gil(move |py| {
         generator
-            .as_ref(py)
+            .bind_borrowed(py)
             .call_method0(pyo3::intern!(py, "__aiter__"))?;
         PyResult::Ok(generator)
     })?;
+
     Ok(
         futures::stream::unfold(generator, move |generator| async move {
             let result = match Python::with_gil(|py| {
-                pyo3_asyncio::into_future_with_locals(
-                    &pyo3_asyncio::tokio::get_current_locals(py)?,
+                pyo3_async_runtimes::into_future_with_locals(
+                    &pyo3_async_runtimes::tokio::get_current_locals(py)?,
                     generator
-                        .as_ref(py)
+                        .bind_borrowed(py)
                         .call_method0(pyo3::intern!(py, "__anext__"))?,
                 )
             }) {
@@ -467,7 +471,7 @@ pub fn async_generator(generator: PyObject) -> PyResult<impl Stream<Item = PyRes
                 Err(err) => {
                     if err
                         .get_type(py)
-                        .is(PyType::new::<pyo3::exceptions::PyStopAsyncIteration>(py))
+                        .is(&PyType::new::<pyo3::exceptions::PyStopAsyncIteration>(py))
                     {
                         None
                     } else {
@@ -480,11 +484,11 @@ pub fn async_generator(generator: PyObject) -> PyResult<impl Stream<Item = PyRes
     )
 }
 
-pub fn deepcopy<'py>(py: Python<'py>, obj: &'py PyAny) -> PyResult<&'py PyAny> {
-    let copy = py
-        .import(intern!(py, "copy"))?
-        .getattr(intern!(py, "deepcopy"))?;
-    copy.call1((obj,))
+pub fn deepcopy<'py>(obj: &PyBoundObject<'py>) -> PyResult<PyBoundObject<'py>> {
+    let py = obj.py();
+    py.import(intern!(py, "copy"))?
+        .getattr(intern!(py, "deepcopy"))?
+        .call1((obj,))
 }
 
 pub mod serde_pickle {
@@ -515,7 +519,7 @@ pub mod serde_pickle {
     pub fn serialize<S, T>(value: T, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::ser::Serializer,
-        T: IntoPy<PyObject>,
+        T: for<'py> IntoPyObject<'py>,
     {
         Python::with_gil(|py| {
             let out = py
@@ -523,7 +527,7 @@ pub mod serde_pickle {
                 .map_err(serde::ser::Error::custom)?
                 .getattr("dumps")
                 .map_err(serde::ser::Error::custom)?
-                .call1((value.into_py(py),))
+                .call1((value,))
                 .map_err(serde::ser::Error::custom)?;
             let bytes = out.extract().map_err(serde::ser::Error::custom)?;
             serializer.serialize_bytes(bytes)
@@ -538,7 +542,7 @@ pub mod serde_pickle {
         let bytes = deserializer.deserialize_any(BytesVisitor)?;
         Python::with_gil(|py| {
             let out = py.import("pickle")?.getattr("loads")?.call1((bytes,))?;
-            FromPyObject::extract(out)
+            FromPyObject::extract_bound(&out)
         })
         .map_err(serde::de::Error::custom)
     }
@@ -583,10 +587,12 @@ pub mod serde_pickle_opt {
         }
     }
 
-    pub fn serialize<'a, S, T>(value: &'a Option<T>, serializer: S) -> Result<S::Ok, S::Error>
+    // NOTE: We can only use unbound types here because of recursion on the trait implementation on
+    // the borrowed &'a T and we don't want to use clone unnecessarily
+    pub fn serialize<'a, S, T>(value: &'a Option<Py<T>>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::ser::Serializer,
-        &'a T: IntoPy<PyObject>,
+        &'a Py<T>: for<'py> IntoPyObject<'py>,
     {
         match value {
             Some(value) => serde_pickle::serialize(value, serializer),
@@ -606,7 +612,7 @@ pub mod serde_pickle_opt {
                     .import("pickle")?
                     .getattr("loads")?
                     .call1((bytes.as_ref(),))?;
-                FromPyObject::extract(out)
+                FromPyObject::extract_bound(&out)
             })
             .map_err(serde::de::Error::custom)
             .map(Some)
@@ -668,18 +674,17 @@ struct AsyncIteratorImpl {
 
 #[pymethods]
 impl AsyncIteratorImpl {
-    fn __anext__<'py>(&self, py: Python<'py>) -> PyResult<IterANextOutput<&'py PyAny, &'py PyAny>> {
+    fn __anext__<'py>(&self, py: Python<'py>) -> PyResult<PyBoundObject<'py>> {
         let stream = self.stream.clone();
-        let result = pyo3_asyncio::tokio::future_into_py_with_locals(
+        pyo3_async_runtimes::tokio::future_into_py_with_locals(
             py,
-            pyo3_asyncio::tokio::get_current_locals(py)?,
+            pyo3_async_runtimes::tokio::get_current_locals(py)?,
             async move {
                 match stream.lock().await.next().await {
                     Some(value) => Ok(value),
                     None => Err(pyo3::exceptions::PyStopAsyncIteration::new_err(())),
                 }
             },
-        )?;
-        Ok(IterANextOutput::Yield(result))
+        )
     }
 }

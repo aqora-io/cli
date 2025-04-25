@@ -159,7 +159,7 @@ async fn do_run_pipeline(
 
     let aggregated = pipeline
         .aggregate(evaluate(
-            pipeline.evaluator(),
+            Python::with_gil(|py| pipeline.evaluator(py)),
             generator,
             config.max_concurrency,
             Some(config.last_run_dir),
@@ -189,7 +189,7 @@ fn run_pipeline(
     let run_name = name.map(|n| n.to_string());
     Ok(
         match pyo3::Python::with_gil(move |py| {
-            pyo3_asyncio::tokio::run(py, async move {
+            pyo3_async_runtimes::tokio::run(py, async move {
                 Ok(do_run_pipeline(run_env, config, run_name, run_pb).await)
             })
         }) {
@@ -397,7 +397,7 @@ pub async fn run_submission_tests(
         &LastRunResult {
             info: EvaluateAllInfo {
                 score: if tests.is_empty() {
-                    result.as_ref().ok().cloned()
+                    Python::with_gil(|py| result.as_ref().ok().map(|res| res.clone_ref(py)))
                 } else {
                     None
                 },
@@ -523,7 +523,7 @@ async fn test_use_case_test(
             let score_json: serde_json::Value = Python::with_gil(|py| {
                 py.import("ujson")?
                     .getattr("dumps")?
-                    .call1((result.clone(),))?
+                    .call1((&result,))?
                     .extract::<String>()
             })
             .map_err(|e| {
