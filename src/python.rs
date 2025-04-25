@@ -11,7 +11,7 @@ use indicatif::ProgressBar;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct LastRunResult {
     #[serde(flatten)]
     pub info: EvaluateAllInfo,

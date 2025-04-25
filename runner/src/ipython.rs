@@ -1,3 +1,6 @@
+// NOTE: This should be removed when we update pyo3
+#![allow(non_local_definitions)]
+
 use pyo3::{
     prelude::*,
     types::{PyDict, PyTuple},
@@ -18,8 +21,8 @@ impl IPython {
     fn run_line_magic(
         &self,
         name: &str,
-        _args: &Bound<'_, PyTuple>,
-        _kwargs: Option<&Bound<'_, PyDict>>,
+        _args: &PyTuple,
+        _kwargs: Option<&PyDict>,
     ) -> PyResult<()> {
         Err(pyo3::exceptions::PyAttributeError::new_err(format!(
             "aqora's 'ipython' does not support '%{name}'",
@@ -30,8 +33,8 @@ impl IPython {
     fn run_cell_magic(
         &self,
         name: &str,
-        _args: &Bound<'_, PyTuple>,
-        _kwargs: Option<&Bound<'_, PyDict>>,
+        _args: &PyTuple,
+        _kwargs: Option<&PyDict>,
     ) -> PyResult<()> {
         Err(pyo3::exceptions::PyAttributeError::new_err(format!(
             "aqora's 'ipython' does not support '%%{name}'",
@@ -56,8 +59,6 @@ impl GetIPython {
 }
 
 pub fn override_get_ipython(py: Python<'_>) -> PyResult<()> {
-    py.import(pyo3::intern!(py, "builtins"))?.setattr(
-        pyo3::intern!(py, "get_ipython"),
-        GetIPython.into_pyobject(py)?,
-    )
+    py.import(pyo3::intern!(py, "builtins"))?
+        .setattr(pyo3::intern!(py, "get_ipython"), GetIPython.into_py(py))
 }

@@ -1,3 +1,6 @@
+// NOTE: should be removed when we update py03
+#![allow(non_local_definitions)]
+
 use crate::error::{self, Result};
 use indicatif::ProgressBar;
 use pyo3::{
@@ -17,46 +20,40 @@ impl ProgressSuspendPyFunc {
     fn __call__(
         &self,
         py: Python<'_>,
-        args: &Bound<'_, PyTuple>,
-        kwargs: Option<&Bound<'_, PyDict>>,
+        args: &PyTuple,
+        kwargs: Option<&PyDict>,
     ) -> PyResult<PyObject> {
         self.progress.suspend(|| self.func.call(py, args, kwargs))
     }
 
-    fn __getattr__(&self, py: Python<'_>, name: &Bound<'_, PyString>) -> PyResult<PyObject> {
+    fn __getattr__(&self, py: Python<'_>, name: &PyString) -> PyResult<PyObject> {
         self.func.getattr(py, name)
     }
 
-    fn __setattr__(
-        &self,
-        py: Python<'_>,
-        name: &Bound<'_, PyString>,
-        value: &Bound<'_, PyAny>,
-    ) -> PyResult<()> {
+    fn __setattr__(&self, py: Python<'_>, name: &PyString, value: &PyAny) -> PyResult<()> {
         self.func.setattr(py, name, value)
     }
 
-    fn __delattr__(&self, py: Python<'_>, name: &Bound<'_, PyString>) -> PyResult<()> {
-        self.func.bind_borrowed(py).delattr(name)
+    fn __delattr__(&self, py: Python<'_>, name: &PyString) -> PyResult<()> {
+        self.func.as_ref(py).delattr(name)
     }
 }
 
 fn override_module_func(
     py: Python,
-    module: &Bound<'_, PyModule>,
-    name: &Bound<'_, PyString>,
+    module: &PyModule,
+    name: &PyString,
     progress: ProgressBar,
 ) -> PyResult<()> {
-    let old_func = module.getattr(name)?.into_pyobject(py)?;
-
+    let old_func = module.getattr(name)?.to_object(py);
     module.setattr(
         name,
         ProgressSuspendPyFunc {
             progress,
-            func: old_func.unbind(),
-        },
+            func: old_func,
+        }
+        .into_py(py),
     )?;
-
     Ok(())
 }
 
@@ -64,13 +61,13 @@ pub fn wrap_python_output(progress: &ProgressBar) -> Result<()> {
     Python::with_gil(|py| {
         override_module_func(
             py,
-            &py.import(pyo3::intern!(py, "builtins"))?,
+            py.import(pyo3::intern!(py, "builtins"))?,
             pyo3::intern!(py, "print"),
             progress.clone(),
         )?;
         override_module_func(
             py,
-            &py.import(pyo3::intern!(py, "os"))?,
+            py.import(pyo3::intern!(py, "os"))?,
             pyo3::intern!(py, "system"),
             progress.clone(),
         )?;

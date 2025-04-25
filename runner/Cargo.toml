@@ -12,12 +12,8 @@ extension-module = ["pyo3/extension-module", "pyo3/abi3-py39"]
 aqora-config = { path = "../config" }
 futures = "0.3"
 lazy_static = "1.4"
-pyo3 = { version = "0.24", features = ["serde"] }
-pyo3-async-runtimes = { version = "0.24", features = [
-  "attributes",
-  "tokio-runtime",
-  "tokio",
-] }
+pyo3 = { version = "0.20", features = ["serde"] }
+pyo3-asyncio = { version = "0.20", features = ["attributes", "tokio-runtime"] }
 thiserror = "1.0"
 tokio = { version = "1", features = ["sync", "signal", "process", "fs"] }
 split-stream-by = "0.1"

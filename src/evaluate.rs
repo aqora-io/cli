@@ -27,10 +27,7 @@ pub fn evaluate(
         .map(move |input| (input, evaluator.clone()))
         .map(|((index, result), evaluator)| async move {
             match result {
-                Ok(input) => match evaluator
-                    .evaluate(Python::with_gil(|py| input.clone_ref(py)), None)
-                    .await
-                {
+                Ok(input) => match evaluator.evaluate(input.clone(), None).await {
                     Ok(result) => (
                         index,
                         EvaluateInputInfo {

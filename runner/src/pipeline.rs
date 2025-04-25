@@ -1,6 +1,6 @@
 use crate::python::{
     async_generator, async_python_run, deepcopy, format_err, serde_pickle, serde_pickle_opt,
-    AsyncIterator, PyBoundObject, PyEnv,
+    AsyncIterator, PyEnv,
 };
 use aqora_config::{AqoraUseCaseConfig, FunctionDef};
 use futures::prelude::*;
@@ -10,14 +10,13 @@ use pyo3::{
     prelude::*,
     pyclass,
     types::{PyDict, PyIterator, PyNone, PyTuple},
-    BoundObject,
 };
 use serde::{Deserialize, Serialize};
 use split_stream_by::{Either, SplitStreamByMapExt};
 use std::{collections::HashMap, path::PathBuf};
 use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LayerFunction {
     func: PyObject,
     takes_input_arg: bool,
@@ -26,8 +25,8 @@ pub struct LayerFunction {
 }
 
 impl LayerFunction {
-    pub fn new<'py>(py: Python<'py>, func: PyBoundObject<'py>) -> PyResult<Self> {
-        let inspect = py.import(intern!(py, "inspect"))?.into_pyobject(py)?;
+    pub fn new<'py>(py: Python<'py>, func: &'py PyAny) -> PyResult<Self> {
+        let inspect = py.import(intern!(py, "inspect"))?;
         let parameter_cls = inspect.getattr(intern!(py, "Parameter"))?;
         let positional_only = parameter_cls.getattr(intern!(py, "POSITIONAL_ONLY"))?;
         let positional_or_keyword = parameter_cls.getattr(intern!(py, "POSITIONAL_OR_KEYWORD"))?;
@@ -38,25 +37,25 @@ impl LayerFunction {
         let mut takes_original_input_kwarg = false;
         let mut takes_context_kwarg = false;
         let parameters = PyIterator::from_object(
-            &inspect
+            inspect
                 .getattr(intern!(py, "signature"))?
-                .call1((&func,))?
+                .call1((func,))?
                 .getattr(intern!(py, "parameters"))?
                 .call_method0(intern!(py, "values"))?,
         )?;
         for parameter in parameters {
             let parameter = parameter?;
             let kind = parameter.getattr(intern!(py, "kind"))?;
-            if kind.eq(&positional_only)? || kind.eq(&var_positional)? {
+            if kind.eq(positional_only)? || kind.eq(var_positional)? {
                 takes_input_arg = true;
                 continue;
             }
-            if kind.eq(&var_keyword)? {
+            if kind.eq(var_keyword)? {
                 takes_original_input_kwarg = true;
                 takes_context_kwarg = true;
                 continue;
             }
-            if kind.eq(&positional_or_keyword)? && !takes_input_arg {
+            if kind.eq(positional_or_keyword)? && !takes_input_arg {
                 takes_input_arg = true;
                 continue;
             }
@@ -69,20 +68,11 @@ impl LayerFunction {
         }
 
         Ok(Self {
-            func: func.unbind(),
+            func: func.to_object(py),
             takes_input_arg,
             takes_original_input_kwarg,
             takes_context_kwarg,
         })
-    }
-
-    pub fn clone_ref(&self, py: Python<'_>) -> Self {
-        Self {
-            func: self.func.clone_ref(py),
-            takes_input_arg: self.takes_input_arg,
-            takes_original_input_kwarg: self.takes_original_input_kwarg,
-            takes_context_kwarg: self.takes_context_kwarg,
-        }
     }
 
     pub async fn call(
@@ -93,46 +83,34 @@ impl LayerFunction {
     ) -> PyResult<PyObject> {
         async_python_run!(|py| {
             let args = if self.takes_input_arg {
-                PyTuple::new(py, [deepcopy(input.bind(py))?])?
+                PyTuple::new(py, [deepcopy(py, input.as_ref(py))?])
             } else {
                 PyTuple::empty(py)
             };
-
             let kwargs = PyDict::new(py);
             if self.takes_original_input_kwarg {
                 kwargs.set_item(
                     intern!(py, "original_input"),
-                    deepcopy(original_input.bind(py))?,
+                    deepcopy(py, original_input.as_ref(py))?,
                 )?;
             }
             if self.takes_context_kwarg {
-                kwargs.set_item(intern!(py, "context"), deepcopy(context.bind(py))?)?;
+                kwargs.set_item(intern!(py, "context"), deepcopy(py, context.as_ref(py))?)?;
             }
-
-            Ok(self.func.call(py, args, Some(&kwargs))?.into_bound(py))
+            self.func.as_ref(py).call(args, Some(kwargs))
         })?
         .await
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum LayerFunctionDef {
     None,
     Some(LayerFunction),
     UseDefault,
 }
 
-impl LayerFunctionDef {
-    pub fn clone_ref(&self, py: Python<'_>) -> Self {
-        match self {
-            LayerFunctionDef::None => LayerFunctionDef::None,
-            LayerFunctionDef::Some(func) => LayerFunctionDef::Some(func.clone_ref(py)),
-            LayerFunctionDef::UseDefault => LayerFunctionDef::UseDefault,
-        }
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Layer {
     name: String,
     transform: LayerFunctionDef,
@@ -141,19 +119,7 @@ pub struct Layer {
     branch: LayerFunctionDef,
 }
 
-impl Layer {
-    pub fn clone_ref(&self, py: Python<'_>) -> Self {
-        Self {
-            name: self.name.clone(),
-            transform: self.transform.clone_ref(py),
-            context: self.context.clone_ref(py),
-            metric: self.metric.clone_ref(py),
-            branch: self.branch.clone_ref(py),
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[pyclass]
 pub struct LayerEvaluation {
     #[serde(with = "serde_pickle")]
@@ -214,7 +180,7 @@ pub struct EvaluateInputInfo {
     pub error: Option<EvaluationError>,
 }
 
-#[derive(Serialize, Deserialize, Default, Debug)]
+#[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct EvaluateAllInfo {
     #[serde(with = "serde_pickle_opt")]
     pub score: Option<PyObject>,
@@ -233,27 +199,27 @@ impl Layer {
             LayerFunctionDef::Some(func) => func.call(input, original_input, context).await?,
             LayerFunctionDef::UseDefault => {
                 if let Some(default) = default {
-                    Python::with_gil(|py| default.context.clone_ref(py))
+                    default.context.clone()
                 } else {
                     return Err(PyErr::new::<PyValueError, _>(
                         "Context function is ignored but no default is provided",
                     ));
                 }
             }
-            LayerFunctionDef::None => Python::with_gil(|py| context.clone_ref(py)),
+            LayerFunctionDef::None => context.clone(),
         };
         let transform = match &self.transform {
             LayerFunctionDef::Some(func) => func.call(input, original_input, &context).await?,
             LayerFunctionDef::UseDefault => {
                 if let Some(default) = default {
-                    Python::with_gil(|py| default.transform.clone_ref(py))
+                    default.transform.clone()
                 } else {
                     return Err(PyErr::new::<PyValueError, _>(
                         "Transform function is ignored but no default is provided",
                     ));
                 }
             }
-            LayerFunctionDef::None => Python::with_gil(|py| input.clone_ref(py)),
+            LayerFunctionDef::None => input.clone(),
         };
         let metric = match &self.metric {
             LayerFunctionDef::Some(func) => {
@@ -261,8 +227,7 @@ impl Layer {
             }
             LayerFunctionDef::UseDefault => {
                 if let Some(metric) = default.as_ref().and_then(|default| default.metric.as_ref()) {
-                    let cloned = Python::with_gil(|py| metric.clone_ref(py));
-                    Some(cloned)
+                    Some(metric.clone())
                 } else {
                     return Err(PyErr::new::<PyValueError, _>(
                         "Metric function is ignored but no default is provided",
@@ -278,7 +243,7 @@ impl Layer {
             }
             LayerFunctionDef::UseDefault => {
                 if let Some(branch) = default.as_ref().and_then(|default| default.branch.as_ref()) {
-                    Python::with_gil(|py| branch.clone_ref(py)).into()
+                    Some(branch.clone())
                 } else {
                     return Err(PyErr::new::<PyValueError, _>(
                         "Branch function is ignored but no default is provided",
@@ -304,40 +269,28 @@ pub struct PipelineConfig {
 }
 
 impl PipelineConfig {
-    fn py_data<'py>(&self, py: Python<'py>) -> PyResult<PyBoundObject<'py>> {
+    fn py_data<'py>(&self, py: Python<'py>) -> PyResult<&'py PyAny> {
         py.import("pathlib")?.getattr("Path")?.call1((&self.data,))
     }
 }
 
 #[pymethods]
 impl PipelineConfig {
-    fn __getitem__<'py>(&self, py: Python<'py>, key: &str) -> PyResult<Option<PyBoundObject<'py>>> {
+    fn __getitem__<'py>(&self, py: Python<'py>, key: &str) -> PyResult<Option<&'py PyAny>> {
         match key {
             "data" => self.py_data(py).map(Some),
             _ => Ok(None),
         }
     }
     #[getter]
-    fn data<'py>(&self, py: Python<'py>) -> PyResult<PyBoundObject<'py>> {
+    fn data<'py>(&self, py: Python<'py>) -> PyResult<&'py PyAny> {
         self.py_data(py)
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Evaluator {
     layers: Vec<Layer>,
-}
-
-impl Evaluator {
-    pub fn clone_ref(&self, py: Python<'_>) -> Self {
-        Self {
-            layers: self
-                .layers
-                .iter()
-                .map(|layer| layer.clone_ref(py))
-                .collect(),
-        }
-    }
 }
 
 #[derive(Error, Debug, Serialize, Deserialize)]
@@ -378,14 +331,8 @@ impl Evaluator {
                 }
             }};
         }
-
-        let (original_input, mut context) = Python::with_gil(|py| {
-            (
-                input.clone_ref(py),
-                PyNone::get(py).unbind().clone_ref(py).into_any(),
-            )
-        });
-
+        let original_input = input.clone();
+        let mut context = Python::with_gil(|py| PyNone::get(py).into_py(py));
         let mut layer_index = 0;
         while layer_index < self.layers.len() {
             let layer = &self.layers[layer_index];
@@ -406,10 +353,8 @@ impl Evaluator {
             } else {
                 layer_index += 1;
             }
-            Python::with_gil(|py| {
-                input = result.transform.clone_ref(py);
-                context = result.context.clone_ref(py);
-            });
+            input = result.transform.clone();
+            context = result.context.clone();
             out.entry(layer.name.clone()).or_default().push(result);
         }
         Ok(out)
@@ -430,8 +375,8 @@ impl Pipeline {
         config: PipelineConfig,
     ) -> PyResult<Self> {
         Python::with_gil(|py| {
-            let generator = env.import_path(py, &use_case.generator)?.unbind();
-            let aggregator = env.import_path(py, &use_case.aggregator)?.unbind();
+            let generator = env.import_path(py, &use_case.generator)?.into_py(py);
+            let aggregator = env.import_path(py, &use_case.aggregator)?.into_py(py);
             let layers = use_case
                 .layers
                 .iter()
@@ -477,21 +422,17 @@ impl Pipeline {
         let generator = Python::with_gil(|py| {
             PyResult::Ok(
                 self.generator
-                    .call1(py, (self.config.clone().into_pyobject(py)?,))?
-                    .into_pyobject(py)?
-                    .unbind(),
+                    .as_ref(py)
+                    .call1((self.config.clone().into_py(py),))?
+                    .into_py(py),
             )
         })?;
         async_generator(generator)
     }
 
-    pub fn evaluator(&self, py: Python<'_>) -> Evaluator {
+    pub fn evaluator(&self) -> Evaluator {
         Evaluator {
-            layers: self
-                .layers
-                .iter()
-                .map(|layer| layer.clone_ref(py))
-                .collect(),
+            layers: self.layers.clone(),
         }
     }
 
@@ -503,15 +444,12 @@ impl Pipeline {
             + 'static,
     ) -> Result<Option<PyObject>, EvaluationError> {
         let (errs, results) = results.boxed().split_by_map(move |result| match result {
-            Ok(result) => Python::with_gil(|py| match result.into_pyobject(py) {
-                Ok(py_object) => Either::Right(py_object.into_any().unbind()),
-                Err(err) => Either::Left(Err(EvaluationError::Python(err))),
-            }),
-            Err((_, err)) => Either::Left(Err(err)),
+            Ok(result) => Python::with_gil(|py| Either::Right(result.into_py(py))),
+            Err((_, err)) => Either::Left(Result::<PyObject, _>::Err(err)),
         });
         let iterator = AsyncIterator::new(results);
         let result = futures::stream::once(
-            async_python_run!(|py| Ok(self.aggregator.call1(py, (iterator,))?.into_bound(py)))?
+            async_python_run!(|py| self.aggregator.as_ref(py).call1((iterator,)))?
                 .map_err(EvaluationError::Python),
         )
         .boxed();
