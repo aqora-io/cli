@@ -1,0 +1,8 @@
+#![allow(dead_code)]
+
+use wasm_bindgen_test::*;
+
+wasm_bindgen_test_configure!(run_in_worker);
+
+mod format;
+mod io;
