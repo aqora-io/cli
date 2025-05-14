@@ -9,6 +9,7 @@ enum Action {
 	CREATE_COMMENT
 	CREATE_COMPETITION
 	CREATE_COMPETITION_RULE_AGREEMENT
+	CREATE_COMPETITION_STAGE
 	CREATE_EVENT
 	CREATE_EVENT_RULE_AGREEMENT
 	CREATE_FORUM
@@ -67,6 +68,7 @@ enum Action {
 	READ_USER_PERMISSIONS
 	REMOVE_COMPETITION_JURY
 	REMOVE_COMPETITION_MEMBER
+	REMOVE_COMPETITION_STAGE
 	REMOVE_EVENT_COMPETITION
 	REMOVE_EVENT_MEMBER
 	REMOVE_ORGANIZATION_MEMBER
@@ -79,6 +81,7 @@ enum Action {
 	UPDATE_BLOG_ARTICLE
 	UPDATE_COMMENT
 	UPDATE_COMPETITION
+	UPDATE_COMPETITION_STAGE
 	UPDATE_EVENT
 	UPDATE_FORUM
 	UPDATE_OAUTH_2_CONFIG
@@ -382,16 +385,9 @@ type Competition implements ForumOwner & Subscribable & Node {
 	shortDescription: String!
 	createdAt: DateTime!
 	visibility: ActivityVisibility!
-	requiresApproval: Boolean!
-	noCode: Boolean!
-	useJuryScore: Boolean!
-	showMetric: Boolean!
-	privateApprovals: Boolean!
 	id: ID!
-	hasLeaderboard: Boolean!
 	forumOwnerKind: ForumOwnerKind!
 	description: String
-	submissionPreamble: String
 	isPrivate: Boolean!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	host: Entity!
@@ -401,8 +397,15 @@ type Competition implements ForumOwner & Subscribable & Node {
 	entityRuleAgreements(after: String, before: String, first: Int, last: Int, entity: UsernameOrID, latest: Boolean): CompetitionRuleAgreementConnection!
 	banner: Url
 	thumbnail: Url
-	leaderboard(after: String, before: String, first: Int, last: Int): SubmissionRankingConnection!
-	submissions(after: String, before: String, first: Int, last: Int, entityId: ID, approvalFilter: ApprovalFilter): SubmissionConnection!
+	leaderboard(after: String, before: String, first: Int, last: Int, stage: Int): SubmissionRankingConnection!
+	currentStage: CompetitionStage!
+	stage(stage: Int): CompetitionStage
+	stages(after: String, before: String, first: Int, last: Int, hasLeaderboard: Boolean, requiresApproval: Boolean): CompetitionStageConnection!
+	hasLeaderboard: Boolean!
+	requiresApproval: Boolean!
+	showMetric: Boolean! @deprecated(reason: "Use currentStage.showMetric instead")
+	submissions(after: String, before: String, first: Int, last: Int, entityId: ID, approvalFilter: ApprovalFilter, stage: Int): SubmissionConnection!
+	hasSubmissions: Boolean!
 	submission(entity: UsernameOrID): Submission
 	forum: Forum!
 	timeline: Timeline
@@ -411,7 +414,6 @@ type Competition implements ForumOwner & Subscribable & Node {
 	tags(after: String, before: String, first: Int, last: Int): CompetitionTagConnection!
 	entitySubscription(entity: UsernameOrID): SubjectSubscription
 	jury(after: String, before: String, first: Int, last: Int): CompetitionJuryConnection!
-	scoringCriteria: [CompetitionScoringCriterion!]!
 }
 
 type CompetitionConnection {
@@ -596,7 +598,57 @@ type CompetitionScoringCriterion implements Node {
 	weight: Float!
 	id: ID!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	stage: CompetitionStage!
 	competition: Competition!
+}
+
+type CompetitionStage implements Node {
+	requiresApproval: Boolean!
+	noCode: Boolean!
+	useJuryScore: Boolean!
+	showMetric: Boolean!
+	privateApprovals: Boolean!
+	createdAt: DateTime!
+	validUntil: DateTime
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	seq: Int!
+	hasLeaderboard: Boolean!
+	isActive: Boolean!
+	competition: Competition!
+	submissionPreamble: String
+	leaderboard(after: String, before: String, first: Int, last: Int): SubmissionRankingConnection!
+	submission(entity: UsernameOrID): Submission
+	scoringCriteria: [CompetitionScoringCriterion!]!
+}
+
+type CompetitionStageConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [CompetitionStageEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [CompetitionStage!]!
+}
+
+"""
+An edge in a connection.
+"""
+type CompetitionStageEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: CompetitionStage!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type CompetitionSubscription implements SubjectSubscription & Node {
@@ -648,6 +700,9 @@ input CreateCompetitionInput {
 	thumbnail: Upload
 	visibility: ActivityVisibility! = UNAUTHENTICATED
 	tagIds: [ID]
+	"""
+	Message shown to participants before they submit a solution.
+	"""
 	submissionPreamble: String = null
 	"""
 	Enables jury system on competition
@@ -671,6 +726,34 @@ input CreateCompetitionInput {
 	"""
 	privateApprovals: Boolean! = true
 	timeline: CreateTimelineInput
+}
+
+input CreateCompetitionStageInput {
+	"""
+	Enables jury system on competition
+	"""
+	requiresApproval: Boolean! = false
+	"""
+	Enables no-code system on competition. Requires jury system to work.
+	"""
+	noCode: Boolean! = false
+	"""
+	Use average jury score instead of automated use-case metric. Requires jury system to work.
+	"""
+	useJuryScore: Boolean! = false
+	"""
+	Show automated use-case metric.
+	"""
+	showMetric: Boolean! = true
+	"""
+	Only allow the competition host, the reviewer and the submission author to see the approval
+	score.
+	"""
+	privateApprovals: Boolean! = true
+	"""
+	Message shown to participants before they submit a solution.
+	"""
+	submissionPreamble: String = null
 }
 
 input CreateEventInput {
@@ -779,7 +862,7 @@ interface Entity {
 	bio: String
 	createdAt: DateTime!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID): SubmissionConnection!
+	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID, allStages: Boolean): SubmissionConnection!
 	badges(after: String, before: String, first: Int, last: Int): EntityBadgeConnection!
 	subjectSubscriptions(kinds: [SubjectKind!], after: String, before: String, first: Int, last: Int): SubjectSubscriptionConnection!
 	projectVersionApprovals(projectVersionId: UUID, after: String, before: String, first: Int, last: Int): ProjectVersionApprovalConnection!
@@ -1449,6 +1532,18 @@ type Mutation {
 	deleteOauth2Config(oauth2ConfigId: ID!): ID!
 	addCompetitionJury(competitionId: ID!, entityId: ID!): CompetitionJuryEdge!
 	removeCompetitionJury(competitionId: ID!, entityId: ID!): Entity!
+	"""
+	Archive currently active leaderboard into a new stage, creating a new empty leaderboard.
+	Returns previously active leaderboard.
+	"""
+	createCompetitionStage(competitionId: ID!, input: CreateCompetitionStageInput!): CompetitionStageEdge!
+	updateCompetitionStage(stageId: ID!, input: UpdateCompetitionStageInput!): CompetitionStageEdge!
+	"""
+	Withdraw currently active leaderboard if it is still empty, making last stage the currently
+	active leaderboard. Useful when a new stage was created by error.
+	Returns previously staged leaderboard that now became active.
+	"""
+	removeCompetitionStage(stageId: ID!): Competition!
 }
 
 """
@@ -1630,7 +1725,7 @@ type Organization implements Entity & Node {
 	image: Url
 	imageThumbnail: Url
 	users(after: String, before: String, first: Int, last: Int): OrganizationUserConnection!
-	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID): SubmissionConnection!
+	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID, allStages: Boolean): SubmissionConnection!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	badges(after: String, before: String, first: Int, last: Int): EntityBadgeConnection!
 	userMembership(user: UsernameOrID): OrganizationMembership
@@ -1750,6 +1845,7 @@ input Permission {
 interface Project {
 	id: ID!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	stage: CompetitionStage!
 	competition: Competition!
 	name: String!
 	latest: ProjectVersion
@@ -1894,8 +1990,8 @@ type ProjectVersionEvaluation implements Node {
 type ProjectVersionFile implements Node {
 	kind: ProjectVersionFileKind!
 	id: ID!
-	extension: String
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	extension: String
 	projectVersion: ProjectVersion!
 	downloadUrl(archKind: ArchiveKind! = TAR): Url!
 	uploadUrl: Url
@@ -2029,6 +2125,7 @@ type Submission implements Project & Node {
 	version(version: Semver): ProjectVersion
 	versions(after: String, before: String, first: Int, last: Int): ProjectVersionConnection!
 	maxEvaluation: ProjectVersionEvaluation
+	stage: CompetitionStage!
 	competition: Competition!
 	entity: Entity!
 	name: String!
@@ -2091,6 +2188,7 @@ type SubmissionRankingSubmissionEdge {
 	projectVersion: ProjectVersion!
 	submission: Submission!
 	competition: Competition!
+	stage: CompetitionStage!
 	validatedAt: DateTime!
 	entity: Entity!
 	points: Int!
@@ -2301,7 +2399,6 @@ input UpdateCompetitionInput {
 	rules: String
 	visibility: ActivityVisibility
 	tagIds: [ID]
-	submissionPreamble: String
 	"""
 	Enables jury system on competition
 	"""
@@ -2323,8 +2420,12 @@ input UpdateCompetitionInput {
 	score.
 	"""
 	privateApprovals: Boolean
-	timeline: UpdateTimelineInput
+	"""
+	Message shown to participants before they submit a solution.
+	"""
+	submissionPreamble: String
 	scoringCriteria: [UpdateCompetitionScoringCriterionInput!]
+	timeline: UpdateTimelineInput
 }
 
 input UpdateCompetitionScoringCriterionInput {
@@ -2332,6 +2433,35 @@ input UpdateCompetitionScoringCriterionInput {
 	title: String!
 	description: String
 	weight: Float!
+}
+
+input UpdateCompetitionStageInput {
+	"""
+	Enables jury system on competition
+	"""
+	requiresApproval: Boolean
+	"""
+	Enables no-code system on competition. Requires jury system to work.
+	"""
+	noCode: Boolean
+	"""
+	Use average jury score instead of automated use-case metric. Requires jury system to work.
+	"""
+	useJuryScore: Boolean
+	"""
+	Show automated use-case metric.
+	"""
+	showMetric: Boolean
+	"""
+	Only allow the competition host, the reviewer and the submission author to see the approval
+	score.
+	"""
+	privateApprovals: Boolean
+	"""
+	Message shown to participants before they submit a solution.
+	"""
+	submissionPreamble: String
+	scoringCriteria: [UpdateCompetitionScoringCriterionInput!]
 }
 
 input UpdateEventInput {
@@ -2435,6 +2565,7 @@ type UseCase implements Project & Node {
 	latest: ProjectVersion
 	version(version: Semver): ProjectVersion
 	versions(after: String, before: String, first: Int, last: Int): ProjectVersionConnection!
+	stage: CompetitionStage!
 	competition: Competition!
 	name: String!
 }
@@ -2462,7 +2593,7 @@ type User implements Entity & Node {
 	"""
 	can(action: Action!, on: ID, actingAs: UsernameOrID): Boolean!
 	organizations(after: String, before: String, first: Int, last: Int): UserOrganizationConnection!
-	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID): SubmissionConnection!
+	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID, allStages: Boolean): SubmissionConnection!
 	topics(after: String, before: String, first: Int, last: Int, order: VotableOrder): TopicConnection!
 	comments(after: String, before: String, first: Int, last: Int, order: VotableOrder): CommentConnection!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
@@ -2589,6 +2720,7 @@ type WebsiteMetadata {
 	description: String
 }
 
+directive @deprecated(reason: String = "No longer supported") on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
 directive @include(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
 directive @oneOf on INPUT_OBJECT
 directive @skip(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
