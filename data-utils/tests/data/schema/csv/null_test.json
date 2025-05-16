@@ -1,0 +1,22 @@
+{
+  "fields": [
+    {
+      "name": "c_bool",
+      "data_type": "Boolean"
+    },
+    {
+      "name": "c_float",
+      "data_type": "Float64",
+      "nullable": true
+    },
+    {
+      "name": "c_int",
+      "data_type": "UInt64"
+    },
+    {
+      "name": "c_string",
+      "data_type": "Float64",
+      "nullable": true
+    }
+  ]
+}
