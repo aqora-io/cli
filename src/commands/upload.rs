@@ -493,7 +493,6 @@ pub async fn upload_use_case(
 
     let pyproject_toml = std::fs::read_to_string(pyproject_path(&global.project))?;
 
-    let package_name = format!("use_case_{}", competition.id.to_package_id());
     let data_path = global.project.join(&config.data);
     if !data_path.exists() {
         return Err(error::user(
@@ -527,6 +526,7 @@ pub async fn upload_use_case(
         .await?
         .create_use_case_version
         .node;
+    let package_name = project_version.project.name.replace('-', "_");
 
     use_case_pb.finish_with_message("Version updated");
 
@@ -992,11 +992,7 @@ Do you want to run the tests now?"#,
 
     use_case_pb.finish_with_message("Version updated");
 
-    let package_name = format!(
-        "submission_{}_{}",
-        competition_id.to_package_id(),
-        entity_id.to_package_id()
-    );
+    let package_name = project_version.project.name.replace('-', "_");
 
     let evaluation_fut = {
         let (id, upload_url) = find_project_version_file(
@@ -1052,7 +1048,10 @@ Do you want to run the tests now?"#,
             update_submission_mutation::ProjectVersionFileKind::PACKAGE,
         )?;
         let package_build_path = tempdir.path().join("dist");
-        let package_tar_file = package_build_path.join(format!("{package_name}-{version}.tar.gz"));
+        let package_tar_file = package_build_path.join(format!(
+            "{}-{version}.tar.gz",
+            package_name.replace('-', "_")
+        ));
         let package_pb = m.add(global.spinner().with_message("Building package"));
 
         let package_pb_cloned = package_pb.clone();
