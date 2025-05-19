@@ -16,6 +16,10 @@ mutation UpdateSubmissionMutation(
   ) {
     node {
       id
+      project {
+        __typename
+        name
+      }
       files {
         id
         kind
