@@ -1,7 +1,9 @@
 query GetCompetitionUseCase($slug: String!) {
   competitionBySlug(slug: $slug) {
     id
-    showMetric
+    currentStage {
+      showMetric
+    }
     useCase {
       name
       latest {

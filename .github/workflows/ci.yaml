@@ -13,13 +13,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v6
         with:
+          version: ">=0.6.0,<0.8.0"
           python-version: "3.10"
-          cache: "pip"
-      - run: pip install uv
-      - uses: Swatinem/rust-cache@v2
-      - run: rustc --version
+          activate-environment: true
+          enable-cache: true
+      - name: Setup Pyo3
+        run: |
+          # Setup PyO3
+          #
+          PYO3_PYTHON=$(uv python find)
+          LIBDIR=$(uv run python3 -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')
+          RUSTFLAGS="-L ${LIBDIR}"
+
+          # https://pyo3.rs/v0.24.2/building-and-distribution.html#configuring-the-python-version
+          echo "PYO3_PYTHON=${PYO3_PYTHON}" >> "${GITHUB_ENV}"
+          # https://doc.rust-lang.org/cargo/reference/environment-variables.html#dynamic-library-paths
+          echo "LD_LIBRARY_PATH=${LIBDIR}" >> "${GITHUB_ENV}"
+          echo "RUSTFLAGS=${RUSTFLAGS}" >> "${GITHUB_ENV}"
+      - uses: moonrepo/setup-rust@v1
+        with:
+          components: rustfmt, clippy
+          cache-base: main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: cargo fmt --all --check
       - run: cargo clippy -- -D warnings
       - run: cargo test

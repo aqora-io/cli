@@ -2,8 +2,6 @@ use base64::prelude::*;
 use std::{fmt, str::FromStr};
 use uuid::Uuid;
 
-const BASE32_ALPHABET: base32::Alphabet = base32::Alphabet::Rfc4648 { padding: false };
-
 #[derive(Debug, Clone, Copy)]
 pub enum NodeType {
     User,
@@ -64,9 +62,5 @@ impl Id {
         bytes.extend_from_slice(self.ty.to_string().as_bytes());
         bytes.extend_from_slice(self.id.as_bytes());
         BASE64_URL_SAFE_NO_PAD.encode(&bytes)
-    }
-
-    pub fn to_package_id(self) -> String {
-        base32::encode(BASE32_ALPHABET, &self.id.into_bytes()).to_lowercase()
     }
 }
