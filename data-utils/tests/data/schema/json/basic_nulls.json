@@ -1,0 +1,24 @@
+{
+  "fields": [
+    {
+      "name": "a",
+      "data_type": "UInt64",
+      "nullable": true
+    },
+    {
+      "name": "b",
+      "data_type": "Float64",
+      "nullable": true
+    },
+    {
+      "name": "c",
+      "data_type": "Boolean",
+      "nullable": true
+    },
+    {
+      "name": "d",
+      "data_type": "Utf8",
+      "nullable": true
+    }
+  ]
+}
