@@ -9,6 +9,10 @@ enum Action {
 	CREATE_COMMENT
 	CREATE_COMPETITION
 	CREATE_COMPETITION_RULE_AGREEMENT
+	CREATE_DATASET
+	CREATE_DATASET_COMPETITION
+	CREATE_DATASET_MEMBER
+	CREATE_DATASET_VERSION
 	CREATE_EVENT
 	CREATE_EVENT_RULE_AGREEMENT
 	CREATE_FORUM
@@ -23,6 +27,10 @@ enum Action {
 	DELETE_BLOG_ARTICLE
 	DELETE_COMMENT
 	DELETE_COMPETITION
+	DELETE_DATASET
+	DELETE_DATASET_COMPETITION
+	DELETE_DATASET_MEMBER
+	DELETE_DATASET_VERSION
 	DELETE_EVENT
 	DELETE_FORUM
 	DELETE_OAUTH_2_CONFIG
@@ -37,6 +45,7 @@ enum Action {
 	JOIN_EVENT
 	MANAGE_ENTITY_BAN
 	MANAGE_EVENT_INVITE_CODE
+	PUBLISH_DATASET_VERSION
 	PUBLISH_VOTE
 	READ_ACTIVITY_TRACKER
 	READ_COMMENT
@@ -46,6 +55,9 @@ enum Action {
 	READ_COMPETITION_RULE
 	READ_COMPETITION_RULE_AGREEMENT
 	READ_COMPETITION_SCORING_CRITERION
+	READ_DATASET
+	READ_DATASET_MEMBER
+	READ_DATASET_VERSION
 	READ_EVENT
 	READ_EVENT_COMPETITION
 	READ_EVENT_INVITATION
@@ -79,6 +91,9 @@ enum Action {
 	UPDATE_BLOG_ARTICLE
 	UPDATE_COMMENT
 	UPDATE_COMPETITION
+	UPDATE_DATASET
+	UPDATE_DATASET_MEMBER
+	UPDATE_DATASET_VERSION
 	UPDATE_EVENT
 	UPDATE_FORUM
 	UPDATE_OAUTH_2_CONFIG
@@ -412,6 +427,7 @@ type Competition implements ForumOwner & Subscribable & Node {
 	entitySubscription(entity: UsernameOrID): SubjectSubscription
 	jury(after: String, before: String, first: Int, last: Int): CompetitionJuryConnection!
 	scoringCriteria: [CompetitionScoringCriterion!]!
+	datasets(after: String, before: String, first: Int, last: Int): CompetitionDatasetConnection!
 }
 
 type CompetitionConnection {
@@ -427,6 +443,35 @@ type CompetitionConnection {
 	A list of nodes.
 	"""
 	nodes: [Competition!]!
+}
+
+type CompetitionDatasetConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [CompetitionDatasetConnectionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Dataset!]!
+}
+
+"""
+An edge in a connection.
+"""
+type CompetitionDatasetConnectionEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Dataset!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 """
@@ -673,6 +718,12 @@ input CreateCompetitionInput {
 	timeline: CreateTimelineInput
 }
 
+input CreateDatasetInput {
+	slug: String!
+	name: String!
+	visibility: ActivityVisibility!
+}
+
 input CreateEventInput {
 	slug: String!
 	title: String!
@@ -736,6 +787,238 @@ input CreateTopicInput {
 	title: String!
 	url: Url
 	description: String
+}
+
+type Dataset implements Node {
+	slug: String!
+	name: String!
+	visibility: ActivityVisibility!
+	createdAt: DateTime!
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	owner: Entity!
+	members(after: String, before: String, first: Int, last: Int, search: String): DatasetMembershipConnection!
+	latestVersion: DatasetVersion
+	versions(after: String, before: String, first: Int, last: Int): DatasetVersionConnection!
+	competitions(after: String, before: String, first: Int, last: Int, search: String): DatasetCompetitionConnection!
+}
+
+type DatasetAnalytics {
+	rowCount: Int!
+	fileSize: Int!
+}
+
+type DatasetCompetitionConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [DatasetCompetitionConnectionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Competition!]!
+}
+
+"""
+An edge in a connection.
+"""
+type DatasetCompetitionConnectionEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Competition!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+type DatasetConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [DatasetEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Dataset!]!
+}
+
+"""
+An edge in a connection.
+"""
+type DatasetEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Dataset!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+type DatasetMembershipConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [DatasetMembershipConnectionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Entity!]!
+}
+
+"""
+An edge in a connection.
+"""
+type DatasetMembershipConnectionEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Entity!
+	kind: DatasetMembershipKind!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+enum DatasetMembershipKind {
+	OWNER
+	READER
+}
+
+type DatasetVersion implements Node {
+	version: Semver!
+	description: String!
+	schema: JSON!
+	publishedAt: DateTime
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	dataset: Dataset!
+	fileByName(name: String!): DatasetVersionFile
+	files(after: String, before: String, first: Int, last: Int): DatasetVersionFileConnection!
+	analytics: DatasetAnalytics!
+	authors(after: String, before: String, first: Int, last: Int, search: String): DatasetVersionAuthorConnection!
+	metadata: JSON!
+}
+
+interface DatasetVersionAuthor {
+	displayName: String!
+}
+
+type DatasetVersionAuthorConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [DatasetVersionAuthorConnectionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [DatasetVersionAuthor!]!
+}
+
+"""
+An edge in a connection.
+"""
+type DatasetVersionAuthorConnectionEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: DatasetVersionAuthor!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+input DatasetVersionAuthorInput @oneOf {
+	registered: UsernameOrID
+	unregistered: UnregisteredDatasetVersionAuthorInput
+}
+
+type DatasetVersionConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [DatasetVersionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [DatasetVersion!]!
+}
+
+"""
+An edge in a connection.
+"""
+type DatasetVersionEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: DatasetVersion!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+type DatasetVersionFile {
+	name: String!
+	size: Int!
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	datasetVersion: DatasetVersion!
+	url: Url!
+}
+
+type DatasetVersionFileConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [DatasetVersionFileEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [DatasetVersionFile!]!
+}
+
+"""
+An edge in a connection.
+"""
+type DatasetVersionFileEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: DatasetVersionFile!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 """
@@ -1449,6 +1732,36 @@ type Mutation {
 	deleteOauth2Config(oauth2ConfigId: ID!): ID!
 	addCompetitionJury(competitionId: ID!, entityId: ID!): CompetitionJuryEdge!
 	removeCompetitionJury(competitionId: ID!, entityId: ID!): Entity!
+	createDataset(input: CreateDatasetInput!, asEntity: UsernameOrID): Dataset!
+	updateDataset(datasetId: ID!, input: UpdateDatasetInput!): Dataset!
+	deleteDataset(datasetId: ID!): Dataset!
+	addDatasetCompetition(datasetId: ID!, competitionId: ID!): DatasetCompetitionConnectionEdge!
+	removeDatasetCompetition(datasetId: ID!, competitionId: ID!): Competition!
+	addDatasetMember(datasetId: ID!, entityId: ID!): DatasetMembershipConnectionEdge!
+	updateDatasetMember(datasetId: ID!, entityId: ID!, kind: DatasetMembershipKind!): DatasetMembershipConnectionEdge!
+	removeDatasetMember(datasetId: ID!, entityId: ID!): ID!
+	createDatasetVersion(datasetId: ID!, schema: JSON!): ID!
+	publishDatasetVersion(datasetVersionId: ID!): DatasetVersionEdge!
+	updateDatasetVersion(datasetVersionId: ID!, input: UpdateDatasetVersionInput!): DatasetVersionEdge!
+	deleteDatasetVersion(datasetVersionId: ID!): DatasetVersion!
+	"""
+	Attach a file to a dataset version. Returns an upload ID which you can use
+	to call `uploadDatasetVersionFilePart`.
+	"""
+	createDatasetVersionFile(datasetVersionId: ID!, fileName: String!): ID!
+	"""
+	Upload a part of the file that was attached to a dataset version.
+	Returns a short-lived URL that you can HTTP PUT.
+	May be called any number of times, but at least once.
+	"""
+	uploadDatasetVersionFilePart(datasetVersionFileId: ID!, part: Int!, partSize: Int!): Url!
+	"""
+	Finalize the upload of a file attached to a dataset version.
+	Must be called exactly one time.
+	If not called, all uploaded files get garbage collected 6 hours after
+	the last part was uploaded.
+	"""
+	completeDatasetVersionFile(datasetVersionFileId: ID!, eTags: [String!]!): DatasetVersionFile!
 }
 
 """
@@ -1475,6 +1788,7 @@ enum NotificationKind {
 	REPLY_COMMENT
 	PROMOTIONAL_NEWSLETTER
 	JURY_SELECTED
+	PROJECT_VERSION_APPROVAL_CREATED
 	SYSTEM
 }
 
@@ -1935,6 +2249,8 @@ type Query {
 	oauth2Providers: [Oauth2Provider!]!
 	oauth2Configs(after: String, before: String, first: Int, last: Int): Oauth2ConfigConnection!
 	oauth2Authorize(input: Oauth2AuthorizeInput!): Oauth2PreGrant
+	datasets(after: String, before: String, first: Int, last: Int, owner: UsernameOrID, search: String): DatasetConnection!
+	datasetBySlug(slug: String!): Dataset
 }
 
 input ResetPasswordInput {
@@ -2271,6 +2587,14 @@ entities without requiring a central allocating authority.
 """
 scalar UUID
 
+input UnregisteredDatasetVersionAuthorInput {
+	fullName: String!
+}
+
+type UnregisteredUser implements DatasetVersionAuthor {
+	displayName: String!
+}
+
 input UpdateAgendaInput {
 	agenda: JSON
 }
@@ -2331,6 +2655,18 @@ input UpdateCompetitionScoringCriterionInput {
 	title: String!
 	description: String
 	weight: Float!
+}
+
+input UpdateDatasetInput {
+	slug: String
+	name: String
+	visibility: ActivityVisibility
+}
+
+input UpdateDatasetVersionInput {
+	version: Semver
+	description: String
+	authors: [DatasetVersionAuthorInput!]
 }
 
 input UpdateEventInput {
@@ -2438,7 +2774,7 @@ type UseCase implements Project & Node {
 	name: String!
 }
 
-type User implements Entity & Node {
+type User implements Entity & DatasetVersionAuthor & Node {
 	username: String!
 	displayName: String!
 	location: String
