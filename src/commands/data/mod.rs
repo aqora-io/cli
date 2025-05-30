@@ -12,6 +12,8 @@ use super::GlobalArgs;
 use convert::{convert, Convert};
 use infer::{infer, Infer};
 
+pub use infer::{render_sample_debug, FormatOptions, InferOptions, SchemaOutput};
+
 #[derive(Subcommand, Debug, Serialize)]
 pub enum Data {
     Infer(Infer),

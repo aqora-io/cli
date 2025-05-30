@@ -23,6 +23,16 @@ impl Checksum {
         Ok(hash.finalize())
     }
 
+    pub fn default_from_bytes(bytes: &[u8]) -> Checksum {
+        Self::from_bytes::<crc32fast::Hasher>(bytes)
+    }
+
+    pub fn from_bytes<H: Hash>(bytes: &[u8]) -> Checksum {
+        let mut hash = H::default();
+        hash.update(bytes);
+        hash.finalize()
+    }
+
     /// Returns the contents of this checksum as a base64 formatted string,
     /// with bytes in big endian order.
     pub fn to_be_base64(&self) -> String {

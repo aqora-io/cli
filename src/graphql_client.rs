@@ -11,6 +11,7 @@ use url::Url;
 
 pub mod custom_scalars {
     pub type Semver = String;
+    pub type JSON = serde_json::Value;
 }
 
 #[derive(Error, Debug)]

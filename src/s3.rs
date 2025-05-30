@@ -111,6 +111,29 @@ pub async fn upload(
     content_cksum: Checksum,
     pb: &ProgressBar,
 ) -> Result<UploadResponse, UploadError> {
+    let pb = pb.clone();
+    let body = Body::wrap_stream(ReaderStream::new(body).inspect_ok(move |data| {
+        pb.inc(data.len() as u64);
+    }));
+    upload_body(
+        client,
+        body,
+        upload_url,
+        content_length,
+        content_type,
+        content_cksum,
+    )
+    .await
+}
+
+pub async fn upload_body(
+    client: &reqwest::Client,
+    body: impl Into<Body>,
+    upload_url: &Url,
+    content_length: usize,
+    content_type: Option<&str>,
+    content_cksum: Checksum,
+) -> Result<UploadResponse, UploadError> {
     // prepare request
     let mut request = client
         .put(upload_url.to_string())
@@ -120,12 +143,7 @@ pub async fn upload(
     if let Some(content_type) = content_type {
         request = request.header(CONTENT_TYPE, content_type);
     }
-    let pb = pb.clone();
-    request = request.body(Body::wrap_stream(ReaderStream::new(body).inspect_ok(
-        move |data| {
-            pb.inc(data.len() as u64);
-        },
-    )));
+    request = request.body(body);
 
     // send request
     let response = request.send().await?;

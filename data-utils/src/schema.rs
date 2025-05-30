@@ -7,7 +7,7 @@ use serde_arrow::schema::{SerdeArrowSchema, Strategy};
 
 pub use serde_arrow::marrow;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Schema {
     fields: Fields,
     metadata: IndexMap<String, String>,

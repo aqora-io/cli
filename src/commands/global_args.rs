@@ -1,6 +1,6 @@
 use crate::{
     colors::ColorChoiceExt,
-    dialog::{Confirm, FuzzySelect},
+    dialog::{Confirm, FuzzySelect, Input},
     dirs::{init_venv, opt_init_venv},
     error::{self, Result},
     graphql_client::{graphql_url, GraphQLClient},
@@ -201,6 +201,12 @@ impl GlobalArgs {
 
     pub fn fuzzy_select(&self) -> FuzzySelect {
         FuzzySelect::new()
+            .with_theme(self.color.dialoguer())
+            .no_prompt(self.no_prompt)
+    }
+
+    pub fn input(&self) -> Input {
+        Input::new()
             .with_theme(self.color.dialoguer())
             .no_prompt(self.no_prompt)
     }

@@ -1,0 +1,7 @@
+query DatasetInfo($slug: String!) {
+  datasetBySlug(slug: $slug) {
+    latestVersion {
+      version
+    }
+  }
+}

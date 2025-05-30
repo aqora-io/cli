@@ -1,9 +1,11 @@
 use crate::{
+    checksum::Checksum,
     commands::{login::check_login, GlobalArgs},
     compress::{compress, DEFAULT_ARCH_EXTENSION, DEFAULT_ARCH_MIME_TYPE},
+    dataset::AqoraDatasetConfig,
     dirs::{
         project_last_run_dir, project_last_run_result, project_use_case_toml_path, pyproject_path,
-        read_pyproject,
+        read_dataset_project, read_pyproject,
     },
     error::{self, Result},
     graphql_client::{custom_scalars::*, GraphQLClient},
@@ -15,13 +17,20 @@ use crate::{
     upload::upload_project_version_file,
 };
 use aqora_config::{PyProject, Version};
+use aqora_data_utils::{
+    read,
+    write::{self, AsyncFileWriter},
+};
+use axum::body::Bytes;
 use clap::Args;
 use futures::prelude::*;
 use graphql_client::GraphQLQuery;
 use indicatif::{MultiProgress, ProgressBar};
+use parquet::{data_type::AsBytes, errors::ParquetError};
 use serde::Serialize;
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 use tempfile::tempdir;
+use tokio_util::bytes::{BufMut, BytesMut};
 use tracing::Instrument as _;
 use url::Url;
 
@@ -1104,22 +1113,414 @@ Do you want to run the tests now?"#,
     Ok(())
 }
 
-pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
-    let project = read_pyproject(&global.project).await?;
-    let aqora = project.aqora().ok_or_else(|| {
+#[derive(GraphQLQuery)]
+#[graphql(
+    query_path = "src/graphql/create_dataset_version.graphql",
+    schema_path = "src/graphql/schema.graphql",
+    response_derives = "Debug"
+)]
+struct DatasetInfo;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+    query_path = "src/graphql/create_dataset_version.graphql",
+    schema_path = "src/graphql/schema.graphql",
+    response_derives = "Debug"
+)]
+struct CreateDatasetVersion;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+    query_path = "src/graphql/create_dataset_version.graphql",
+    schema_path = "src/graphql/schema.graphql",
+    response_derives = "Debug"
+)]
+struct CreateDatasetVersionFile;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+    query_path = "src/graphql/create_dataset_version.graphql",
+    schema_path = "src/graphql/schema.graphql",
+    response_derives = "Debug"
+)]
+struct UploadDatasetVersionFilePart;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+    query_path = "src/graphql/create_dataset_version.graphql",
+    schema_path = "src/graphql/schema.graphql",
+    response_derives = "Debug"
+)]
+struct CompleteDatasetVersionFile;
+
+pub async fn upload_dataset(global: GlobalArgs, config: AqoraDatasetConfig) -> Result<()> {
+    let (dataset_name, dataset) = if config.dataset.len() == 1 {
+        config.dataset.iter().next().expect("HashMap is empty")
+    } else {
+        let selected = global
+            .fuzzy_select()
+            .with_prompt("Which dataset do you wish to upload?")
+            .items(config.dataset.keys().cloned())
+            .interact_opt()?
+            .unwrap_or_default();
+        config
+            .dataset
+            .iter()
+            .nth(selected)
+            .ok_or_else(|| error::user("Selected dataset not found", ""))?
+    };
+
+    let pb = global
+        .spinner()
+        .with_message(format!("Uploading dataset {:?}", dataset_name));
+
+    let graphql = global.graphql_client().await?;
+
+    let dataset_info = graphql
+        .send::<DatasetInfo>(dataset_info::Variables {
+            slug: dataset_name.clone(),
+        })
+        .await?;
+    let dataset_id = dataset_info
+        .dataset_by_slug
+        .map(|x| x.id)
+        .ok_or_else(|| error::user(&format!("Dataset {:?} does not exist", dataset_name), ""))?;
+
+    let response = graphql
+        .send::<CreateDatasetVersion>(create_dataset_version::Variables {
+            dataset_id,
+            schema: serde_json::to_value(&dataset.schema).map_err(|error| {
+                error::system_with_internal(
+                    "Cannot upload dataset",
+                    "Please check with Aqora admins",
+                    error,
+                )
+            })?,
+        })
+        .await?;
+    let version_id = response.create_dataset_version;
+
+    let mut reader = dataset.format.open(&dataset.path).await?;
+    let file_len = reader
+        .reader()
+        .metadata()
+        .await
+        .map_err(|err| {
+            error::user(
+                &format!("Could not read metadata from input file: {err}"),
+                "Please check the file and try again",
+            )
+        })?
+        .len();
+    let schema = dataset.schema.clone();
+    let stream = reader
+        .stream_values()
+        .await
+        .map_err(|err| {
+            error::user(
+                &format!("Could not read from input file: {err}"),
+                "Please check the file format and try again",
+            )
+        })?
+        .boxed_local();
+
+    pb.set_style(crate::progress_bar::pretty_bytes());
+    pb.set_length(file_len);
+    pb.set_position(0);
+
+    let stream = stream.inspect_ok(|item| pb.inc(((item.end - item.start) / 2) as u64));
+
+    let read_options = read::Options {
+        batch_size: Some(1024),
+    };
+    let stream = read::from_stream(stream, schema.clone(), read_options).map_err(|err| {
         error::user(
-            "No [tool.aqora] section found in pyproject.toml",
-            "Please make sure you are in the correct directory",
+            &format!("Error reading from input file: {err}"),
+            "Please check the file and try again",
         )
     })?;
-    if aqora.is_use_case() {
-        upload_use_case(args, global, project).await
-    } else if aqora.is_submission() {
-        upload_submission(args, global, project).await
+
+    let writer = AqoraDatasetWriter {
+        graphql,
+        version_id,
+        pb: pb.clone(),
+    };
+    let write_options = write::Options::new()
+        .with_schema_root("arrow_schema".to_string())
+        .with_skip_arrow_metadata(false);
+    let metadata = write::parquet_from_stream(stream, writer, schema, write_options)
+        .await
+        .map_err(|err| {
+            error::user(
+                &format!("An error occurred while writing to the output file: {err}"),
+                "Please check the file format and try again",
+            )
+        })?;
+
+    pb.set_style(indicatif::ProgressStyle::default_spinner());
+    pb.finish_with_message(format!(
+        "{} records written",
+        metadata.iter().map(|meta| meta.num_rows).sum::<i64>(),
+    ));
+
+    Ok(())
+}
+
+const MAX_PART_SIZE: usize = 1_000_000_000; // 1GB
+const MAX_CHUNK_SIZE: usize = 10_000_000; // 10MB
+
+struct AqoraDatasetWriter {
+    graphql: GraphQLClient,
+    version_id: String,
+    pb: ProgressBar,
+}
+
+struct AqoraDatasetPartWriter {
+    chunk: BytesMut,
+    uploader: Actor<Bytes, Result<(), ParquetError>>,
+}
+
+struct AqoraDatasetPartUploader {
+    graphql: GraphQLClient,
+    pb: ProgressBar,
+    file_id: String,
+    e_tags: Vec<String>,
+}
+
+enum Actor<Input, Output> {
+    Alive {
+        tx: tokio::sync::mpsc::Sender<Input>,
+        task: tokio::task::JoinHandle<Output>,
+    },
+    Dead,
+}
+
+enum ActorCloseError<Error> {
+    Dead,
+    Task(tokio::task::JoinError),
+    Actual(Error),
+}
+
+trait ActorState: Send {
+    type Error: Send;
+    type Input: Send;
+    type Output: Send;
+    fn on_receive(
+        &mut self,
+        input: Self::Input,
+    ) -> impl std::future::Future<Output = Result<(), Self::Error>> + std::marker::Send;
+    fn on_closed(
+        self,
+    ) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + std::marker::Send;
+}
+
+impl<Input: Send + 'static, Output: Send + 'static, Error: Send + 'static>
+    Actor<Input, Result<Output, Error>>
+{
+    pub fn start<State>(buffer: usize, state: State) -> Self
+    where
+        State: ActorState<Input = Input, Output = Output, Error = Error> + 'static,
+    {
+        let (tx, mut rx) = tokio::sync::mpsc::channel(buffer);
+        let task = tokio::spawn(async move {
+            let mut state = state;
+            while let Some(input) = rx.recv().await {
+                state.on_receive(input).await?;
+            }
+            state.on_closed().await
+        });
+        Self::Alive { tx, task }
+    }
+
+    pub async fn send(
+        &mut self,
+        input: Input,
+    ) -> Result<(), tokio::sync::mpsc::error::SendError<Input>> {
+        let Self::Alive { tx, .. } = self else {
+            return Err(tokio::sync::mpsc::error::SendError(input));
+        };
+        tx.send(input).await
+    }
+
+    pub async fn close(&mut self) -> Result<Output, ActorCloseError<Error>> {
+        let Self::Alive { tx, task } = std::mem::replace(self, Self::Dead) else {
+            return Err(ActorCloseError::Dead);
+        };
+        drop(tx);
+        task.await
+            .map_err(ActorCloseError::Task)?
+            .map_err(ActorCloseError::Actual)
+    }
+}
+
+#[async_trait::async_trait]
+impl<'a> write::AsyncPartWriter<'a> for AqoraDatasetWriter {
+    type Writer = AqoraDatasetPartWriter;
+
+    fn max_part_size(&self) -> Option<usize> {
+        Some(MAX_PART_SIZE)
+    }
+
+    async fn create_part(&'a mut self, num: usize) -> std::io::Result<Self::Writer> {
+        let response = self
+            .graphql
+            .send::<CreateDatasetVersionFile>(create_dataset_version_file::Variables {
+                dataset_version_id: self.version_id.clone(),
+                file_name: format!("part{num}.parquet"),
+            })
+            .await
+            .map_err(std::io::Error::other)?;
+        let writer = AqoraDatasetPartWriter {
+            chunk: BytesMut::with_capacity(MAX_CHUNK_SIZE),
+            uploader: Actor::start(
+                1,
+                AqoraDatasetPartUploader {
+                    graphql: self.graphql.clone(),
+                    pb: self.pb.clone(),
+                    file_id: response.create_dataset_version_file,
+                    e_tags: Vec::new(),
+                },
+            ),
+        };
+        Ok(writer)
+    }
+}
+
+impl AqoraDatasetPartWriter {
+    fn take_chunk(&mut self) -> Bytes {
+        std::mem::replace(&mut self.chunk, BytesMut::with_capacity(MAX_CHUNK_SIZE)).freeze()
+    }
+
+    async fn upload_chunk(&mut self, chunk: Bytes) -> Result<(), ParquetError> {
+        self.uploader
+            .send(chunk)
+            .await
+            .map_err(|_| parquet::errors::ParquetError::EOF("Cannot upload anymore".to_string()))
+    }
+}
+
+impl AsyncFileWriter for AqoraDatasetPartWriter {
+    fn write(&mut self, mut bs: Bytes) -> future::BoxFuture<'_, parquet::errors::Result<()>> {
+        Box::pin(async move {
+            while bs.len() > self.chunk.capacity() {
+                if self.chunk.is_empty() {
+                    self.upload_chunk(bs.split_to(self.chunk.capacity()))
+                        .await?;
+                } else {
+                    self.chunk.extend(bs.split_to(self.chunk.capacity()));
+                    let chunk = self.take_chunk();
+                    self.upload_chunk(chunk).await?;
+                }
+            }
+            self.chunk.put(bs);
+            if self.chunk.len() < MAX_CHUNK_SIZE {
+                return Ok(());
+            }
+            let chunk = self.take_chunk();
+            self.upload_chunk(chunk).await?;
+            Ok(())
+        })
+    }
+
+    fn complete(&mut self) -> future::BoxFuture<'_, parquet::errors::Result<()>> {
+        Box::pin(async move {
+            if !self.chunk.is_empty() {
+                self.uploader
+                    .send(std::mem::replace(&mut self.chunk, BytesMut::with_capacity(0)).freeze())
+                    .await
+                    .map_err(|_| {
+                        parquet::errors::ParquetError::EOF("Cannot upload anymore".to_string())
+                    })?;
+            }
+            self.uploader.close().await.map_err(|error| match error {
+                ActorCloseError::Dead => ParquetError::EOF("Cannot upload".to_string()),
+                ActorCloseError::Task(error) => ParquetError::External(Box::new(error)),
+                ActorCloseError::Actual(error) => error,
+            })
+        })
+    }
+}
+
+impl ActorState for AqoraDatasetPartUploader {
+    type Input = Bytes;
+    type Output = ();
+    type Error = ParquetError;
+
+    async fn on_receive(&mut self, chunk: Self::Input) -> Result<(), Self::Error> {
+        let chunk_len = chunk.len();
+        let chunk = Arc::new(chunk);
+        let (cksum, upload) = tokio::try_join!(
+            {
+                let chunk = Arc::clone(&chunk);
+                tokio::task::spawn_blocking(move || Checksum::default_from_bytes(chunk.as_bytes()))
+                    .map_err(|error| ParquetError::External(Box::new(error)))
+            },
+            {
+                self.graphql
+                    .send::<UploadDatasetVersionFilePart>(
+                        upload_dataset_version_file_part::Variables {
+                            dataset_version_file_id: self.file_id.clone(),
+                            part: self.e_tags.len() as i64,
+                            part_size: chunk_len as i64,
+                        },
+                    )
+                    .map_err(|error| ParquetError::External(Box::new(error)))
+            }
+        )?;
+        let chunk = Arc::into_inner(chunk).expect("Chunk still referenced");
+        let response = crate::s3::upload_body(
+            self.graphql.inner(),
+            chunk,
+            &upload.upload_dataset_version_file_part,
+            chunk_len,
+            None,
+            cksum,
+        )
+        .await
+        .map_err(|error| ParquetError::External(Box::new(error)))?;
+        self.e_tags.push(response.e_tag);
+        self.pb.inc((chunk_len / 2) as u64);
+        Ok(())
+    }
+
+    async fn on_closed(self) -> Result<Self::Output, Self::Error> {
+        let response = self
+            .graphql
+            .send::<CompleteDatasetVersionFile>(complete_dataset_version_file::Variables {
+                dataset_version_file_id: self.file_id,
+                e_tags: self.e_tags,
+            })
+            .await
+            .map_err(|error| ParquetError::External(Box::new(error)))?;
+
+        tracing::debug!(
+            "part is {} bytes",
+            response.complete_dataset_version_file.size
+        );
+        Ok(())
+    }
+}
+
+pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
+    if let Some(dataset_config) = read_dataset_project(&global.project).await? {
+        upload_dataset(global, dataset_config).await
     } else {
-        Err(error::user(
-            "Other project types not supported yet",
-            "Try one of the supported project types: use_case, submission",
-        ))
+        let project = read_pyproject(&global.project).await?;
+        let aqora = project.aqora().ok_or_else(|| {
+            error::user(
+                "No [tool.aqora] section found in pyproject.toml",
+                "Please make sure you are in the correct directory",
+            )
+        })?;
+        if aqora.is_use_case() {
+            upload_use_case(args, global, project).await
+        } else if aqora.is_submission() {
+            upload_submission(args, global, project).await
+        } else {
+            Err(error::user(
+                "Other project types not supported yet",
+                "Try one of the supported project types: use_case, submission",
+            ))
+        }
     }
 }

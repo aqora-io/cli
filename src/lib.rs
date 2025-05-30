@@ -5,6 +5,7 @@ mod commands;
 mod compress;
 mod config;
 mod credentials;
+mod dataset;
 mod dialog;
 mod dirs;
 mod download;

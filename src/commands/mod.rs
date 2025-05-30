@@ -1,6 +1,6 @@
 mod add;
 mod clean;
-mod data;
+pub mod data;
 mod global_args;
 mod info;
 mod install;

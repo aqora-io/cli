@@ -1,6 +1,7 @@
 use crate::{
     cfg_file::read_cfg_file_key,
     colors::ColorChoiceExt,
+    dataset::{AqoraDatasetConfig, DatasetRootConfig},
     dialog::Confirm,
     error::{self, Result},
     manifest::manifest_name,
@@ -21,6 +22,7 @@ const VENV_DIRNAME: &str = ".venv";
 const VSCODE_DIRNAME: &str = ".vscode";
 const LAST_RUN_DIRNAME: &str = "last_run";
 const PYPROJECT_FILENAME: &str = "pyproject.toml";
+const DATASET_PROJECT_FILENAME: &str = "aqora.toml";
 const USE_CASE_FILENAME: &str = "use_case.toml";
 const PROJECT_CONFIG_FILENAME: &str = "config.toml";
 const VSCODE_SETTINGS_FILENAME: &str = "settings.json";
@@ -102,6 +104,32 @@ pub async fn read_pyproject(project_dir: impl AsRef<Path>) -> Result<PyProject> 
             "Please make sure the file is valid toml",
         )
     })
+}
+
+pub fn dataset_project_path(project_dir: impl AsRef<Path>) -> PathBuf {
+    project_dir.as_ref().join(DATASET_PROJECT_FILENAME)
+}
+
+pub async fn read_dataset_project(
+    project_dir: impl AsRef<Path>,
+) -> Result<Option<AqoraDatasetConfig>> {
+    let path = dataset_project_path(&project_dir);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let string = tokio::fs::read_to_string(&path).await.map_err(|e| {
+        error::user(
+            &format!("Failed to read {}: {}", path.display(), e),
+            &format!("Make sure you have permissions to read {}", path.display()),
+        )
+    })?;
+    let config = DatasetRootConfig::from_toml(string).map_err(|e| {
+        error::user(
+            &format!("Failed to parse {}: {}", path.display(), e),
+            "Please make sure the file is valid toml",
+        )
+    })?;
+    Ok(Some(config.aqora))
 }
 
 #[derive(Serialize, Deserialize, Debug)]

@@ -1,0 +1,23 @@
+query DatasetInfo($slug: String!) {
+  datasetBySlug(slug: $slug) {
+    id
+  }
+}
+
+mutation CreateDatasetVersion($datasetId: ID!, $schema: JSON!) {
+  createDatasetVersion(datasetId: $datasetId, schema: $schema)
+}
+
+mutation CreateDatasetVersionFile($datasetVersionId: ID!, $fileName: String!) {
+  createDatasetVersionFile(datasetVersionId: $datasetVersionId, fileName: $fileName)
+}
+
+mutation UploadDatasetVersionFilePart($datasetVersionFileId: ID!, $part: Int!, $partSize: Int!) {
+  uploadDatasetVersionFilePart(datasetVersionFileId: $datasetVersionFileId, part: $part, partSize: $partSize)
+}
+
+mutation CompleteDatasetVersionFile($datasetVersionFileId: ID!, $eTags: [String!]!) {
+  completeDatasetVersionFile(datasetVersionFileId: $datasetVersionFileId, eTags: $eTags) {
+    size
+  }
+}

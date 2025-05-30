@@ -2,7 +2,7 @@ use std::boxed::Box;
 
 use dialoguer::{
     theme::{SimpleTheme, Theme},
-    Confirm as BaseConfirm, FuzzySelect as BaseFuzzySelect,
+    Confirm as BaseConfirm, FuzzySelect as BaseFuzzySelect, Input as BaseInput,
 };
 
 pub struct Confirm {
@@ -167,5 +167,80 @@ impl FuzzySelect {
             select = select.default(default);
         }
         select.interact_opt()
+    }
+}
+
+pub struct Input {
+    theme: Box<dyn Theme>,
+    no_prompt: bool,
+    show_default: bool,
+    default: Option<String>,
+    prompt: String,
+}
+
+impl Default for Input {
+    fn default() -> Self {
+        Self {
+            theme: Box::new(SimpleTheme),
+            no_prompt: false,
+            show_default: true,
+            default: None,
+            prompt: "".to_string(),
+        }
+    }
+}
+
+impl Input {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_theme(self, theme: Box<dyn Theme>) -> Self {
+        Self { theme, ..self }
+    }
+
+    pub fn no_prompt(self, no_prompt: bool) -> Self {
+        Self { no_prompt, ..self }
+    }
+
+    pub fn with_prompt<S: Into<String>>(self, prompt: S) -> Self {
+        Self {
+            prompt: prompt.into(),
+            ..self
+        }
+    }
+
+    pub fn with_default(self, val: impl Into<String>) -> Self {
+        Self {
+            default: Some(val.into()),
+            ..self
+        }
+    }
+
+    pub fn show_default(self, show_default: bool) -> Self {
+        Self {
+            show_default,
+            ..self
+        }
+    }
+
+    pub fn interact_text(self) -> dialoguer::Result<String> {
+        if self.no_prompt {
+            return if let Some(default) = self.default {
+                Ok(default.clone())
+            } else {
+                Err(dialoguer::Error::IO(std::io::Error::other(
+                    "No auto confirm value set on dialog",
+                )))
+            };
+        }
+
+        let mut input = BaseInput::with_theme(self.theme.as_ref())
+            .with_prompt(self.prompt)
+            .show_default(self.show_default);
+        if let Some(default) = self.default {
+            input = input.default(default);
+        }
+        input.interact_text()
     }
 }

@@ -13,7 +13,7 @@ use aqora_data_utils::{
 use clap::{Args, ValueEnum};
 use futures::{StreamExt, TryStreamExt};
 use regex::Regex;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::io::AsyncSeekExt;
 
 use crate::error::{self, Result};
@@ -27,25 +27,25 @@ pub enum SchemaOutput {
     Json,
 }
 
-#[derive(Debug, Serialize, ValueEnum, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, ValueEnum, Clone, Copy)]
 pub enum FileTypeArg {
     Json,
     Csv,
 }
 
-#[derive(Debug, Serialize, ValueEnum, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, ValueEnum, Clone, Copy)]
 pub enum JsonItemTypeArg {
     Object,
     List,
 }
 
-#[derive(Debug, Serialize, ValueEnum, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, ValueEnum, Clone, Copy)]
 pub enum JsonFileTypeArg {
     Json,
     Jsonl,
 }
 
-#[derive(Args, Debug, Serialize)]
+#[derive(Args, Clone, Debug, Serialize, Deserialize)]
 pub struct FormatOptions {
     #[arg(value_enum, long)]
     file_type: Option<FileTypeArg>,
