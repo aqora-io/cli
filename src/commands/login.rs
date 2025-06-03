@@ -47,7 +47,7 @@ impl GlobalArgs {
 #[derive(GraphQLQuery)]
 #[graphql(
     query_path = "src/graphql/oauth2_redirect_subscription.graphql",
-    schema_path = "src/graphql/schema.graphql",
+    schema_path = "schema.graphql",
     response_derives = "Debug"
 )]
 pub struct Oauth2RedirectSubscription;
@@ -73,7 +73,7 @@ async fn get_oauth_code(
     let signature_bytes = keypair.sign(authorize_url.as_str().as_bytes());
     let signature = BASE64_URL_SAFE_NO_PAD.encode(signature_bytes.as_ref());
 
-    let client = GraphQLClient::no_creds(global.graphql_url()?)?;
+    let client = GraphQLClient::new(global.graphql_url()?, None);
     let mut subscription = client
         .subscribe::<Oauth2RedirectSubscription>(oauth2_redirect_subscription::Variables {
             auth_url: authorize_url.clone(),
@@ -142,7 +142,7 @@ fn prompt_line(prompt: Option<impl AsRef<str>>) -> std::io::Result<String> {
 #[derive(GraphQLQuery)]
 #[graphql(
     query_path = "src/graphql/login.graphql",
-    schema_path = "src/graphql/schema.graphql",
+    schema_path = "schema.graphql",
     variables_derives = "Debug",
     response_derives = "Debug"
 )]
@@ -151,7 +151,7 @@ struct LoginPageUserMutation;
 #[derive(GraphQLQuery)]
 #[graphql(
     query_path = "src/graphql/oauth2_authorize.graphql",
-    schema_path = "src/graphql/schema.graphql",
+    schema_path = "schema.graphql",
     variables_derives = "Debug",
     response_derives = "Debug"
 )]
@@ -276,7 +276,7 @@ async fn login_interactive(
 #[derive(GraphQLQuery)]
 #[graphql(
     query_path = "src/graphql/oauth2_token.graphql",
-    schema_path = "src/graphql/schema.graphql",
+    schema_path = "schema.graphql",
     response_derives = "Debug"
 )]
 pub struct Oauth2TokenMutation;
@@ -294,25 +294,14 @@ async fn do_login(args: Login, global: GlobalArgs, progress: ProgressBar) -> Res
                 // cancelled
                 return Ok(());
             };
-            let client = reqwest::Client::new();
-            let result = graphql_client::reqwest::post_graphql::<Oauth2TokenMutation, _>(
-                &client,
-                global.graphql_url()?,
-                oauth2_token_mutation::Variables {
+            let result = GraphQLClient::new(global.graphql_url()?, None)
+                .send::<Oauth2TokenMutation>(oauth2_token_mutation::Variables {
                     client_id: client_id.clone(),
                     code,
                     redirect_uri,
-                },
-            )
-            .await?
-            .data
-            .ok_or_else(|| {
-                error::system(
-                    "GraphQL response missing data",
-                    "This is a bug, please report it",
-                )
-            })?
-            .oauth2_token;
+                })
+                .await?
+                .oauth2_token;
             if let Some(issued) = result.issued {
                 let credentials = Credentials {
                     client_id,

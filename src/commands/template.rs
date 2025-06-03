@@ -21,7 +21,7 @@ use url::Url;
 #[derive(GraphQLQuery)]
 #[graphql(
     query_path = "src/graphql/get_competition_template.graphql",
-    schema_path = "src/graphql/schema.graphql",
+    schema_path = "schema.graphql",
     response_derives = "Debug"
 )]
 pub struct GetCompetitionTemplate;
@@ -29,7 +29,7 @@ pub struct GetCompetitionTemplate;
 #[derive(GraphQLQuery)]
 #[graphql(
     query_path = "src/graphql/get_viewer_enabled_entities.graphql",
-    schema_path = "src/graphql/schema.graphql",
+    schema_path = "schema.graphql",
     response_derives = "Debug,Clone"
 )]
 pub struct GetViewerEnabledEntities;

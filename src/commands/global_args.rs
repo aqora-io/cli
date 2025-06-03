@@ -3,7 +3,7 @@ use crate::{
     dialog::{Confirm, FuzzySelect},
     dirs::{init_venv, opt_init_venv},
     error::{self, Result},
-    graphql_client::{graphql_url, GraphQLClient},
+    graphql_client::{self, graphql_url, GraphQLClient},
     progress_bar::default_spinner,
 };
 use aqora_runner::python::{ColorChoice, LinkMode, PipOptions, PyEnv};
@@ -112,10 +112,10 @@ impl GlobalArgs {
 
     pub async fn graphql_client(&self) -> Result<GraphQLClient> {
         match self.config_home().await {
-            Ok(config_home) => Ok(GraphQLClient::new(config_home, self.aqora_url()?).await?),
+            Ok(config_home) => Ok(graphql_client::new(config_home, self.aqora_url()?).await?),
             Err(err) => {
                 tracing::warn!("Could not access credentials: {}", err.description());
-                Ok(GraphQLClient::no_creds(self.aqora_url()?)?)
+                Ok(GraphQLClient::new(self.aqora_url()?, None))
             }
         }
     }

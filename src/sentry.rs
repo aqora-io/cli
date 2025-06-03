@@ -108,10 +108,8 @@ fn tracing_setup() -> Option<tracing_appender::non_blocking::WorkerGuard> {
                 if meta.level() > &tracing::Level::WARN || meta.fields().field("is_user").is_some()
                 {
                     Ignore
-                } else if meta.level() > &tracing::Level::ERROR {
-                    Event
                 } else {
-                    Exception
+                    Breadcrumb
                 }
             })
             .boxed(),

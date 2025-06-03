@@ -42,7 +42,7 @@ pub struct Upload {
 #[derive(GraphQLQuery)]
 #[graphql(
     query_path = "src/graphql/competition_by_slug.graphql",
-    schema_path = "src/graphql/schema.graphql",
+    schema_path = "schema.graphql",
     response_derives = "Debug"
 )]
 struct CompetitionBySlug;
@@ -91,7 +91,7 @@ async fn get_competition_by_slug(
 #[derive(GraphQLQuery)]
 #[graphql(
     query_path = "src/graphql/submission_upload_info.graphql",
-    schema_path = "src/graphql/schema.graphql",
+    schema_path = "schema.graphql",
     response_derives = "Debug"
 )]
 pub struct SubmissionUploadInfo;
@@ -174,7 +174,7 @@ pub async fn get_submission_upload_info(
 #[derive(GraphQLQuery)]
 #[graphql(
     query_path = "src/graphql/latest_submission_version.graphql",
-    schema_path = "src/graphql/schema.graphql",
+    schema_path = "schema.graphql",
     response_derives = "Debug"
 )]
 pub struct LatestSubmissionVersion;
@@ -237,7 +237,7 @@ pub async fn get_latest_submission_version(
 #[derive(GraphQLQuery)]
 #[graphql(
     query_path = "src/graphql/join_competition.graphql",
-    schema_path = "src/graphql/schema.graphql",
+    schema_path = "schema.graphql",
     response_derives = "Debug"
 )]
 pub struct JoinCompetition;
@@ -245,7 +245,7 @@ pub struct JoinCompetition;
 #[derive(GraphQLQuery)]
 #[graphql(
     query_path = "src/graphql/accept_competition_rules.graphql",
-    schema_path = "src/graphql/schema.graphql",
+    schema_path = "schema.graphql",
     response_derives = "Debug"
 )]
 pub struct AcceptCompetitionRules;
@@ -253,7 +253,7 @@ pub struct AcceptCompetitionRules;
 #[derive(GraphQLQuery)]
 #[graphql(
     query_path = "src/graphql/update_use_case.graphql",
-    schema_path = "src/graphql/schema.graphql",
+    schema_path = "schema.graphql",
     response_derives = "Debug,PartialEq"
 )]
 pub struct UpdateUseCaseMutation;
@@ -261,7 +261,7 @@ pub struct UpdateUseCaseMutation;
 #[derive(GraphQLQuery)]
 #[graphql(
     query_path = "src/graphql/validate_use_case.graphql",
-    schema_path = "src/graphql/schema.graphql",
+    schema_path = "schema.graphql",
     response_derives = "Debug"
 )]
 pub struct ValidateUseCaseMutation;
@@ -269,7 +269,7 @@ pub struct ValidateUseCaseMutation;
 #[derive(GraphQLQuery)]
 #[graphql(
     query_path = "src/graphql/update_submission.graphql",
-    schema_path = "src/graphql/schema.graphql",
+    schema_path = "schema.graphql",
     response_derives = "Debug,PartialEq"
 )]
 pub struct UpdateSubmissionMutation;
@@ -277,7 +277,7 @@ pub struct UpdateSubmissionMutation;
 #[derive(GraphQLQuery)]
 #[graphql(
     query_path = "src/graphql/validate_submission.graphql",
-    schema_path = "src/graphql/schema.graphql",
+    schema_path = "schema.graphql",
     response_derives = "Debug"
 )]
 pub struct ValidateSubmissionMutation;

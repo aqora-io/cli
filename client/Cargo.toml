@@ -1,0 +1,29 @@
+[package]
+name = "aqora-client"
+version = "0.13.0"
+edition = "2021"
+publish = false
+
+[features]
+default = []
+ws = ["graphql-ws-client", "tokio-tungstenite"]
+rustls-tls-webpki-roots = [
+  "reqwest/rustls-tls-webpki-roots",
+  "tokio-tungstenite/rustls-tls-webpki-roots",
+]
+
+[dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+graphql_client = "0.14"
+url = "2.5"
+thiserror = "1.0"
+serde_json = "1.0"
+tracing = "0.1"
+async-trait = "0.1"
+futures = "0.3"
+
+graphql-ws-client = { version = "0.11", features = [
+  "client-graphql-client",
+  "tungstenite",
+], optional = true }
+tokio-tungstenite = { version = "0.24", optional = true }

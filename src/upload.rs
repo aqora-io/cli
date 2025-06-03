@@ -18,7 +18,7 @@ use crate::{
 #[derive(GraphQLQuery)]
 #[graphql(
     query_path = "src/graphql/create_multipart_upload.graphql",
-    schema_path = "src/graphql/schema.graphql",
+    schema_path = "schema.graphql",
     response_derives = "Debug"
 )]
 struct CreateMultipartUpload;
@@ -26,7 +26,7 @@ struct CreateMultipartUpload;
 #[derive(GraphQLQuery)]
 #[graphql(
     query_path = "src/graphql/complete_multipart_upload.graphql",
-    schema_path = "src/graphql/schema.graphql",
+    schema_path = "schema.graphql",
     response_derives = "Debug"
 )]
 struct CompleteMultipartUpload;
