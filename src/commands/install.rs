@@ -51,7 +51,7 @@ fn relative_symlink(original: impl AsRef<Path>, link: impl AsRef<Path>) -> std::
 #[derive(GraphQLQuery)]
 #[graphql(
     query_path = "src/graphql/get_competition_use_case.graphql",
-    schema_path = "src/graphql/schema.graphql",
+    schema_path = "schema.graphql",
     response_derives = "Debug"
 )]
 pub struct GetCompetitionUseCase;

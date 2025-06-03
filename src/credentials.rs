@@ -66,7 +66,7 @@ impl Credentials {
 #[derive(GraphQLQuery)]
 #[graphql(
     query_path = "src/graphql/oauth2_token.graphql",
-    schema_path = "src/graphql/schema.graphql",
+    schema_path = "schema.graphql",
     response_derives = "Debug"
 )]
 pub struct Oauth2TokenMutation;
@@ -185,7 +185,7 @@ where
 #[derive(GraphQLQuery)]
 #[graphql(
     query_path = "src/graphql/oauth2_refresh.graphql",
-    schema_path = "src/graphql/schema.graphql",
+    schema_path = "schema.graphql",
     response_derives = "Debug"
 )]
 pub struct Oauth2RefreshMutation;

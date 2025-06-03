@@ -20,7 +20,7 @@ pub struct UseCase {
 #[derive(GraphQLQuery)]
 #[graphql(
     query_path = "src/graphql/use_case_template_info.graphql",
-    schema_path = "src/graphql/schema.graphql",
+    schema_path = "schema.graphql",
     response_derives = "Debug"
 )]
 struct UseCaseTemplateInfo;

@@ -15,7 +15,7 @@ use which::which;
 #[derive(GraphQLQuery)]
 #[graphql(
     query_path = "src/graphql/viewer_info.graphql",
-    schema_path = "src/graphql/schema.graphql",
+    schema_path = "schema.graphql",
     response_derives = "Debug"
 )]
 pub struct ViewerInfo;
