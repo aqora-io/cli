@@ -13,12 +13,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.9
+      - name: Set Rust caching env vars
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
           cache: "pip"
+      - run: rustup component add rustfmt clippy
       - run: pip install uv
-      - uses: Swatinem/rust-cache@v2
       - run: rustc --version
       - run: cargo fmt --all --check
       - run: cargo clippy -- -D warnings
