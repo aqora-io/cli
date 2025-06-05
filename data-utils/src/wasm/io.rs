@@ -1,13 +1,16 @@
 use js_sys::{IteratorNext, JsString, Object, Uint8Array};
-use tokio::io::{self, AsyncRead, AsyncSeek, ReadBuf, SeekFrom};
+use tokio::io::{self, AsyncRead, AsyncSeek, AsyncWrite, ReadBuf, SeekFrom};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{Blob, FileReaderSync, ReadableStream, ReadableStreamDefaultReader};
+use web_sys::{
+    Blob, FileReaderSync, ReadableStream, ReadableStreamDefaultReader, WritableStream,
+    WritableStreamDefaultWriter,
+};
 
 use std::future::Future;
 use std::io::{Read, Seek};
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::pin::{pin, Pin};
+use std::task::{ready, Context, Poll};
 
 pub fn set_console_error_panic_hook() {
     #[cfg(feature = "console_error_panic_hook")]
@@ -23,7 +26,7 @@ fn js_value_type_name(value: &JsValue) -> JsString {
     }
 }
 
-fn js_value_to_io_error(value: &JsValue) -> io::Error {
+pub(crate) fn js_value_to_io_error(value: &JsValue) -> io::Error {
     io::Error::new(
         io::ErrorKind::Other,
         format!(
@@ -326,8 +329,107 @@ impl Read for BlobReader {
     }
 }
 
-// https://docs.rs/wasm-bindgen-futures/latest/src/wasm_bindgen_futures/stream.rs.html#39-81
+enum JsAsyncWriterState {
+    NotReady(JsFuture),
+    Writing(JsFuture),
+    Closing(JsFuture),
+    Closed,
+}
 
-// https://developer.mozilla.org/en-US/docs/Web/API/WritableStream/getWriter
-// https://developer.mozilla.org/en-US/docs/Web/API/TransformStream
-// https://stackoverflow.com/questions/14269233/node-js-how-to-read-a-stream-into-a-buffer
+pub struct JsAsyncWriter {
+    writer: WritableStreamDefaultWriter,
+    state: JsAsyncWriterState,
+}
+
+impl JsAsyncWriter {
+    pub fn new(writer: WritableStreamDefaultWriter) -> Self {
+        Self {
+            state: JsAsyncWriterState::NotReady(writer.ready().into()),
+            writer,
+        }
+    }
+}
+
+impl TryFrom<WritableStream> for JsAsyncWriter {
+    type Error = JsValue;
+    fn try_from(stream: WritableStream) -> Result<Self, Self::Error> {
+        Ok(Self::new(stream.get_writer()?))
+    }
+}
+
+impl AsyncWrite for JsAsyncWriter {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        use JsAsyncWriterState::*;
+        Poll::Ready(loop {
+            match &mut self.state {
+                NotReady(fut) => match ready!(pin!(fut).poll(cx)) {
+                    Ok(_) => {
+                        self.state = Writing(JsFuture::from(
+                            self.writer.write_with_chunk(&Uint8Array::from(buf)),
+                        ));
+                        continue;
+                    }
+                    Err(err) => break Err(js_value_to_io_error(&err)),
+                },
+                Writing(fut) => match ready!(pin!(fut).poll(cx)) {
+                    Ok(_) => {
+                        self.state = NotReady(JsFuture::from(self.writer.ready()));
+                        break Ok(buf.len());
+                    }
+                    Err(err) => {
+                        self.state = NotReady(JsFuture::from(self.writer.ready()));
+                        break Err(js_value_to_io_error(&err));
+                    }
+                },
+                Closing(_) | Closed => {
+                    break Err(io::Error::new(
+                        io::ErrorKind::BrokenPipe,
+                        "Writer is closing or already closed",
+                    ));
+                }
+            }
+        })
+    }
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        use JsAsyncWriterState::*;
+        Poll::Ready(match &mut self.state {
+            Writing(fut) => match ready!(pin!(fut).poll(cx)) {
+                Ok(_) => {
+                    self.state = NotReady(JsFuture::from(self.writer.ready()));
+                    Ok(())
+                }
+                Err(err) => {
+                    self.state = NotReady(JsFuture::from(self.writer.ready()));
+                    Err(js_value_to_io_error(&err))
+                }
+            },
+            _ => Ok(()),
+        })
+    }
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        use JsAsyncWriterState::*;
+        Poll::Ready(loop {
+            match &mut self.state {
+                NotReady(_) | Writing(_) => {
+                    self.state = Closing(JsFuture::from(self.writer.close()));
+                    continue;
+                }
+                Closing(fut) => match ready!(pin!(fut).poll(cx)) {
+                    Ok(_) => {
+                        self.state = Closed;
+                        break Ok(());
+                    }
+                    Err(err) => {
+                        self.state = NotReady(JsFuture::from(self.writer.ready()));
+                        break Err(js_value_to_io_error(&err));
+                    }
+                },
+                Closed => break Ok(()),
+            }
+        })
+    }
+}

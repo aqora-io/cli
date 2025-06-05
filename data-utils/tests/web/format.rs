@@ -99,7 +99,7 @@ pub async fn test_write_to_parquet() {
                 .infer_and_stream_record_batches(JsValue::UNDEFINED)
                 .await
                 .unwrap()
-                .write_to_parquet(JsValue::UNDEFINED)
+                .convert_to_parquet(JsValue::UNDEFINED)
                 .await
                 .unwrap();
             assert_eq!(parquet.len(), 1);
@@ -130,7 +130,7 @@ pub async fn test_compression_codecs() {
             .await
             .unwrap();
         let parquet = record_batches
-            .write_to_parquet(
+            .convert_to_parquet(
                 to_value(&JsWriteOptions {
                     writer_properties: JsWriterProperties {
                         default_column_properties: JsColumnProperties {

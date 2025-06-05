@@ -257,7 +257,9 @@ mod test {
                     .unwrap(),
             ),
             Default::default(),
+            None,
         )
+        .try_collect::<Vec<_>>()
         .await
         .unwrap();
     }

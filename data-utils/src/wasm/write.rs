@@ -6,23 +6,77 @@ use ts_rs::TS;
 use wasm_bindgen::prelude::*;
 
 use crate::error::{Error, Result};
-use crate::write::parquet_from_stream;
+use crate::write::{AsyncPartitionWriter, AsyncWriteToFileWriter, ParquetStream};
 
-use super::blob::JsPartWriter;
+use super::io::{js_value_to_io_error, JsAsyncWriter};
 use super::read::JsRecordBatchStream;
 use super::serde::{from_value, to_value};
+
+#[derive(TS, Serialize, Deserialize, Debug, Clone, Default)]
+#[ts(export, export_to = "bindings.ts", rename = "StreamWriterOptions")]
+pub struct JsPartWriterOptions {
+    #[serde(with = "super::serde::preserve")]
+    #[ts(type = "(stream: ReadableStream) => void")]
+    on_stream: js_sys::Function,
+    max_part_size: Option<usize>,
+}
+
+#[wasm_bindgen(js_name = StreamWriter)]
+pub struct JsPartWriter {
+    on_stream: js_sys::Function,
+    max_part_size: Option<usize>,
+}
+
+impl JsPartWriter {
+    pub fn new(options: JsPartWriterOptions) -> Self {
+        Self {
+            on_stream: options.on_stream,
+            max_part_size: options.max_part_size,
+        }
+    }
+}
+
+#[wasm_bindgen(js_class = StreamWriter)]
+impl JsPartWriter {
+    #[wasm_bindgen(constructor)]
+    pub fn js_new(
+        #[wasm_bindgen(unchecked_param_type = "bindings.StreamWriterOptions")] options: JsValue,
+    ) -> Result<Self> {
+        Ok(Self::new(from_value(options)?))
+    }
+
+    fn create_stream(&self) -> Result<JsAsyncWriter, JsValue> {
+        let streams = web_sys::TransformStream::new()?;
+        let writable = streams.writable().try_into()?;
+        self.on_stream.call1(&JsValue::NULL, &streams.readable())?;
+        Ok(writable)
+    }
+}
+
+#[async_trait::async_trait(?Send)]
+impl AsyncPartitionWriter for JsPartWriter {
+    type Writer = AsyncWriteToFileWriter<JsAsyncWriter>;
+    async fn next_partition(&mut self) -> std::io::Result<Self::Writer> {
+        Ok(AsyncWriteToFileWriter(
+            self.create_stream()
+                .map_err(|err| js_value_to_io_error(&err))?,
+        ))
+    }
+    fn max_partition_size(&self) -> Option<usize> {
+        self.max_part_size
+    }
+}
 
 #[wasm_bindgen(js_class = "RecordBatchStream")]
 impl JsRecordBatchStream {
     #[wasm_bindgen(js_name = "writeToParquet")]
-    pub async fn write_to_parquet(
+    pub async fn write_parquet(
         self,
+        writer: &mut JsPartWriter,
         #[wasm_bindgen(unchecked_param_type = "undefined | bindings.WriteOptions | null")]
         options: JsValue,
-    ) -> Result<Vec<web_sys::Blob>> {
+    ) -> Result<()> {
         let mut options = from_value::<Option<JsWriteOptions>>(options)?.unwrap_or_default();
-        let mut writer =
-            JsPartWriter::new("application/parquet".to_string(), options.max_part_size);
         let schema = self.0.schema().clone();
         let stream = if let Some(progress) = options.progress.take() {
             self.0
@@ -56,8 +110,17 @@ impl JsRecordBatchStream {
         } else {
             self.0.boxed_local()
         };
-        parquet_from_stream(stream, &mut writer, schema, options.try_into()?).await?;
-        writer.into_blobs()
+        let batch_buffer_size = options.batch_buffer_size;
+        ParquetStream::new(
+            stream,
+            writer,
+            schema,
+            options.try_into()?,
+            batch_buffer_size,
+        )
+        .try_collect::<Vec<_>>()
+        .await?;
+        Ok(())
     }
 }
 
@@ -67,6 +130,9 @@ pub struct JsWriteOptions {
     #[serde(default)]
     #[ts(optional)]
     pub max_part_size: Option<usize>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub batch_buffer_size: Option<usize>,
     #[serde(default, with = "super::serde::preserve::option")]
     #[ts(optional, type = "(start: number, end: number, record: any) => void")]
     pub progress: Option<js_sys::Function>,

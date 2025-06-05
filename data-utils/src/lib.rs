@@ -1,3 +1,5 @@
+#[cfg(feature = "aqora-client")]
+pub mod aqora_client;
 #[cfg(feature = "csv")]
 pub mod csv;
 pub mod error;

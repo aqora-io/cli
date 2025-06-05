@@ -3,7 +3,7 @@ use std::task::{ready, Context, Poll};
 
 use arrow::record_batch::RecordBatch;
 use futures::prelude::*;
-use pin_project_lite::pin_project;
+use pin_project::pin_project;
 use serde::{Deserialize, Serialize};
 use serde_arrow::{schema::SerdeArrowSchema, ArrayBuilder};
 
@@ -22,7 +22,7 @@ pub struct Options {
     pub batch_size: Option<usize>,
 }
 
-pin_project! {
+#[pin_project]
 pub struct RecordBatchStream<S> {
     #[pin]
     stream: S,
@@ -31,7 +31,6 @@ pub struct RecordBatchStream<S> {
     options: Options,
     current_batch_size: usize,
     reader_done: bool,
-}
 }
 
 impl<S> RecordBatchStream<S> {
