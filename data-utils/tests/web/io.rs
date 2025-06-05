@@ -1,6 +1,6 @@
 use wasm_bindgen_test::*;
 
-use aqora_data_utils::wasm::{blob::vec_to_blob, io::set_console_error_panic_hook};
+use aqora_data_utils::wasm::{blob::vec_to_blob, error::set_console_error_panic_hook};
 use std::io::SeekFrom;
 
 fn new_blob(size: usize) -> web_sys::Blob {

@@ -11,8 +11,8 @@ use crate::error::{BoxError, MiddlewareError};
 // use crate::middleware::{Middleware, MiddlewareError, Next};
 
 pub struct Tokens {
-    access_token: Option<String>,
-    refresh_token: Option<String>,
+    pub access_token: Option<String>,
+    pub refresh_token: Option<String>,
 }
 
 #[cfg_attr(feature = "threaded", async_trait)]

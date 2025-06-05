@@ -6,7 +6,6 @@ use web_sys::{Blob, BlobPropertyBag};
 
 use crate::error::Result;
 use crate::format::{FileKind, FormatReader};
-use crate::write::AsyncPartWriter;
 
 use super::format::JsFormatReader;
 use super::io::AsyncBlobReader;
@@ -77,46 +76,4 @@ pub fn vec_to_blob(vec: Vec<u8>, chunk_size: u32, options: &BlobPropertyBag) -> 
         .as_ref(),
         options,
     )?)
-}
-
-pub struct JsPartWriter {
-    buffers: Vec<io::Cursor<Vec<u8>>>,
-    max_part_size: Option<usize>,
-    content_type: String,
-}
-
-impl JsPartWriter {
-    pub fn new(content_type: String, max_part_size: Option<usize>) -> Self {
-        Self {
-            buffers: vec![],
-            max_part_size,
-            content_type,
-        }
-    }
-
-    pub fn into_blobs(self) -> Result<Vec<Blob>> {
-        let options = BlobPropertyBag::new();
-        options.set_type(&self.content_type);
-        self.buffers
-            .into_iter()
-            .map(|buf| vec_to_blob(buf.into_inner(), 65_536, &options))
-            .collect()
-    }
-    // }
-}
-
-#[async_trait::async_trait]
-impl<'a> AsyncPartWriter<'a> for JsPartWriter {
-    type Writer = &'a mut io::Cursor<Vec<u8>>;
-    async fn create_part(&'a mut self, num: usize) -> io::Result<Self::Writer> {
-        if num + 1 > self.buffers.len() {
-            self.buffers.resize(num + 1, io::Cursor::new(vec![]));
-        } else {
-            self.buffers[num] = io::Cursor::new(vec![]);
-        }
-        Ok(&mut self.buffers[num])
-    }
-    fn max_part_size(&self) -> Option<usize> {
-        self.max_part_size
-    }
 }

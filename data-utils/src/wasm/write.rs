@@ -2,27 +2,84 @@ use std::collections::HashMap;
 
 use futures::prelude::*;
 use serde::{Deserialize, Serialize};
+use tokio::io::{SimplexStream, WriteHalf};
 use ts_rs::TS;
 use wasm_bindgen::prelude::*;
 
 use crate::error::{Error, Result};
-use crate::write::parquet_from_stream;
+use crate::write::{AsyncPartitionWriter, BufferOptions, ParquetStream};
 
-use super::blob::JsPartWriter;
+use super::error::WasmError;
+use super::io::async_read_to_readable_stream;
 use super::read::JsRecordBatchStream;
 use super::serde::{from_value, to_value};
 
+#[derive(TS, Serialize, Deserialize, Debug, Clone, Default)]
+#[ts(export, rename = "StreamWriterOptions")]
+pub struct JsPartWriterOptions {
+    #[serde(with = "super::serde::preserve")]
+    #[ts(type = "(stream: ReadableStream) => void")]
+    pub on_stream: js_sys::Function,
+    #[ts(optional)]
+    pub max_partition_size: Option<usize>,
+    #[ts(optional)]
+    pub buffer_size: Option<usize>,
+}
+
+const DEFAULT_BUFFER_SIZE: usize = 64 * 1024 * 1024; // 64 MB
+
+#[wasm_bindgen(js_name = StreamWriter)]
+pub struct JsPartWriter {
+    on_stream: js_sys::Function,
+    max_partition_size: Option<usize>,
+    buffer_size: usize,
+}
+
+impl JsPartWriter {
+    pub fn new(options: JsPartWriterOptions) -> Self {
+        Self {
+            on_stream: options.on_stream,
+            max_partition_size: options.max_partition_size,
+            buffer_size: options.buffer_size.unwrap_or(DEFAULT_BUFFER_SIZE),
+        }
+    }
+
+    fn create_stream(&self) -> Result<WriteHalf<SimplexStream>, WasmError> {
+        let (reader, writer) = tokio::io::simplex(self.buffer_size);
+        let stream = async_read_to_readable_stream(reader, self.buffer_size);
+        self.on_stream.call1(&JsValue::NULL, &stream)?;
+        Ok(writer)
+    }
+}
+
+#[wasm_bindgen(js_class = StreamWriter)]
+impl JsPartWriter {
+    #[wasm_bindgen(constructor)]
+    pub fn js_new(
+        #[wasm_bindgen(unchecked_param_type = "StreamWriterOptions")] options: JsValue,
+    ) -> Result<Self> {
+        Ok(Self::new(from_value(options)?))
+    }
+}
+
+#[async_trait::async_trait(?Send)]
+impl AsyncPartitionWriter for JsPartWriter {
+    type Writer = WriteHalf<SimplexStream>;
+    async fn next_partition(&mut self) -> std::io::Result<Self::Writer> {
+        Ok(self.create_stream()?)
+    }
+    fn max_partition_size(&self) -> Option<usize> {
+        self.max_partition_size
+    }
+}
+
 #[wasm_bindgen(js_class = "RecordBatchStream")]
 impl JsRecordBatchStream {
-    #[wasm_bindgen(js_name = "writeToParquet")]
-    pub async fn write_to_parquet(
-        self,
-        #[wasm_bindgen(unchecked_param_type = "undefined | bindings.WriteOptions | null")]
-        options: JsValue,
-    ) -> Result<Vec<web_sys::Blob>> {
+    async fn parquet_stream<W>(self, writer: W, options: JsValue) -> Result<()>
+    where
+        W: AsyncPartitionWriter,
+    {
         let mut options = from_value::<Option<JsWriteOptions>>(options)?.unwrap_or_default();
-        let mut writer =
-            JsPartWriter::new("application/parquet".to_string(), options.max_part_size);
         let schema = self.0.schema().clone();
         let stream = if let Some(progress) = options.progress.take() {
             self.0
@@ -56,17 +113,45 @@ impl JsRecordBatchStream {
         } else {
             self.0.boxed_local()
         };
-        parquet_from_stream(stream, &mut writer, schema, options.try_into()?).await?;
-        writer.into_blobs()
+        let buffer_options = BufferOptions {
+            batch_buffer_size: options.batch_buffer_size,
+            max_memory_size: options.max_memory_size,
+        };
+        ParquetStream::new(stream, writer, schema, options.try_into()?, buffer_options)
+            .try_collect::<Vec<_>>()
+            .await?;
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name = "writeParquet")]
+    pub async fn write_parquet(
+        self,
+        writer: &mut JsPartWriter,
+        #[wasm_bindgen(unchecked_param_type = "undefined | WriteOptions | null")] options: JsValue,
+    ) -> Result<()> {
+        self.parquet_stream(writer, options).await
+    }
+
+    #[cfg(feature = "aqora-client")]
+    #[wasm_bindgen(js_name = "uploadParquet")]
+    pub async fn upload_parquet(
+        self,
+        uploader: &mut super::aqora_client::JsDatasetVersionFileUploader,
+        #[wasm_bindgen(unchecked_param_type = "undefined | WriteOptions | null")] options: JsValue,
+    ) -> Result<()> {
+        self.parquet_stream(uploader, options).await
     }
 }
 
 #[derive(TS, Serialize, Deserialize, Default)]
-#[ts(rename = "WriteOptions", export, export_to = "bindings.ts")]
+#[ts(rename = "WriteOptions", export)]
 pub struct JsWriteOptions {
     #[serde(default)]
     #[ts(optional)]
-    pub max_part_size: Option<usize>,
+    pub batch_buffer_size: Option<usize>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub max_memory_size: Option<usize>,
     #[serde(default, with = "super::serde::preserve::option")]
     #[ts(optional, type = "(start: number, end: number, record: any) => void")]
     pub progress: Option<js_sys::Function>,
@@ -95,7 +180,7 @@ impl TryFrom<JsWriteOptions> for parquet::arrow::arrow_writer::ArrowWriterOption
 }
 
 #[derive(TS, Serialize, Deserialize)]
-#[ts(rename = "BloomFilterPosition", export, export_to = "bindings.ts")]
+#[ts(rename = "BloomFilterPosition", export)]
 #[serde(rename_all = "snake_case")]
 pub enum JsBloomFilterPosition {
     AfterRowGroup,
@@ -112,7 +197,7 @@ impl From<JsBloomFilterPosition> for parquet::file::properties::BloomFilterPosit
 }
 
 #[derive(TS, Serialize, Deserialize)]
-#[ts(rename = "WriterVersion", export, export_to = "bindings.ts")]
+#[ts(rename = "WriterVersion", export)]
 pub enum JsWriterVersion {
     #[serde(rename = "PARQUET_1_0")]
     Parquet1_0,
@@ -130,7 +215,7 @@ impl From<JsWriterVersion> for parquet::file::properties::WriterVersion {
 }
 
 #[derive(TS, Serialize, Deserialize)]
-#[ts(rename = "Encoding", export, export_to = "bindings.ts")]
+#[ts(rename = "Encoding", export)]
 #[serde(rename_all = "snake_case")]
 pub enum JsEncoding {
     Plain,
@@ -159,7 +244,7 @@ impl From<JsEncoding> for parquet::basic::Encoding {
 }
 
 #[derive(TS, Serialize, Deserialize)]
-#[ts(rename = "Compression", export, export_to = "bindings.ts")]
+#[ts(rename = "Compression", export)]
 #[serde(tag = "codec", rename_all = "snake_case")]
 pub enum JsCompression {
     Uncompressed,
@@ -226,7 +311,7 @@ impl TryFrom<JsCompression> for parquet::basic::Compression {
 }
 
 #[derive(TS, Serialize, Deserialize)]
-#[ts(rename = "EnabledStatistics", export, export_to = "bindings.ts")]
+#[ts(rename = "EnabledStatistics", export)]
 #[serde(rename_all = "snake_case")]
 pub enum JsEnabledStatistics {
     None,
@@ -245,7 +330,7 @@ impl From<JsEnabledStatistics> for parquet::file::properties::EnabledStatistics 
 }
 
 #[derive(TS, Serialize, Deserialize)]
-#[ts(rename = "SortingColumn", export, export_to = "bindings.ts")]
+#[ts(rename = "SortingColumn", export)]
 pub struct JsSortingColumn {
     column_idx: i32,
     descending: bool,
@@ -263,7 +348,7 @@ impl From<JsSortingColumn> for parquet::format::SortingColumn {
 }
 
 #[derive(TS, Serialize, Deserialize)]
-#[ts(rename = "KeyValue", export, export_to = "bindings.ts")]
+#[ts(rename = "KeyValue", export)]
 pub struct JsKeyValue {
     key: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -281,7 +366,7 @@ impl From<JsKeyValue> for parquet::format::KeyValue {
 }
 
 #[derive(TS, Serialize, Deserialize, Default)]
-#[ts(rename = "ColumnProperties", export, export_to = "bindings.ts")]
+#[ts(rename = "ColumnProperties", export)]
 pub struct JsColumnProperties {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -298,7 +383,7 @@ pub struct JsColumnProperties {
 }
 
 #[derive(TS, Serialize, Deserialize, Default)]
-#[ts(rename = "WriterProperties", export, export_to = "bindings.ts")]
+#[ts(rename = "WriterProperties", export)]
 pub struct JsWriterProperties {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]

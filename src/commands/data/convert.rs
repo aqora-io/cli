@@ -208,6 +208,10 @@ pub struct Convert {
     schema: Option<String>,
     #[arg(long, default_value_t = 1024)]
     record_batch_size: usize,
+    #[arg(long)]
+    batch_buffer_size: Option<usize>,
+    #[arg(long)]
+    writer_max_memory_size: Option<usize>,
     #[arg(long, value_enum, default_value_t = SchemaOutput::Table)]
     schema_output: SchemaOutput,
     src: PathBuf,
@@ -314,20 +318,19 @@ pub struct WrappedDirWriter {
 }
 
 #[async_trait::async_trait]
-impl<'a> write::AsyncPartWriter<'a> for WrappedDirWriter {
-    type Writer = <DirWriter as write::AsyncPartWriter<'a>>::Writer;
+impl write::AsyncPartitionWriter for WrappedDirWriter {
+    type Writer = <DirWriter as write::AsyncPartitionWriter>::Writer;
 
-    async fn create_part(&'a mut self, num: usize) -> std::io::Result<Self::Writer> {
-        let file = self.writer.create_part(num).await?;
-        self.pb.set_message(format!(
-            "Writing to {}",
-            self.writer.part_path(num).display()
-        ));
+    async fn next_partition(&mut self) -> std::io::Result<Self::Writer> {
+        let path = self.writer.next_path();
+        let file = self.writer.next_partition().await?;
+        self.pb
+            .set_message(format!("Writing to {}", path.display()));
         Ok(file)
     }
 
-    fn max_part_size(&self) -> Option<usize> {
-        self.writer.max_part_size()
+    fn max_partition_size(&self) -> Option<usize> {
+        self.writer.max_partition_size()
     }
 }
 
@@ -391,7 +394,7 @@ pub async fn convert(args: Convert, global: GlobalArgs) -> Result<()> {
                     "Please check the file format and try again",
                 )
             })?
-            .boxed_local();
+            .boxed();
         (schema, stream)
     } else {
         pb.set_message(format!("Inferring schema of {}", args.src.display()));
@@ -430,7 +433,7 @@ pub async fn convert(args: Convert, global: GlobalArgs) -> Result<()> {
         };
         let stream = futures::stream::iter(samples.into_iter().map(std::io::Result::Ok))
             .chain(stream)
-            .boxed_local();
+            .boxed();
         (schema, stream)
     };
 
@@ -454,19 +457,29 @@ pub async fn convert(args: Convert, global: GlobalArgs) -> Result<()> {
         )
     })?;
 
-    let metadata = write::parquet_from_stream(stream, writer, schema, write_options)
-        .await
-        .map_err(|err| {
-            error::user(
-                &format!("An error occurred while writing to the output file: {err}"),
-                "Please check the file format and try again",
-            )
-        })?;
+    let metadata = write::ParquetStream::new(
+        stream,
+        writer,
+        schema,
+        write_options,
+        write::BufferOptions {
+            batch_buffer_size: args.batch_buffer_size,
+            max_memory_size: args.writer_max_memory_size,
+        },
+    )
+    .try_collect::<Vec<_>>()
+    .await
+    .map_err(|err| {
+        error::user(
+            &format!("An error occurred while writing to the output file: {err}"),
+            "Please check the file format and try again",
+        )
+    })?;
 
     pb.set_style(indicatif::ProgressStyle::default_spinner());
     pb.finish_with_message(format!(
         "{} records written",
-        metadata.iter().map(|meta| meta.num_rows).sum::<i64>(),
+        metadata.iter().map(|(_, meta)| meta.num_rows).sum::<i64>(),
     ));
     Ok(())
 }

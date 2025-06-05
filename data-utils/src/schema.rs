@@ -74,11 +74,7 @@ impl From<Schema> for arrow::datatypes::Schema {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq)]
-#[cfg_attr(
-    feature = "wasm",
-    derive(ts_rs::TS),
-    ts(rename = "Schema", export, export_to = "bindings.ts")
-)]
+#[cfg_attr(feature = "wasm", derive(ts_rs::TS), ts(rename = "Schema", export))]
 pub struct SerdeSchema {
     fields: Vec<SerdeField>,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
@@ -99,6 +95,19 @@ impl From<&Schema> for SerdeSchema {
     }
 }
 
+impl From<Schema> for SerdeSchema {
+    fn from(value: Schema) -> Self {
+        Self {
+            fields: value
+                .fields
+                .iter()
+                .map(|field| SerdeField::from(field.as_ref()))
+                .collect(),
+            metadata: value.metadata,
+        }
+    }
+}
+
 impl From<SerdeSchema> for Schema {
     fn from(value: SerdeSchema) -> Self {
         Self {
@@ -112,7 +121,7 @@ impl From<SerdeSchema> for Schema {
 #[cfg_attr(
     feature = "wasm",
     derive(ts_rs::TS),
-    ts(rename = "SchemaField", export, export_to = "bindings.ts")
+    ts(rename = "SchemaField", export)
 )]
 pub struct SerdeField {
     name: String,
@@ -181,7 +190,7 @@ impl From<SerdeField> for FieldRef {
 #[cfg_attr(
     feature = "wasm",
     derive(ts_rs::TS),
-    ts(rename = "SchemaStrategy", export, export_to = "bindings.ts")
+    ts(rename = "SchemaStrategy", export)
 )]
 pub enum SerdeStrategy {
     InconsistentTypes,
@@ -226,7 +235,7 @@ impl fmt::Display for SerdeStrategy {
 #[cfg_attr(
     feature = "wasm",
     derive(ts_rs::TS),
-    ts(rename = "SchemaTimeUnit", export, export_to = "bindings.ts")
+    ts(rename = "SchemaTimeUnit", export)
 )]
 pub enum SerdeTimeUnit {
     Second,
@@ -261,7 +270,7 @@ impl From<SerdeTimeUnit> for TimeUnit {
 #[cfg_attr(
     feature = "wasm",
     derive(ts_rs::TS),
-    ts(rename = "SchemaIntervalUnit", export, export_to = "bindings.ts")
+    ts(rename = "SchemaIntervalUnit", export)
 )]
 pub enum SerdeIntervalUnit {
     YearMonth,
@@ -293,7 +302,7 @@ impl From<SerdeIntervalUnit> for IntervalUnit {
 #[cfg_attr(
     feature = "wasm",
     derive(ts_rs::TS),
-    ts(rename = "SchemaUnionMode", export, export_to = "bindings.ts")
+    ts(rename = "SchemaUnionMode", export)
 )]
 pub enum SerdeUnionMode {
     Sparse,
@@ -322,7 +331,7 @@ impl From<SerdeUnionMode> for UnionMode {
 #[cfg_attr(
     feature = "wasm",
     derive(ts_rs::TS),
-    ts(rename = "SchemaUnionField", export, export_to = "bindings.ts")
+    ts(rename = "SchemaUnionField", export)
 )]
 pub struct SerdeUnionField {
     pub type_id: i8,
@@ -342,7 +351,7 @@ impl From<(i8, &Field)> for SerdeUnionField {
 #[cfg_attr(
     feature = "wasm",
     derive(ts_rs::TS),
-    ts(rename = "SchemaDataType", export, export_to = "bindings.ts")
+    ts(rename = "SchemaDataType", export)
 )]
 #[serde(tag = "data_type")]
 pub enum SerdeDataType {

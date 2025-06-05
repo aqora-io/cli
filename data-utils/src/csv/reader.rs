@@ -15,13 +15,14 @@ pub type CsvReadStream<R, T> = ProcessReadStream<R, CsvProcessor<T>>;
 const RECORD_BUFFER_SIZE: usize = 4096;
 const MAX_RECORD_BUFFER_SIZE: usize = 1024 * 1024 * 1024;
 const ENDS_BUFFER_SIZE: usize = 128;
-const MAX_ENDS_BUFFER_SIZE: usize = 1024;
+const MAX_ENDS_BUFFER_SIZE: usize = 10 * 1024;
 
 #[derive(Default)]
 pub struct CsvProcessor<T> {
     format: CsvFormatChars,
     reader: Reader,
     record_buffer: BytesMut,
+    has_record: bool,
     buffer_pos: usize,
     ends_buffer: Vec<usize>,
     end_pos: usize,
@@ -33,6 +34,7 @@ impl<T> CsvProcessor<T> {
         Self {
             reader: Reader::from(format),
             record_buffer: BytesMut::zeroed(RECORD_BUFFER_SIZE),
+            has_record: false,
             buffer_pos: 0,
             ends_buffer: vec![0; ENDS_BUFFER_SIZE],
             end_pos: 0,
@@ -67,17 +69,28 @@ impl<T> CsvProcessor<T> {
 
     fn csv_process(&mut self, bytes: &[u8], consumed: &mut usize) -> ReadRecordResult {
         let (res, read, written, ends) = self.reader.read_record(
-            bytes,
+            &bytes[*consumed..],
             &mut self.record_buffer[self.buffer_pos..],
             &mut self.ends_buffer[self.end_pos..],
         );
+        self.has_record = matches!(res, ReadRecordResult::Record);
         *consumed += read;
         self.buffer_pos += written;
         self.end_pos += ends;
         res
     }
 
-    fn take_record(&mut self) -> io::Result<Vec<&[u8]>> {
+    fn matches_terminator(&self, bytes: &[u8]) -> bool {
+        if bytes.is_empty() {
+            false
+        } else if let Some(terminator) = self.format.terminator {
+            bytes[0] == terminator
+        } else {
+            bytes.starts_with(b"\r\n") || bytes.starts_with(b"\n")
+        }
+    }
+
+    fn take_byte_record(&mut self) -> io::Result<Vec<&[u8]>> {
         let mut items = Vec::with_capacity(self.end_pos);
         let mut last_end = 0;
         for end in self.ends_buffer[..self.end_pos].iter().copied() {
@@ -96,9 +109,25 @@ impl<T> CsvProcessor<T> {
                 last_end = end;
             }
         }
+        self.has_record = false;
         self.buffer_pos = 0;
         self.end_pos = 0;
         Ok(items)
+    }
+}
+
+impl<T> CsvProcessor<T>
+where
+    T: DeserializeOwned,
+{
+    fn take_record(&mut self) -> Result<T, csv::Error> {
+        match self.take_byte_record() {
+            Ok(record) => match ByteRecord::from(record).deserialize::<T>(None) {
+                Ok(record) => Ok(record),
+                Err(err) => Err(err),
+            },
+            Err(err) => Err(err.into()),
+        }
     }
 }
 
@@ -114,7 +143,7 @@ impl<T> fmt::Debug for CsvProcessor<T> {
 
 impl<T> ByteProcessor for CsvProcessor<T>
 where
-    T: DeserializeOwned + fmt::Debug,
+    T: DeserializeOwned,
 {
     type Item = T;
     type Error = csv::Error;
@@ -123,8 +152,14 @@ where
         bytes: &[u8],
         is_eof: bool,
     ) -> ByteProcessResult<Self::Item, Self::Error> {
+        if self.has_record && self.matches_terminator(bytes) {
+            match self.take_record() {
+                Ok(record) => return ByteProcessResult::Ok((0, 0, record)),
+                Err(err) => return ByteProcessResult::Err(err),
+            }
+        }
         let mut consumed = 0;
-        let record = loop {
+        loop {
             let res = self.csv_process(bytes, &mut consumed);
             match res {
                 ReadRecordResult::InputEmpty => {
@@ -142,32 +177,16 @@ where
                 }
                 ReadRecordResult::End => return ByteProcessResult::Done(consumed),
                 ReadRecordResult::Record => {
-                    if consumed < 1 || bytes.is_empty() {
-                        return ByteProcessResult::Done(0);
-                    } else if self
-                        .format
-                        .terminator
-                        .is_some_and(|marker| bytes[consumed - 1] == marker)
-                        || matches!(bytes[consumed - 1], b'\n' | b'\r')
-                        || is_eof
-                    {
+                    if is_eof || (consumed > 0 && self.matches_terminator(&bytes[consumed - 1..])) {
                         match self.take_record() {
-                            Ok(record) => {
-                                break record;
-                            }
-                            Err(err) => {
-                                return ByteProcessResult::Err(err.into());
-                            }
+                            Ok(record) => return ByteProcessResult::Ok((0, consumed, record)),
+                            Err(err) => return ByteProcessResult::Err(err),
                         }
                     } else {
                         return ByteProcessResult::NotReady(consumed);
                     }
                 }
             }
-        };
-        match ByteRecord::from(record).deserialize::<T>(None) {
-            Ok(record) => ByteProcessResult::Ok((0, consumed, record)),
-            Err(err) => ByteProcessResult::Err(err),
         }
     }
 }

@@ -1,11 +1,18 @@
+SCOPE?=aqora-io
 BUILDFLAGS?=
+CARGOFLAGS?=
 RUSTFLAGS?=
 
-ifeq ($(RELEASE),)
-	BUILDFLAGS+= --dev
-else
+BUILDFLAGS+= --scope ${SCOPE}
+
+ifeq ($(PROFILE),release)
 	BUILDFLAGS+= --release
-	# RUSTFLAGS+= -C opt-level=s
+else ifeq ($(PROFILE),profiling)
+	BUILDFLAGS+= --profiling
+	CARGOFLAGS+= --features console_error_panic_hook
+else
+	BUILDFLAGS+= --dev
+	CARGOFLAGS+= --features console_error_panic_hook
 endif
 
 BROWSER?=chrome
@@ -20,11 +27,11 @@ wasm-pkg:
 .PHONY: wasm-build
 wasm-build:
 	RUSTFLAGS="${RUSTFLAGS}" wasm-pack build --target web --out-name index --weak-refs --reference-types \
-		${BUILDFLAGS} --no-default-features --features default-wasm
+		${BUILDFLAGS} --no-default-features --features default-wasm ${CARGOFLAGS}
 
 .PHONY: ts
 ts:
-	TS_RS_EXPORT_DIR="pkg" cargo test export_bindings --features "wasm-test"
+	cargo test export_bindings --no-default-features --features "wasm-test"
 
 .PHONY: watch
 watch:

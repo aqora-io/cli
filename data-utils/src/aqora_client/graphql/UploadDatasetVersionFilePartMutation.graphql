@@ -1,0 +1,11 @@
+mutation UploadDatasetVersionFilePartMutation(
+  $datasetVersionFileId: ID!
+  $part: Int!
+  $partSize: Int!
+) {
+  uploadDatasetVersionFilePart(
+    datasetVersionFileId: $datasetVersionFileId
+    part: $part
+    partSize: $partSize
+  )
+}

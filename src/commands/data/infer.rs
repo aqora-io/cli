@@ -5,7 +5,7 @@ use aqora_data_utils::infer::SampleDebug;
 use aqora_data_utils::{
     csv::{infer_format as infer_csv_format, CsvFormat},
     infer::{self},
-    json::{infer_format as infer_json_format, JsonFileType, JsonFormat, JsonItemType},
+    json::{infer_format as infer_json_format, JsonFileOptions, JsonFormat, JsonItemOptions},
     schema::Schema,
     value::Value,
     DateParseOptions, Format, FormatReader, ProcessItem,
@@ -195,24 +195,27 @@ impl FormatOptions {
                     )
                 })?;
                 if let Some(file_type) = self.json_file_type {
-                    format.file_type = match file_type {
-                        JsonFileTypeArg::Json => JsonFileType::Json,
-                        JsonFileTypeArg::Jsonl => JsonFileType::Jsonl,
+                    format.file = match file_type {
+                        JsonFileTypeArg::Json => JsonFileOptions::Json {
+                            key_col: self
+                                .json_key_col
+                                .as_deref()
+                                .or_else(|| format.file.key_col())
+                                .map(|s| s.to_string()),
+                        },
+                        JsonFileTypeArg::Jsonl => JsonFileOptions::Jsonl,
                     };
                 }
                 if let Some(item_type) = self.json_item_type {
-                    format.item_type = match item_type {
-                        JsonItemTypeArg::Object => JsonItemType::Object,
-                        JsonItemTypeArg::List => JsonItemType::List {
-                            has_headers: format.item_type.has_headers(),
+                    format.item = match item_type {
+                        JsonItemTypeArg::Object => JsonItemOptions::Object,
+                        JsonItemTypeArg::List => JsonItemOptions::List {
+                            has_headers: format.item.has_headers(),
                         },
                     }
                 }
                 if let Some(headers) = self.has_headers {
-                    format.item_type.set_has_headers(headers)
-                }
-                if let Some(json_key_col) = self.json_key_col.as_ref() {
-                    format.key_col = Some(json_key_col.to_owned());
+                    format.item.set_has_headers(headers)
                 }
                 format.date = date_parse;
                 Format::Json(format)

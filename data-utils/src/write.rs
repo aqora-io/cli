@@ -1,117 +1,384 @@
+use std::collections::VecDeque;
 use std::io;
+use std::pin::{pin, Pin};
 use std::sync::Arc;
+use std::task::{Context, Poll};
 
 use arrow::{datatypes::SchemaRef, record_batch::RecordBatch};
+use async_trait::async_trait;
 use futures::prelude::*;
 use parquet::arrow::async_writer::AsyncArrowWriter;
-use tokio::io::AsyncWrite;
+use pin_project::pin_project;
 
 pub use parquet::arrow::arrow_writer::ArrowWriterOptions as Options;
 pub use parquet::arrow::async_writer::AsyncFileWriter;
 pub use parquet::format::FileMetaData;
 
+use crate::async_util::parquet_async::*;
 use crate::error::{Error, Result};
 use crate::read::RecordBatchStream;
 use crate::schema::Schema;
 
-#[async_trait::async_trait]
-pub trait AsyncPartWriter<'a> {
-    type Writer: AsyncFileWriter + 'a;
-    async fn create_part(&'a mut self, num: usize) -> io::Result<Self::Writer>;
-    fn max_part_size(&self) -> Option<usize>;
+#[derive(Debug, Clone, Copy, Default)]
+pub struct BufferOptions {
+    pub batch_buffer_size: Option<usize>,
+    pub max_memory_size: Option<usize>,
 }
 
-pub struct SinglePart<W>(W);
+#[cfg_attr(feature = "parquet-no-send", async_trait(?Send))]
+#[cfg_attr(not(feature = "parquet-no-send"), async_trait)]
+pub trait AsyncPartitionWriter {
+    type Writer: AsyncFileWriter;
+    async fn next_partition(&mut self) -> io::Result<Self::Writer>;
+    fn max_partition_size(&self) -> Option<usize>;
+}
+
+pub struct SinglePart<W>(Option<W>);
 
 impl<W> SinglePart<W> {
     pub fn new(writer: W) -> Self {
-        Self(writer)
-    }
-
-    pub fn into_inner(self) -> W {
-        self.0
+        Self(Some(writer))
     }
 }
 
-#[async_trait::async_trait]
-impl<'a, W> AsyncPartWriter<'a> for SinglePart<W>
+#[cfg_attr(feature = "parquet-no-send", async_trait(?Send))]
+#[cfg_attr(not(feature = "parquet-no-send"), async_trait)]
+impl<W> AsyncPartitionWriter for SinglePart<W>
 where
-    W: AsyncWrite + Unpin + Send + 'a,
+    W: AsyncFileWriter,
 {
-    type Writer = &'a mut W;
-    async fn create_part(&'a mut self, _: usize) -> io::Result<Self::Writer> {
-        Ok(&mut self.0)
+    type Writer = W;
+    async fn next_partition(&mut self) -> io::Result<Self::Writer> {
+        Ok(self.0.take().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "SinglePart writer already consumed",
+            )
+        })?)
     }
-    fn max_part_size(&self) -> Option<usize> {
+    fn max_partition_size(&self) -> Option<usize> {
         None
     }
 }
 
-#[async_trait::async_trait]
-impl<'a, T> AsyncPartWriter<'a> for &mut T
+#[cfg_attr(feature = "parquet-no-send", async_trait(?Send))]
+#[cfg_attr(not(feature = "parquet-no-send"), async_trait)]
+impl<T> AsyncPartitionWriter for &mut T
 where
-    T: AsyncPartWriter<'a> + Send + Sync,
+    T: AsyncPartitionWriter + MaybeSend,
 {
     type Writer = T::Writer;
-    async fn create_part(&'a mut self, num: usize) -> io::Result<Self::Writer> {
-        T::create_part(self, num).await
+    async fn next_partition(&mut self) -> io::Result<Self::Writer> {
+        T::next_partition(self).await
     }
 
-    fn max_part_size(&self) -> Option<usize> {
-        T::max_part_size(self)
+    fn max_partition_size(&self) -> Option<usize> {
+        T::max_partition_size(self)
     }
 }
 
-pub async fn parquet_from_stream<S, W, E>(
-    mut stream: S,
-    mut writer: W,
-    schema: Schema,
-    options: Options,
-) -> Result<Vec<FileMetaData>>
+async fn close_part<W>(
+    mut part_writer: AsyncArrowWriter<W::Writer>,
+) -> Result<(W::Writer, FileMetaData)>
 where
-    S: Stream<Item = Result<RecordBatch, E>> + Unpin,
-    Error: From<E>,
-    W: for<'a> AsyncPartWriter<'a>,
+    W: AsyncPartitionWriter,
 {
-    let mut part_num = 0;
-    let max_part_size = writer.max_part_size();
-    let schema: SchemaRef = Arc::new(schema.into());
-    let mut part_writer = AsyncArrowWriter::try_new_with_options(
-        writer.create_part(part_num).await?,
+    let meta = part_writer.finish().await?;
+    let writer = part_writer.into_inner();
+    Ok((writer, meta))
+}
+
+type ClosePartFut<'w, Writer> = BoxFuture<'w, Result<(Writer, FileMetaData)>>;
+
+async fn create_part<W>(
+    mut writer: W,
+    schema: SchemaRef,
+    options: Options,
+) -> Result<(W, AsyncArrowWriter<W::Writer>)>
+where
+    W: AsyncPartitionWriter,
+{
+    let part_writer = AsyncArrowWriter::try_new_with_options(
+        writer.next_partition().await?,
         schema.clone(),
         options.clone(),
     )?;
-    let mut out = vec![];
-    loop {
-        if max_part_size.is_some_and(|part_size| part_writer.bytes_written() >= part_size) {
-            out.push(part_writer.close().await?);
-            part_num += 1;
-            part_writer = AsyncArrowWriter::try_new_with_options(
-                writer.create_part(part_num).await?,
-                schema.clone(),
-                options.clone(),
-            )?;
+    Ok((writer, part_writer))
+}
+
+async fn write_part<W>(
+    writer: W,
+    mut part_writer: AsyncArrowWriter<W::Writer>,
+    record_batch: RecordBatch,
+    max_memory_size: Option<usize>,
+) -> Result<(W, AsyncArrowWriter<W::Writer>)>
+where
+    W: AsyncPartitionWriter,
+{
+    part_writer.write(&record_batch).await?;
+    if let Some(max_memory_size) = max_memory_size {
+        if part_writer.memory_size() >= max_memory_size {
+            part_writer.flush().await?;
         }
-        if let Some(record_batch) = stream.next().await.transpose()? {
-            part_writer.write(&record_batch).await?;
-        } else {
-            out.push(part_writer.close().await?);
-            return Ok(out);
+    }
+    Ok((writer, part_writer))
+}
+
+type PartWriterFut<'w, W, Writer> = BoxFuture<'w, Result<(W, AsyncArrowWriter<Writer>)>>;
+
+async fn owned_next<S, T>(mut stream: S) -> Option<(S, T)>
+where
+    S: Stream<Item = T> + Unpin,
+{
+    stream.next().await.map(|next| (stream, next))
+}
+
+type OwnedNextFut<'s, S, T> = BoxFuture<'s, Option<(S, T)>>;
+
+enum WriteState<'w, W>
+where
+    W: AsyncPartitionWriter + 'w,
+{
+    Waiting {
+        empty: bool,
+        writers: Option<(W, AsyncArrowWriter<W::Writer>)>,
+    },
+    Busy {
+        empty: bool,
+        fut: PartWriterFut<'w, W, W::Writer>,
+    },
+}
+
+#[pin_project]
+pub struct ParquetStream<'s, 'w, S, W>
+where
+    S: Stream<Item = Result<RecordBatch, Error>> + Unpin + 's,
+    W: AsyncPartitionWriter + 'w,
+{
+    schema: SchemaRef,
+    options: Options,
+    max_part_size: Option<usize>,
+    buffer_options: BufferOptions,
+    batch_buffer: VecDeque<RecordBatch>,
+    read_fut: Option<OwnedNextFut<'s, S, Result<RecordBatch>>>,
+    write_state: WriteState<'w, W>,
+    closing_futs: Vec<ClosePartFut<'w, W::Writer>>,
+}
+
+impl<S, W> ParquetStream<'_, '_, S, W>
+where
+    S: Stream<Item = Result<RecordBatch, Error>> + MaybeSend + Unpin,
+    W: AsyncPartitionWriter + MaybeSend,
+{
+    pub fn new(
+        stream: S,
+        writer: W,
+        schema: Schema,
+        options: Options,
+        buffer_options: BufferOptions,
+    ) -> Self {
+        let max_part_size = writer.max_partition_size();
+        let schema: SchemaRef = Arc::new(schema.into());
+        let write_state = WriteState::Busy {
+            empty: true,
+            fut: boxed_fut(create_part(writer, schema.clone(), options.clone())),
+        };
+        let batch_buffer = VecDeque::new();
+        let read_fut = Some(boxed_fut(owned_next(stream)));
+        Self {
+            schema,
+            options,
+            max_part_size,
+            buffer_options,
+            batch_buffer,
+            read_fut,
+            write_state,
+            closing_futs: Vec::new(),
         }
     }
 }
 
-impl<S, T, E> RecordBatchStream<S>
+impl<S, W> Stream for ParquetStream<'_, '_, S, W>
 where
-    S: Stream<Item = Result<T, E>> + Unpin,
+    S: Stream<Item = Result<RecordBatch, Error>> + MaybeSend + Unpin,
+    W: AsyncPartitionWriter + MaybeSend,
+{
+    type Item = Result<(W::Writer, FileMetaData), Error>;
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.project();
+        loop {
+            let read_pending = if this
+                .buffer_options
+                .batch_buffer_size
+                .is_none_or(|size| this.batch_buffer.len() < size)
+            {
+                match this.read_fut.as_mut() {
+                    Some(fut) => match fut.as_mut().poll(cx) {
+                        Poll::Ready(Some((stream, next))) => {
+                            *this.read_fut = Some(boxed_fut(owned_next(stream)));
+                            match next {
+                                Ok(record_batch) => this.batch_buffer.push_back(record_batch),
+                                Err(err) => {
+                                    return Poll::Ready(Some(Err(err)));
+                                }
+                            }
+                            false
+                        }
+                        Poll::Ready(None) => {
+                            *this.read_fut = None;
+                            false
+                        }
+                        Poll::Pending => true,
+                    },
+                    None => false,
+                }
+            } else {
+                false
+            };
+            let read_finished = this.read_fut.is_none();
+            let read_full = this
+                .buffer_options
+                .batch_buffer_size
+                .is_some_and(|size| this.batch_buffer.len() >= size);
+
+            let write_pending = match this.write_state {
+                WriteState::Waiting { empty, writers } => {
+                    if this.batch_buffer.is_empty() {
+                        if read_finished && !*empty {
+                            if let Some((_, part_writer)) = writers.take() {
+                                *empty = true;
+                                this.closing_futs
+                                    .push(boxed_fut(close_part::<W>(part_writer)));
+                            }
+                        }
+                    } else {
+                        let (writer, part_writer) =
+                            writers.take().expect("State should change after taken");
+                        if this
+                            .max_part_size
+                            .is_some_and(|part_size| part_writer.bytes_written() >= part_size)
+                        {
+                            this.closing_futs
+                                .push(boxed_fut(close_part::<W>(part_writer)));
+                            *this.write_state = WriteState::Busy {
+                                empty: true,
+                                fut: boxed_fut(create_part(
+                                    writer,
+                                    this.schema.clone(),
+                                    this.options.clone(),
+                                )),
+                            };
+                        } else {
+                            let record_batch = this
+                                .batch_buffer
+                                .pop_front()
+                                .expect("Batch buffer should be checked to not be empty above");
+                            *this.write_state = WriteState::Busy {
+                                empty: false,
+                                fut: boxed_fut(write_part(
+                                    writer,
+                                    part_writer,
+                                    record_batch,
+                                    this.buffer_options.max_memory_size,
+                                )),
+                            }
+                        }
+                    }
+                    false
+                }
+                WriteState::Busy { empty, fut } => match fut.as_mut().poll(cx) {
+                    Poll::Ready(Ok((writer, part_writer))) => {
+                        *this.write_state = WriteState::Waiting {
+                            empty: *empty,
+                            writers: Some((writer, part_writer)),
+                        };
+                        false
+                    }
+                    Poll::Ready(Err(err)) => {
+                        return Poll::Ready(Some(Err(err)));
+                    }
+                    Poll::Pending => true,
+                },
+            };
+            let write_finished = match this.write_state {
+                WriteState::Waiting { empty, .. } => {
+                    this.batch_buffer.is_empty() && (!read_finished || *empty)
+                }
+                _ => false,
+            };
+
+            for (i, closing_fut) in this.closing_futs.iter_mut().enumerate() {
+                match closing_fut.as_mut().poll(cx) {
+                    Poll::Ready(Ok((writer, meta))) => {
+                        drop(this.closing_futs.remove(i));
+                        return Poll::Ready(Some(Ok((writer, meta))));
+                    }
+                    Poll::Ready(Err(err)) => {
+                        drop(this.closing_futs.remove(i));
+                        return Poll::Ready(Some(Err(err)));
+                    }
+                    Poll::Pending => {}
+                }
+            }
+            let close_finished = this.closing_futs.is_empty();
+
+            if read_finished && !read_pending && write_finished && !write_pending && close_finished
+            {
+                return Poll::Ready(None);
+            } else if (read_finished || read_full || read_pending)
+                && (write_finished || write_pending)
+            {
+                return Poll::Pending;
+            }
+        }
+    }
+}
+
+impl<'s, S, T, E> RecordBatchStream<S>
+where
+    S: Stream<Item = Result<T, E>> + MaybeSend + Unpin + 's,
     Error: From<E>,
     T: serde::Serialize,
 {
-    pub async fn write_to_parquet<W>(self, writer: W, options: Options) -> Result<Vec<FileMetaData>>
+    pub fn write_to_parquet<'w, W>(
+        self,
+        writer: W,
+        options: Options,
+        buffer_options: BufferOptions,
+    ) -> ParquetStream<'s, 'w, Self, W>
     where
-        W: for<'a> AsyncPartWriter<'a>,
+        W: AsyncPartitionWriter + MaybeSend + 'w,
     {
         let schema = self.schema().clone();
-        parquet_from_stream::<_, _, Error>(self, writer, schema, options).await
+        ParquetStream::new(self, writer, schema, options, buffer_options)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[cfg(feature = "fs")]
+    #[tokio::test]
+    async fn test_basic_json() {
+        use futures::stream::TryStreamExt;
+        let tempdir = tempfile::TempDir::with_prefix("aqora-data-utils").unwrap();
+        let writer = crate::fs::DirWriter::new(tempdir.path());
+        let mut parquets = crate::fs::open("./tests/data/files/json/basic.json")
+            .await
+            .unwrap()
+            .into_inferred_record_batch_stream(
+                Default::default(),
+                Default::default(),
+                Default::default(),
+            )
+            .await
+            .unwrap()
+            .write_to_parquet(writer, Default::default(), Default::default());
+        let mut file_count = 0;
+        while let Some((file, meta)) = parquets.try_next().await.unwrap() {
+            file_count += 1;
+            assert!(file.metadata().await.unwrap().len() > 0);
+            assert!(meta.num_rows > 0);
+        }
+        assert_eq!(file_count, 1);
     }
 }

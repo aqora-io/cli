@@ -14,7 +14,7 @@ pub mod retry;
 pub mod s3;
 #[cfg(feature = "retry")]
 mod sleep;
-mod tower_util;
+pub mod tower_util;
 #[cfg(feature = "trace")]
 pub mod trace;
 #[cfg(feature = "wasm")]
@@ -25,3 +25,4 @@ pub mod ws;
 pub use client::Client;
 pub use error::{Error, Result};
 pub use graphql_client::GraphQLQuery;
+pub use reqwest;
