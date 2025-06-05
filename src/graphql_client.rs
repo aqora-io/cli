@@ -2,7 +2,7 @@ use crate::{
     credentials::{get_credentials, Credentials},
     error::{self, Error, Result},
 };
-use reqwest::header::{HeaderMap, USER_AGENT};
+use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use std::path::Path;
 use url::Url;
 
@@ -64,10 +64,16 @@ pub fn graphql_url(url: &Url) -> Result<Url> {
     Ok(url.join("/graphql")?)
 }
 
+const AQORA_USER_AGENT: HeaderValue = HeaderValue::from_static(concat!(
+    env!("CARGO_PKG_NAME"),
+    "/",
+    env!("CARGO_PKG_VERSION")
+));
+
 pub async fn new(config_home: impl AsRef<Path>, url: Url) -> Result<GraphQLClient> {
     let credentials = get_credentials(config_home, url.clone()).await?;
     let mut headers = HeaderMap::new();
-    headers.insert(USER_AGENT, "aqora".parse()?);
+    headers.insert(USER_AGENT, AQORA_USER_AGENT);
     let client = reqwest::Client::builder()
         .default_headers(headers)
         .build()?;
