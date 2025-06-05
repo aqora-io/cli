@@ -3,7 +3,7 @@ use wasm_bindgen::prelude::*;
 
 pub use serde_wasm_bindgen::Error;
 
-const DEFAULT_SERIALIZER: serde_wasm_bindgen::Serializer =
+pub const DEFAULT_SERIALIZER: serde_wasm_bindgen::Serializer =
     serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true);
 
 pub fn to_value<T: serde::Serialize + ?Sized>(value: &T) -> Result<JsValue, Error> {

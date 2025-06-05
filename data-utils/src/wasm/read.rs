@@ -11,7 +11,7 @@ pub struct JsRecordBatchStream(#[wasm_bindgen(skip)] pub RecordBatchStream<Value
 
 #[wasm_bindgen(js_class = "RecordBatchStream")]
 impl JsRecordBatchStream {
-    #[wasm_bindgen(unchecked_return_type = "bindings.Schema")]
+    #[wasm_bindgen(unchecked_return_type = "Schema")]
     pub async fn schema(&self) -> Result<JsValue> {
         Ok(to_value(self.0.schema())?)
     }

@@ -184,12 +184,10 @@ jobs:
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - name: Build package
         run: |
-          cargo test export_bindings --features "wasm-test"
-          wasm-pack build --target web --out-name index --release --weak-refs --reference-types --no-default-features --features default-wasm
-          sh configure-pkg.sh "${{ github.server_url }}/${{ github.repository }}" "${{ github.repository_owner }}"
+          cargo test export_bindings --no-default-features --features "wasm-test"
+          wasm-pack build --target web --out-name index --scope "${{ github.repository_owner }}" --release --weak-refs --reference-types --no-default-features --features default-wasm
+          sh configure-pkg.sh "${{ github.server_url }}/${{ github.repository }}"
         working-directory: data-utils
-        env:
-          TS_RS_EXPORT_DIR: "pkg"
       - name: Publish to Github NPM package registry dry run
         run: npm publish --dry-run
         working-directory: data-utils/pkg

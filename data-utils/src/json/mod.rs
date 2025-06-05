@@ -4,19 +4,16 @@ use futures::prelude::*;
 use serde::{Deserialize, Serialize};
 use tokio::io::{self, AsyncRead, AsyncSeek, AsyncSeekExt};
 
+use crate::async_util::parquet_async::{boxed_stream, MaybeSend};
+use crate::format::{Format, ValueStream};
 use crate::process::ProcessItem;
 use crate::value::{DateParseOptions, Value, ValueExt};
-use crate::Format;
 
 pub mod reader;
 pub use reader::{JsonProcessor, JsonReadStream};
 
 #[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, Eq, PartialEq)]
-#[cfg_attr(
-    feature = "wasm",
-    derive(ts_rs::TS),
-    ts(export, export_to = "bindings.ts")
-)]
+#[cfg_attr(feature = "wasm", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum JsonFileType {
     #[default]
@@ -25,11 +22,7 @@ pub enum JsonFileType {
 }
 
 #[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, Eq, PartialEq)]
-#[cfg_attr(
-    feature = "wasm",
-    derive(ts_rs::TS),
-    ts(export, export_to = "bindings.ts")
-)]
+#[cfg_attr(feature = "wasm", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "item_type", rename_all = "snake_case")]
 pub enum JsonItemType {
     #[default]
@@ -58,11 +51,7 @@ impl JsonItemType {
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-#[cfg_attr(
-    feature = "wasm",
-    derive(ts_rs::TS),
-    ts(export, export_to = "bindings.ts")
-)]
+#[cfg_attr(feature = "wasm", derive(ts_rs::TS), ts(export))]
 pub struct JsonFormat {
     #[serde(default)]
     #[cfg_attr(feature = "wasm", ts(optional, as = "Option<JsonFileType>"))]
@@ -83,12 +72,9 @@ impl From<JsonFormat> for Format {
     }
 }
 
-pub async fn read<'a, R>(
-    mut reader: R,
-    options: JsonFormat,
-) -> io::Result<impl Stream<Item = io::Result<ProcessItem<Value>>> + 'a>
+pub async fn read<'a, R>(mut reader: R, options: JsonFormat) -> io::Result<ValueStream<'a>>
 where
-    R: AsyncRead + AsyncSeek + Unpin + 'a,
+    R: AsyncRead + AsyncSeek + MaybeSend + Unpin + 'a,
 {
     let headers = if options.item_type.has_headers() {
         let headers = JsonReadStream::<_, Vec<String>>::new(
@@ -108,41 +94,41 @@ where
         None
     };
     let has_headers = headers.is_some();
-    let mut stream = JsonReadStream::<_, Value>::new(reader, JsonProcessor::new(options.file_type))
-        .map(move |res| {
-            res.and_then(|item| {
-                item.map(|(key, value)| -> io::Result<Value> {
-                    let value = value.with_headers(headers.as_ref())?;
-                    if let (Some(key_col), Some(key)) = (options.key_col.as_ref(), key) {
-                        let key_value = match ron::from_str(&key) {
-                            Ok(ron::Value::Number(num)) => ron::Value::Number(num),
-                            _ => ron::Value::String(key),
-                        };
-                        Ok(value.with_entry(key_col.to_string(), key_value)?)
-                    } else {
-                        Ok(value)
-                    }
+    let mut stream = boxed_stream(
+        JsonReadStream::<_, Value>::new(reader, JsonProcessor::new(options.file_type)).map(
+            move |res| {
+                res.and_then(|item| {
+                    item.map(|(key, value)| -> io::Result<Value> {
+                        let value = value.with_headers(headers.as_ref())?;
+                        if let (Some(key_col), Some(key)) = (options.key_col.as_ref(), key) {
+                            let key_value = match ron::from_str(&key) {
+                                Ok(ron::Value::Number(num)) => ron::Value::Number(num),
+                                _ => ron::Value::String(key),
+                            };
+                            Ok(value.with_entry(key_col.to_string(), key_value)?)
+                        } else {
+                            Ok(value)
+                        }
+                    })
+                    .transpose()
                 })
-                .transpose()
-            })
-        })
-        .boxed_local();
+            },
+        ),
+    );
     if has_headers {
-        stream = stream.skip(1).boxed_local();
+        stream = boxed_stream(stream.skip(1));
     }
     if !options.date.is_empty() {
-        stream = stream
-            .map_ok(move |item| {
-                item.map(|v| {
-                    v.map_values(|v| match v {
-                        Value::String(s) => Value::String(options.date.normalize(s)),
-                        _ => v,
-                    })
+        stream = boxed_stream(stream.map_ok(move |item| {
+            item.map(|v| {
+                v.map_values(|v| match v {
+                    Value::String(s) => Value::String(options.date.normalize(s)),
+                    _ => v,
                 })
             })
-            .boxed_local()
+        }));
     }
-    Ok(stream.boxed_local())
+    Ok(stream)
 }
 
 pub async fn infer_format<R>(mut reader: R) -> io::Result<JsonFormat>
@@ -257,7 +243,9 @@ mod test {
                     .unwrap(),
             ),
             Default::default(),
+            None,
         )
+        .try_collect::<Vec<_>>()
         .await
         .unwrap();
     }

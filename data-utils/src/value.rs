@@ -10,11 +10,7 @@ const NAIVE_DATE_TIME_FMT: StrftimeItems<'static> = StrftimeItems::new("%Y-%m-%d
 const NAIVE_DATE_FMT: StrftimeItems<'static> = StrftimeItems::new("%Y-%m-%d");
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, Eq, PartialEq)]
-#[cfg_attr(
-    feature = "wasm",
-    derive(ts_rs::TS),
-    ts(export, export_to = "bindings.ts")
-)]
+#[cfg_attr(feature = "wasm", derive(ts_rs::TS), ts(export))]
 pub struct DateParseOptions {
     #[serde(default)]
     #[cfg_attr(feature = "wasm", ts(optional))]

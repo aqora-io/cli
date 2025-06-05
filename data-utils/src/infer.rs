@@ -39,7 +39,7 @@ const fn default_from_type_budget() -> usize {
 #[cfg_attr(
     feature = "wasm",
     derive(ts_rs::TS),
-    ts(export, rename = "InferOptions", export_to = "bindings.ts")
+    ts(export, rename = "InferOptions")
 )]
 pub struct Options {
     #[serde(default)]

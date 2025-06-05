@@ -232,7 +232,7 @@ pub fn check_status(status: &http::StatusCode) -> Result<(), crate::error::Error
 }
 
 #[derive(Clone)]
-pub(crate) struct HttpClient {
+pub struct HttpClient {
     client: reqwest::Client,
 }
 
@@ -263,8 +263,9 @@ impl Service<Request> for HttpClient {
     }
 }
 
-pub(crate) type HttpBoxService = BoxService<Request, Response, MiddlewareError>;
-pub(crate) type HttpArcLayer<Client> = ArcLayer<Client, Request, Response, MiddlewareError>;
+pub type HttpBoxService = BoxService<Request, Response, MiddlewareError>;
+pub type HttpArcLayer<Client = HttpBoxService> =
+    ArcLayer<Client, Request, Response, MiddlewareError>;
 
 #[derive(Clone, Debug)]
 pub struct NormalizeHttpService<S> {

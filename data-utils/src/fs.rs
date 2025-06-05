@@ -1,10 +1,11 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
+use async_trait::async_trait;
 use tokio::fs::File;
 
 use crate::format::{FileKind, FormatReader};
-use crate::write::AsyncPartWriter;
+use crate::write::AsyncPartitionWriter;
 
 impl FormatReader<File> {
     pub async fn infer_path(
@@ -70,6 +71,7 @@ pub struct DirWriter {
     max_part_size: usize,
     template: (String, Vec<TemplatePart>),
     try_single: Option<PathBuf>,
+    part_num: usize,
 }
 
 impl DirWriter {
@@ -85,6 +87,7 @@ impl DirWriter {
                 }],
             ),
             try_single: None,
+            part_num: 0,
         }
     }
 
@@ -163,54 +166,51 @@ impl DirWriter {
         self.path.join(out)
     }
 
-    pub fn part_path(&self, num: usize) -> PathBuf {
+    pub fn next_path(&self) -> PathBuf {
         if let Some(path) = self.try_single.as_deref() {
-            if num == 0 {
+            if self.part_num == 0 {
                 path.to_owned()
             } else {
-                self.construct_part(num)
+                self.construct_part(self.part_num)
             }
         } else {
-            self.construct_part(num)
+            self.construct_part(self.part_num)
         }
+    }
+
+    async fn create_file(&mut self) -> io::Result<File> {
+        let file = File::create(self.next_path()).await?;
+        self.part_num += 1;
+        Ok(file)
     }
 }
 
-#[async_trait::async_trait]
-impl<'a> AsyncPartWriter<'a> for DirWriter {
+#[cfg_attr(feature = "parquet-no-send", async_trait(?Send))]
+#[cfg_attr(not(feature = "parquet-no-send"), async_trait)]
+impl AsyncPartitionWriter for DirWriter {
     type Writer = File;
 
-    async fn create_part(&'a mut self, num: usize) -> io::Result<Self::Writer> {
+    async fn next_partition(&mut self) -> io::Result<Self::Writer> {
         if let Some(path) = self.try_single.as_deref() {
-            match num {
-                0 => Ok(File::create(path).await?),
-                1 => {
-                    let tempfile = tempfile_path();
-                    tokio::fs::rename(&path, &tempfile).await?;
-                    if let Err(err) = tokio::fs::create_dir_all(&self.path).await {
-                        let _ = tokio::fs::rename(&tempfile, &path).await;
-                        return Err(err);
-                    }
-                    if let Err(err) = tokio::fs::rename(&tempfile, self.construct_part(0)).await {
-                        let _ = tokio::fs::rename(&tempfile, &path).await;
-                        return Err(err);
-                    }
-                    Ok(File::create(self.construct_part(1)).await?)
+            if self.part_num == 1 {
+                let tempfile = tempfile_path();
+                tokio::fs::rename(&path, &tempfile).await?;
+                if let Err(err) = tokio::fs::create_dir_all(&self.path).await {
+                    let _ = tokio::fs::rename(&tempfile, &path).await;
+                    return Err(err);
                 }
-                num => Ok(File::create(self.construct_part(num)).await?),
-            }
-        } else {
-            match num {
-                0 => {
-                    tokio::fs::create_dir_all(&self.path).await?;
-                    Ok(File::create(self.construct_part(0)).await?)
+                if let Err(err) = tokio::fs::rename(&tempfile, self.construct_part(0)).await {
+                    let _ = tokio::fs::rename(&tempfile, &path).await;
+                    return Err(err);
                 }
-                num => Ok(File::create(self.construct_part(num)).await?),
             }
+        } else if self.part_num == 0 {
+            tokio::fs::create_dir_all(&self.path).await?;
         }
+        self.create_file().await
     }
 
-    fn max_part_size(&self) -> Option<usize> {
+    fn max_partition_size(&self) -> Option<usize> {
         Some(self.max_part_size)
     }
 }

@@ -8,6 +8,10 @@ else
 	# RUSTFLAGS+= -C opt-level=s
 endif
 
+ifneq ($(SCOPE),)
+	BUILDFLAGS+= --scope ${SCOPE}
+endif
+
 BROWSER?=chrome
 
 .PHONY: wasm
@@ -24,7 +28,7 @@ wasm-build:
 
 .PHONY: ts
 ts:
-	TS_RS_EXPORT_DIR="pkg" cargo test export_bindings --features "wasm-test"
+	cargo test export_bindings --no-default-features --features "wasm-test"
 
 .PHONY: watch
 watch:

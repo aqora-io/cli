@@ -1,7 +1,8 @@
-use futures::{prelude::*, stream::LocalBoxStream};
+use futures::prelude::*;
 use serde::{Deserialize, Serialize};
 use tokio::io::{self, AsyncRead, AsyncSeek, AsyncSeekExt};
 
+use crate::async_util::parquet_async::*;
 use crate::infer::{self};
 use crate::process::ProcessItem;
 use crate::read::{self, RecordBatchStream};
@@ -9,9 +10,9 @@ use crate::schema::Schema;
 use crate::value::Value;
 use crate::Result;
 
-pub trait AsyncFileReader: AsyncRead + AsyncSeek + Unpin {}
+pub trait AsyncFileReader: AsyncRead + AsyncSeek + MaybeSend + Unpin {}
 
-impl<T> AsyncFileReader for T where T: AsyncRead + AsyncSeek + Unpin {}
+impl<T> AsyncFileReader for T where T: AsyncRead + AsyncSeek + MaybeSend + Unpin {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -129,7 +130,7 @@ where
     }
 }
 
-pub(crate) type ValueStream<'a> = LocalBoxStream<'a, io::Result<ProcessItem<Value>>>;
+pub(crate) type ValueStream<'a> = BoxStream<'a, io::Result<ProcessItem<Value>>>;
 
 async fn stream_values<'a, R>(mut reader: R, format: &Format) -> io::Result<ValueStream<'a>>
 where
@@ -138,17 +139,13 @@ where
     reader.rewind().await?;
     Ok(match format {
         #[cfg(feature = "json")]
-        Format::Json(format) => crate::json::read(reader, format.clone())
-            .await?
-            .boxed_local(),
+        Format::Json(format) => boxed_stream(crate::json::read(reader, format.clone()).await?),
         #[cfg(feature = "csv")]
-        Format::Csv(format) => crate::csv::read(reader, format.clone())
-            .await?
-            .boxed_local(),
+        Format::Csv(format) => boxed_stream(crate::csv::read(reader, format.clone()).await?),
     })
 }
 
-async fn take_samples(
+pub(crate) async fn take_samples(
     stream: &mut ValueStream<'_>,
     sample_size: Option<usize>,
 ) -> io::Result<Vec<ProcessItem<Value>>> {
@@ -201,9 +198,9 @@ where
         let samples = take_samples(&mut stream, sample_size).await?;
         let schema = infer::from_samples(&samples, infer_options)?;
         read::from_stream(
-            futures::stream::iter(samples.into_iter().map(io::Result::Ok))
-                .chain(stream)
-                .boxed_local(),
+            boxed_stream(
+                futures::stream::iter(samples.into_iter().map(io::Result::Ok)).chain(stream),
+            ),
             schema.clone(),
             read_options,
         )
@@ -236,9 +233,9 @@ where
         let samples = take_samples(&mut stream, sample_size).await?;
         let schema = infer::from_samples(&samples, infer_options)?;
         read::from_stream(
-            futures::stream::iter(samples.into_iter().map(io::Result::Ok))
-                .chain(stream)
-                .boxed_local(),
+            boxed_stream(
+                futures::stream::iter(samples.into_iter().map(io::Result::Ok)).chain(stream),
+            ),
             schema.clone(),
             read_options,
         )

@@ -1,6 +1,6 @@
 use bytes::{Buf, BufMut, BytesMut};
 use futures::stream::Stream;
-use pin_project_lite::pin_project;
+use pin_project::pin_project;
 use tokio::io::{self, AsyncRead, ReadBuf};
 
 use std::pin::Pin;
@@ -25,8 +25,7 @@ pub trait ByteProcessor {
         -> ByteProcessResult<Self::Item, Self::Error>;
 }
 
-pin_project! {
-#[project = ProcessReadStreamProject]
+#[pin_project(project = ProcessReadStreamProject)]
 pub struct ProcessReadStream<R, P> {
     #[pin]
     reader: R,
@@ -36,7 +35,6 @@ pub struct ProcessReadStream<R, P> {
     buffer: BytesMut,
     reader_done: bool,
     pos: usize,
-}
 }
 
 impl<R, P> ProcessReadStream<R, P> {

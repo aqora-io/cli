@@ -1,6 +1,6 @@
 [package]
 name = "aqora-data-utils"
-version = "0.13.0"
+version = "0.15.1"
 edition = "2021"
 publish = false
 
@@ -8,12 +8,38 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [features]
-default = ["all-formats", "all-codecs", "fs"]
-default-wasm = ["wasm", "console_error_panic_hook", "all-formats", "zstd"]
+default = ["all-formats", "all-codecs", "fs", "aqora-client-threaded"]
+default-wasm = [
+  "wasm",
+  "all-formats",
+  "zstd",
+  "aqora-client",
+  "aqora-client-credentials",
+  "aqora-client-retry",
+]
 all-formats = ["json", "csv"]
 all-codecs = ["brotli", "flate2", "lz4", "zstd", "snap"]
+aqora-client = [
+  "dep:aqora-client",
+  "graphql_client",
+  "url",
+  "http",
+  "http-body",
+  "http-serde",
+  "tower",
+]
+aqora-client-threaded = [
+  "aqora-client",
+  "aqora-client/threaded",
+  "aqora-client/tokio-time",
+]
+aqora-client-credentials = ["aqora-client", "aqora-client/credentials"]
+aqora-client-retry = ["aqora-client", "aqora-client/retry"]
+aqora-client-checksum = ["aqora-client", "aqora-client/checksum"]
+aqora-client-crc32fast = ["aqora-client-checksum", "aqora-client/crc32fast"]
 csv = ["dep:csv", "csv-core"]
-json = ["serde_json"]
+json = []
+parquet-no-send = ["parquet/async-no-send"]
 brotli = ["parquet/brotli"]
 flate2 = ["parquet/flate2"]
 lz4 = ["parquet/lz4"]
@@ -29,8 +55,22 @@ wasm = [
   "js-sys",
   "serde-wasm-bindgen",
   "ts-rs",
+  "parquet-no-send",
+  "aqora-client/wasm-time",
+  "aqora-client-credentials",
+  "aqora-client-retry",
+  "aqora-client-crc32fast",
 ]
-wasm-test = ["default-wasm", "wasm-bindgen-test", "include_dir", "all-codecs"]
+wasm-test = [
+  "default-wasm",
+  "wasm-bindgen-test",
+  "console_error_panic_hook",
+  "include_dir",
+  "all-codecs",
+  "reqwest",
+  "web-sys/WorkerGlobalScope",
+  "web-sys/Crypto",
+]
 fs = ["tokio/fs", "rand"]
 
 [dependencies]
@@ -44,6 +84,9 @@ web-sys = { version = "0.3", optional = true, features = [
   "console",
   "Blob",
   "BlobPropertyBag",
+  "TransformStream",
+  "WritableStream",
+  "WritableStreamDefaultWriter",
   "ReadableStream",
   "ReadableStreamDefaultReader",
   "FileReaderSync",
@@ -54,11 +97,22 @@ wasm-streams = { version = "0.4", optional = true }
 wasm-bindgen-test = { version = "0.3", optional = true }
 include_dir = { version = "0.7", optional = true }
 
+aqora-client = { path = "../client", optional = true, default-features = false, features = [
+  "multipart",
+] }
+tower = { version = "0.5", optional = true }
+graphql_client = { version = "0.14", optional = true }
+reqwest = { version = "0.12", optional = true, features = ["json"] }
+url = { version = "2.5", optional = true, features = ["serde"] }
+http = { version = "1.3", optional = true }
+http-body = { version = "1.0", optional = true }
+http-serde = { version = "2.1", optional = true }
+
 arrow = { version = "55", default-features = false }
 serde_arrow = { version = "0.13.3", features = ["arrow-55"] }
 parquet = { version = "55", default-features = false, features = [
-  "arrow",
   "async",
+  "arrow",
   "simdutf8",
 ] }
 thiserror = "2"
@@ -69,15 +123,15 @@ tokio = { version = "1", default-features = false, features = [
   "macros",
   "bytes",
 ] }
-tokio-util = { version = "0.7", optional = true, features = ["compat"] }
+tokio-util = { version = "0.7", optional = true, features = ["compat", "io"] }
 futures = { version = "0.3", default-features = false, features = ["std"] }
 futures-io = { version = "0.3", optional = true }
-serde_json = { version = "1.0", optional = true, features = ["preserve_order"] }
 csv = { version = "1.3", optional = true }
 csv-core = { version = "0.1", optional = true }
+
+serde_json = { version = "1.0", features = ["preserve_order"] }
 bytes = "1.10"
-serde = "1.0"
-pin-project-lite = "0.2"
+serde = { version = "1.0", features = ["derive"] }
 regex = "1.11"
 regex-syntax = { version = "0.8", default-features = false }
 indexmap = { version = "2.9", features = ["serde"] }
@@ -86,3 +140,7 @@ chrono = "0.4"
 async-trait = "0.1"
 lazy_static = "1.5"
 rand = { version = "0.9", optional = true }
+pin-project = "1.1"
+
+[dev-dependencies]
+tempfile = "3.2"
