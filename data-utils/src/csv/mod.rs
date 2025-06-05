@@ -7,10 +7,10 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tokio::io::{self, AsyncRead, AsyncSeek, AsyncSeekExt};
 
-use crate::process::ProcessItem;
+use crate::async_util::parquet_async::{boxed_stream, MaybeSend};
+use crate::format::{Format, ValueStream};
 use crate::serde::{ascii_char, ascii_char_opt, regex_opt};
 use crate::value::{DateParseOptions, Value, ValueExt};
-use crate::Format;
 
 const fn default_delimiter() -> u8 {
     b','
@@ -21,11 +21,7 @@ const fn default_quote() -> u8 {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
-#[cfg_attr(
-    feature = "wasm",
-    derive(ts_rs::TS),
-    ts(export, export_to = "bindings.ts")
-)]
+#[cfg_attr(feature = "wasm", derive(ts_rs::TS), ts(export))]
 pub struct CsvFormatChars {
     #[serde(default = "default_delimiter", with = "ascii_char")]
     #[cfg_attr(feature = "wasm", ts(as = "char"))]
@@ -126,12 +122,9 @@ impl From<CsvFormat> for Format {
     }
 }
 
-pub async fn read<'a, R>(
-    mut reader: R,
-    options: CsvFormat,
-) -> io::Result<impl Stream<Item = io::Result<ProcessItem<Value>>> + 'a>
+pub async fn read<'a, R>(mut reader: R, options: CsvFormat) -> io::Result<ValueStream<'a>>
 where
-    R: AsyncRead + AsyncSeek + Unpin + 'a,
+    R: AsyncRead + AsyncSeek + MaybeSend + Unpin + 'a,
 {
     let headers = if options.has_headers {
         let headers =
@@ -145,33 +138,34 @@ where
         None
     };
     let has_headers = headers.is_some();
-    let mut stream = CsvReadStream::<_, Vec<Value>>::new(reader, CsvProcessor::new(options.chars))
-        .map(move |item| {
-            Ok(item?
-                .map(|seq| Value::Seq(seq).with_headers(headers.clone()))
-                .transpose()?)
-        })
-        .map_ok(move |item| {
-            item.map(|v| {
-                v.map_values(|v| match v {
-                    Value::String(s) => {
-                        if options.regex.check_null(&s) {
-                            Value::Unit
-                        } else if options.regex.check_true(&s) {
-                            Value::Bool(true)
-                        } else if options.regex.check_false(&s) {
-                            Value::Bool(false)
-                        } else {
-                            Value::String(options.date.normalize(s))
-                        }
-                    }
-                    _ => v,
-                })
+    let mut stream = boxed_stream(
+        CsvReadStream::<_, Vec<Value>>::new(reader, CsvProcessor::new(options.chars))
+            .map(move |item| {
+                Ok(item?
+                    .map(|seq| Value::Seq(seq).with_headers(headers.clone()))
+                    .transpose()?)
             })
-        })
-        .boxed_local();
+            .map_ok(move |item| {
+                item.map(|v| {
+                    v.map_values(|v| match v {
+                        Value::String(s) => {
+                            if options.regex.check_null(&s) {
+                                Value::Unit
+                            } else if options.regex.check_true(&s) {
+                                Value::Bool(true)
+                            } else if options.regex.check_false(&s) {
+                                Value::Bool(false)
+                            } else {
+                                Value::String(options.date.normalize(s))
+                            }
+                        }
+                        _ => v,
+                    })
+                })
+            }),
+    );
     if has_headers {
-        stream = stream.skip(1).boxed_local();
+        stream = boxed_stream(stream.skip(1));
     }
     Ok(stream)
 }

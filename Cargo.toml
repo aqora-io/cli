@@ -118,3 +118,11 @@ sentry-types = "0.32"
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"
+
+[patch.crates-io]
+arrow = { git = "https://github.com/aqora-io/arrow-rs", branch = "dataset" }
+parquet = { git = "https://github.com/aqora-io/arrow-rs", branch = "dataset" }
+arrow-array = { git = "https://github.com/aqora-io/arrow-rs", branch = "dataset" }
+arrow-buffer = { git = "https://github.com/aqora-io/arrow-rs", branch = "dataset" }
+arrow-data = { git = "https://github.com/aqora-io/arrow-rs", branch = "dataset" }
+arrow-schema = { git = "https://github.com/aqora-io/arrow-rs", branch = "dataset" }

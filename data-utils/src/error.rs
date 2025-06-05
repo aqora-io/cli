@@ -12,8 +12,8 @@ pub enum Error {
     #[error(transparent)]
     Parquet(#[from] parquet::errors::ParquetError),
     #[cfg(feature = "wasm")]
-    #[error("JavaScript error")]
-    Js(wasm_bindgen::JsValue),
+    #[error(transparent)]
+    Js(#[from] crate::wasm::error::WasmError),
 }
 
 impl From<Infallible> for Error {

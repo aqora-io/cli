@@ -273,6 +273,9 @@ impl UploadPart {
                         *state = Finished(res);
                     }
                     Err(err) => {
+                        // We are using Arc because its safe in non-threaded as well but we could
+                        // also in the future use async_util to imply a non-threaded context
+                        #[allow(clippy::arc_with_non_send_sync)]
                         let err = UploadError::Client(Arc::new(err));
                         *state = Error(err.clone());
                         return Poll::Ready(Err(err));

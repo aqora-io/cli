@@ -1,39 +1,13 @@
-use js_sys::{JsString, Object, Uint8Array};
-use tokio::io::{self, AsyncRead, AsyncSeek, ReadBuf, SeekFrom};
-use tokio_util::compat::{Compat as TokioCompat, FuturesAsyncReadCompatExt};
-use wasm_bindgen::prelude::*;
-use wasm_streams::readable::{IntoAsyncRead as ReadableStreamReader, ReadableStream};
-use web_sys::{Blob, FileReaderSync};
-
+use js_sys::Uint8Array;
 use std::io::{Read, Seek};
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use tokio::io::{self, AsyncRead, AsyncSeek, ReadBuf, SeekFrom};
+use tokio_util::compat::{Compat as TokioCompat, FuturesAsyncReadCompatExt};
+use wasm_streams::readable::{IntoAsyncRead as ReadableStreamReader, ReadableStream};
+use web_sys::{Blob, FileReaderSync};
 
-pub fn set_console_error_panic_hook() {
-    #[cfg(feature = "console_error_panic_hook")]
-    console_error_panic_hook::set_once();
-}
-
-/// gets constructor name if object otherwise typeof
-pub fn js_value_type_name(value: &JsValue) -> JsString {
-    if value.is_object() {
-        value.unchecked_ref::<Object>().constructor().name()
-    } else {
-        value.js_typeof().unchecked_into::<JsString>()
-    }
-}
-
-fn js_value_to_io_error(value: &JsValue) -> io::Error {
-    io::Error::new(
-        io::ErrorKind::Other,
-        format!(
-            "Failed to read from stream: {}",
-            value
-                .as_string()
-                .unwrap_or_else(|| "Unknown error".to_string())
-        ),
-    )
-}
+use super::error::WasmError;
 
 pub struct SeekableBlob {
     blob: Blob,
@@ -97,7 +71,7 @@ impl Seek for SeekableBlob {
             self.sliced_blob = Some(
                 self.blob
                     .slice_with_i32(offset as i32)
-                    .map_err(|e| js_value_to_io_error(&e))?,
+                    .map_err(WasmError::from)?,
             );
         }
         self.offset = offset;
@@ -200,24 +174,18 @@ impl Read for BlobReader {
         let size = std::cmp::min(blob.size() as usize - self.bytes_read, buf.len());
         let sliced_blob = blob
             .slice_with_i32_and_i32(self.bytes_read as i32, (self.bytes_read + size) as i32)
-            .map_err(|err| js_value_to_io_error(&err))?;
+            .map_err(WasmError::from)?;
         let reader = if let Some(reader) = self.reader.as_ref() {
             reader
         } else {
-            self.reader = Some(FileReaderSync::new().map_err(|err| js_value_to_io_error(&err))?);
+            self.reader = Some(FileReaderSync::new().map_err(WasmError::from)?);
             self.reader.as_ref().unwrap()
         };
         let buffer = reader
             .read_as_array_buffer(&sliced_blob)
-            .map_err(|err| js_value_to_io_error(&err))?;
+            .map_err(WasmError::from)?;
         Uint8Array::new(&buffer).copy_to(&mut buf[..size]);
         self.bytes_read += size;
         Ok(size)
     }
 }
-
-// https://docs.rs/wasm-bindgen-futures/latest/src/wasm_bindgen_futures/stream.rs.html#39-81
-
-// https://developer.mozilla.org/en-US/docs/Web/API/WritableStream/getWriter
-// https://developer.mozilla.org/en-US/docs/Web/API/TransformStream
-// https://stackoverflow.com/questions/14269233/node-js-how-to-read-a-stream-into-a-buffer

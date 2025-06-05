@@ -66,7 +66,7 @@ impl TryFrom<CsvFormatRegex> for JsCsvFormatRegex {
 }
 
 #[derive(TS, Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
-#[ts(rename = "CsvFormat", export, export_to = "bindings.ts")]
+#[ts(rename = "CsvFormat", export)]
 pub struct JsCsvFormat {
     #[serde(default)]
     #[ts(optional, as = "Option<bool>")]

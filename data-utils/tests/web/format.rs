@@ -1,13 +1,19 @@
-use aqora_data_utils::wasm::format::JsFormatReader;
-use wasm_bindgen::JsValue;
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use wasm_bindgen::JsCast;
+use wasm_bindgen::{closure::Closure, JsValue};
 use wasm_bindgen_test::*;
 
 use aqora_data_utils::format::FileKind;
 use aqora_data_utils::wasm::{
-    format::JsFormat,
-    io::set_console_error_panic_hook,
+    error::set_console_error_panic_hook,
+    format::{JsFormat, JsFormatReader},
     serde::{from_value, to_value},
-    write::{JsColumnProperties, JsCompression, JsWriteOptions, JsWriterProperties},
+    write::{
+        JsColumnProperties, JsCompression, JsPartWriter, JsPartWriterOptions, JsWriteOptions,
+        JsWriterProperties,
+    },
 };
 
 use super::data::*;
@@ -17,7 +23,6 @@ where
     T: serde::Serialize + serde::de::DeserializeOwned + PartialEq + std::fmt::Debug,
 {
     use aqora_data_utils::wasm::serde::{from_value, to_value};
-    web_sys::console::log_1(&to_value(&value).unwrap());
     assert_eq!(value, &from_value::<T>(to_value(&value).unwrap()).unwrap());
 }
 
@@ -81,6 +86,24 @@ pub async fn test_infer_schema() {
     }
 }
 
+fn build_part_writer() -> (JsPartWriter, Rc<RefCell<usize>>) {
+    let counter = Rc::new(RefCell::new(0));
+    let counter_cloned = counter.clone();
+    let part_writer = JsPartWriter::new(JsPartWriterOptions {
+        on_stream: Closure::<dyn FnMut(web_sys::ReadableStream)>::new(
+            move |_: web_sys::ReadableStream| {
+                // We unfortunately can't read from the stream because its a transferrable objecat
+                // and because we run this test in a worker, wasm_bindgen_test will throw an error
+                *counter.borrow_mut() += 1;
+            },
+        )
+        .into_js_value()
+        .unchecked_into(),
+        max_part_size: None,
+    });
+    (part_writer, counter_cloned)
+}
+
 #[wasm_bindgen_test]
 pub async fn test_write_to_parquet() {
     for format in [CSV, JSON] {
@@ -95,14 +118,16 @@ pub async fn test_write_to_parquet() {
             } else {
                 JsFormatReader::infer_blob(blob, None).await.unwrap()
             };
-            let parquet = reader
+            let (mut part_writer, counter) = build_part_writer();
+            reader
                 .infer_and_stream_record_batches(JsValue::UNDEFINED)
                 .await
                 .unwrap()
-                .write_to_parquet(JsValue::UNDEFINED)
+                .write_parquet(&mut part_writer, JsValue::UNDEFINED)
                 .await
                 .unwrap();
-            assert_eq!(parquet.len(), 1);
+            let count = *counter.borrow();
+            assert_eq!(count, 1);
         }
     }
 }
@@ -129,8 +154,10 @@ pub async fn test_compression_codecs() {
             .stream_record_batches(schema.clone(), JsValue::UNDEFINED)
             .await
             .unwrap();
-        let parquet = record_batches
-            .write_to_parquet(
+        let (mut part_writer, counter) = build_part_writer();
+        record_batches
+            .write_parquet(
+                &mut part_writer,
                 to_value(&JsWriteOptions {
                     writer_properties: JsWriterProperties {
                         default_column_properties: JsColumnProperties {
@@ -145,6 +172,7 @@ pub async fn test_compression_codecs() {
             )
             .await
             .unwrap();
-        assert_eq!(parquet.len(), 1);
+        let count = *counter.borrow();
+        assert_eq!(count, 1);
     }
 }
