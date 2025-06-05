@@ -4,19 +4,16 @@ use futures::prelude::*;
 use serde::{Deserialize, Serialize};
 use tokio::io::{self, AsyncRead, AsyncSeek, AsyncSeekExt};
 
+use crate::async_util::parquet_async::{boxed_stream, MaybeSend};
+use crate::format::{Format, ValueStream};
 use crate::process::ProcessItem;
 use crate::value::{DateParseOptions, Value, ValueExt};
-use crate::Format;
 
 pub mod reader;
 pub use reader::{JsonProcessor, JsonReadStream};
 
 #[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, Eq, PartialEq)]
-#[cfg_attr(
-    feature = "wasm",
-    derive(ts_rs::TS),
-    ts(export, export_to = "bindings.ts")
-)]
+#[cfg_attr(feature = "wasm", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum JsonFileType {
     #[default]
@@ -24,14 +21,43 @@ pub enum JsonFileType {
     Jsonl,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+#[cfg_attr(feature = "wasm", derive(ts_rs::TS), ts(export))]
+#[serde(tag = "file_type", rename_all = "snake_case")]
+pub enum JsonFileOptions {
+    Json {
+        #[serde(default)]
+        #[cfg_attr(feature = "wasm", ts(optional))]
+        key_col: Option<String>,
+    },
+    Jsonl,
+}
+
+impl JsonFileOptions {
+    pub fn ty(&self) -> JsonFileType {
+        match self {
+            Self::Json { .. } => JsonFileType::Json,
+            Self::Jsonl => JsonFileType::Jsonl,
+        }
+    }
+    pub fn key_col(&self) -> Option<&str> {
+        match self {
+            Self::Json { key_col } => key_col.as_deref(),
+            Self::Jsonl => None,
+        }
+    }
+}
+
+impl Default for JsonFileOptions {
+    fn default() -> Self {
+        Self::Json { key_col: None }
+    }
+}
+
 #[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, Eq, PartialEq)]
-#[cfg_attr(
-    feature = "wasm",
-    derive(ts_rs::TS),
-    ts(export, export_to = "bindings.ts")
-)]
+#[cfg_attr(feature = "wasm", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "item_type", rename_all = "snake_case")]
-pub enum JsonItemType {
+pub enum JsonItemOptions {
     #[default]
     Object,
     List {
@@ -41,7 +67,7 @@ pub enum JsonItemType {
     },
 }
 
-impl JsonItemType {
+impl JsonItemOptions {
     pub fn has_headers(&self) -> bool {
         match self {
             Self::List { has_headers } => *has_headers,
@@ -58,23 +84,17 @@ impl JsonItemType {
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-#[cfg_attr(
-    feature = "wasm",
-    derive(ts_rs::TS),
-    ts(export, export_to = "bindings.ts")
-)]
+#[cfg_attr(feature = "wasm", derive(ts_rs::TS), ts(export))]
 pub struct JsonFormat {
     #[serde(default)]
-    #[cfg_attr(feature = "wasm", ts(optional, as = "Option<JsonFileType>"))]
-    pub file_type: JsonFileType,
-    #[serde(flatten)]
-    pub item_type: JsonItemType,
+    #[cfg_attr(feature = "wasm", ts(optional, as = "Option<JsonFileOptions>"))]
+    pub file: JsonFileOptions,
+    #[serde(default)]
+    #[cfg_attr(feature = "wasm", ts(optional, as = "Option<JsonItemOptions>"))]
+    pub item: JsonItemOptions,
     #[serde(default)]
     #[cfg_attr(feature = "wasm", ts(optional, as = "Option<DateParseOptions>"))]
     pub date: DateParseOptions,
-    #[serde(default)]
-    #[cfg_attr(feature = "wasm", ts(optional))]
-    pub key_col: Option<String>,
 }
 
 impl From<JsonFormat> for Format {
@@ -83,17 +103,14 @@ impl From<JsonFormat> for Format {
     }
 }
 
-pub async fn read<'a, R>(
-    mut reader: R,
-    options: JsonFormat,
-) -> io::Result<impl Stream<Item = io::Result<ProcessItem<Value>>> + 'a>
+pub async fn read<'a, R>(mut reader: R, options: JsonFormat) -> io::Result<ValueStream<'a>>
 where
-    R: AsyncRead + AsyncSeek + Unpin + 'a,
+    R: AsyncRead + AsyncSeek + MaybeSend + Unpin + 'a,
 {
-    let headers = if options.item_type.has_headers() {
+    let headers = if options.item.has_headers() {
         let headers = JsonReadStream::<_, Vec<String>>::new(
             &mut reader,
-            JsonProcessor::new(options.file_type),
+            JsonProcessor::new(options.file.ty()),
         )
         .map_ok(
             |ProcessItem {
@@ -108,41 +125,41 @@ where
         None
     };
     let has_headers = headers.is_some();
-    let mut stream = JsonReadStream::<_, Value>::new(reader, JsonProcessor::new(options.file_type))
-        .map(move |res| {
-            res.and_then(|item| {
-                item.map(|(key, value)| -> io::Result<Value> {
-                    let value = value.with_headers(headers.as_ref())?;
-                    if let (Some(key_col), Some(key)) = (options.key_col.as_ref(), key) {
-                        let key_value = match ron::from_str(&key) {
-                            Ok(ron::Value::Number(num)) => ron::Value::Number(num),
-                            _ => ron::Value::String(key),
-                        };
-                        Ok(value.with_entry(key_col.to_string(), key_value)?)
-                    } else {
-                        Ok(value)
-                    }
+    let mut stream = boxed_stream(
+        JsonReadStream::<_, Value>::new(reader, JsonProcessor::new(options.file.ty())).map(
+            move |res| {
+                res.and_then(|item| {
+                    item.map(|(key, value)| -> io::Result<Value> {
+                        let value = value.with_headers(headers.as_ref())?;
+                        if let (Some(key_col), Some(key)) = (options.file.key_col(), key) {
+                            let key_value = match ron::from_str(&key) {
+                                Ok(ron::Value::Number(num)) => ron::Value::Number(num),
+                                _ => ron::Value::String(key),
+                            };
+                            Ok(value.with_entry(key_col.to_string(), key_value)?)
+                        } else {
+                            Ok(value)
+                        }
+                    })
+                    .transpose()
                 })
-                .transpose()
-            })
-        })
-        .boxed_local();
+            },
+        ),
+    );
     if has_headers {
-        stream = stream.skip(1).boxed_local();
+        stream = boxed_stream(stream.skip(1));
     }
     if !options.date.is_empty() {
-        stream = stream
-            .map_ok(move |item| {
-                item.map(|v| {
-                    v.map_values(|v| match v {
-                        Value::String(s) => Value::String(options.date.normalize(s)),
-                        _ => v,
-                    })
+        stream = boxed_stream(stream.map_ok(move |item| {
+            item.map(|v| {
+                v.map_values(|v| match v {
+                    Value::String(s) => Value::String(options.date.normalize(s)),
+                    _ => v,
                 })
             })
-            .boxed_local()
+        }));
     }
-    Ok(stream.boxed_local())
+    Ok(stream)
 }
 
 pub async fn infer_format<R>(mut reader: R) -> io::Result<JsonFormat>
@@ -161,12 +178,12 @@ where
                     match value {
                         serde_json::Value::Object(map) => {
                             if key.is_none() {
-                                Some((JsonItemType::Object, None))
+                                Some((JsonItemOptions::Object, None))
                             } else {
                                 let headers =
                                     map.keys().map(|k| k.to_lowercase()).collect::<HashSet<_>>();
                                 let key_col = key_cols.into_iter().find(|k| !headers.contains(*k));
-                                Some((JsonItemType::Object, key_col))
+                                Some((JsonItemOptions::Object, key_col))
                             }
                         }
                         serde_json::Value::Array(arr) => {
@@ -179,14 +196,14 @@ where
                                 .collect::<Option<HashSet<String>>>();
                             if let Some(headers) = headers {
                                 if key.is_none() {
-                                    Some((JsonItemType::List { has_headers: true }, None))
+                                    Some((JsonItemOptions::List { has_headers: true }, None))
                                 } else {
                                     let key_col =
                                         key_cols.into_iter().find(|k| !headers.contains(*k));
-                                    Some((JsonItemType::List { has_headers: true }, key_col))
+                                    Some((JsonItemOptions::List { has_headers: true }, key_col))
                                 }
                             } else {
-                                Some((JsonItemType::List { has_headers: false }, Some("key")))
+                                Some((JsonItemOptions::List { has_headers: false }, Some("key")))
                             }
                         }
                         _ => None,
@@ -197,12 +214,17 @@ where
             }
             _ => None,
         };
-        if let Some((item_type, key_col)) = inferred {
+        if let Some((item, key_col)) = inferred {
+            let file = match file_type {
+                JsonFileType::Json => JsonFileOptions::Json {
+                    key_col: key_col.map(|s| s.to_string()),
+                },
+                JsonFileType::Jsonl => JsonFileOptions::Jsonl,
+            };
             return Ok(JsonFormat {
-                file_type,
-                item_type,
+                file,
+                item,
                 date: DateParseOptions::default(),
-                key_col: key_col.map(|k| k.to_string()),
             });
         } else {
             reader.rewind().await?;
@@ -257,7 +279,9 @@ mod test {
                     .unwrap(),
             ),
             Default::default(),
+            None,
         )
+        .try_collect::<Vec<_>>()
         .await
         .unwrap();
     }
@@ -269,7 +293,7 @@ mod test {
             load_json(
                 "basic.jsonl",
                 JsonFormat {
-                    file_type: JsonFileType::Jsonl,
+                    file: JsonFileOptions::Jsonl,
                     ..Default::default()
                 }
             )
@@ -286,7 +310,7 @@ mod test {
             load_json(
                 "basic_lists.json",
                 JsonFormat {
-                    item_type: JsonItemType::List { has_headers: true },
+                    item: JsonItemOptions::List { has_headers: true },
                     ..Default::default()
                 }
             )
@@ -303,8 +327,8 @@ mod test {
             load_json(
                 "basic_lists.jsonl",
                 JsonFormat {
-                    item_type: JsonItemType::List { has_headers: true },
-                    file_type: JsonFileType::Jsonl,
+                    item: JsonItemOptions::List { has_headers: true },
+                    file: JsonFileOptions::Jsonl,
                     ..Default::default()
                 }
             )
@@ -321,7 +345,7 @@ mod test {
             load_json(
                 "basic_lists_no_headers.json",
                 JsonFormat {
-                    item_type: JsonItemType::List { has_headers: false },
+                    item: JsonItemOptions::List { has_headers: false },
                     ..Default::default()
                 }
             )
@@ -338,8 +362,8 @@ mod test {
             load_json(
                 "basic_lists_no_headers.jsonl",
                 JsonFormat {
-                    item_type: JsonItemType::List { has_headers: false },
-                    file_type: JsonFileType::Jsonl,
+                    item: JsonItemOptions::List { has_headers: false },
+                    file: JsonFileOptions::Jsonl,
                     ..Default::default()
                 }
             )

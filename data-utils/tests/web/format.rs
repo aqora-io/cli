@@ -1,25 +1,25 @@
-use aqora_data_utils::wasm::format::JsFormatReader;
-use wasm_bindgen::JsValue;
+use bytes::Bytes;
+use futures::channel::mpsc;
+use futures::prelude::*;
+use tokio::io::AsyncReadExt;
+use wasm_bindgen::JsCast;
+use wasm_bindgen::{closure::Closure, JsValue};
 use wasm_bindgen_test::*;
 
 use aqora_data_utils::format::FileKind;
 use aqora_data_utils::wasm::{
-    format::JsFormat,
-    io::set_console_error_panic_hook,
+    error::set_console_error_panic_hook,
+    format::{JsFormat, JsFormatReader},
+    io::readable_stream_to_async_read,
     serde::{from_value, to_value},
-    write::{JsColumnProperties, JsCompression, JsWriteOptions, JsWriterProperties},
+    write::{
+        JsColumnProperties, JsCompression, JsPartWriter, JsPartWriterOptions, JsWriteOptions,
+        JsWriterProperties,
+    },
 };
 
 use super::data::*;
-
-fn check_serde<T>(value: &T)
-where
-    T: serde::Serialize + serde::de::DeserializeOwned + PartialEq + std::fmt::Debug,
-{
-    use aqora_data_utils::wasm::serde::{from_value, to_value};
-    web_sys::console::log_1(&to_value(&value).unwrap());
-    assert_eq!(value, &from_value::<T>(to_value(&value).unwrap()).unwrap());
-}
+use super::utils::check_serde;
 
 #[wasm_bindgen_test]
 pub fn test_format_serde() {
@@ -81,6 +81,30 @@ pub async fn test_infer_schema() {
     }
 }
 
+fn build_part_writer() -> (JsPartWriter, mpsc::Receiver<Bytes>) {
+    let (tx, rx) = mpsc::channel(1);
+    let part_writer = JsPartWriter::new(JsPartWriterOptions {
+        on_stream: Closure::<dyn FnMut(web_sys::ReadableStream)>::new(
+            move |readable: web_sys::ReadableStream| {
+                let mut tx = tx.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    let mut array = Vec::new();
+                    readable_stream_to_async_read(readable)
+                        .read_to_end(&mut array)
+                        .await
+                        .unwrap();
+                    tx.send(Bytes::from(array)).await.unwrap();
+                });
+            },
+        )
+        .into_js_value()
+        .unchecked_into(),
+        max_partition_size: None,
+        buffer_size: None,
+    });
+    (part_writer, rx)
+}
+
 #[wasm_bindgen_test]
 pub async fn test_write_to_parquet() {
     for format in [CSV, JSON] {
@@ -95,14 +119,15 @@ pub async fn test_write_to_parquet() {
             } else {
                 JsFormatReader::infer_blob(blob, None).await.unwrap()
             };
-            let parquet = reader
+            let (mut part_writer, mut rx) = build_part_writer();
+            reader
                 .infer_and_stream_record_batches(JsValue::UNDEFINED)
                 .await
                 .unwrap()
-                .write_to_parquet(JsValue::UNDEFINED)
+                .write_parquet(&mut part_writer, JsValue::UNDEFINED)
                 .await
                 .unwrap();
-            assert_eq!(parquet.len(), 1);
+            assert!(!rx.next().await.unwrap().is_empty());
         }
     }
 }
@@ -129,8 +154,10 @@ pub async fn test_compression_codecs() {
             .stream_record_batches(schema.clone(), JsValue::UNDEFINED)
             .await
             .unwrap();
-        let parquet = record_batches
-            .write_to_parquet(
+        let (mut part_writer, mut rx) = build_part_writer();
+        record_batches
+            .write_parquet(
+                &mut part_writer,
                 to_value(&JsWriteOptions {
                     writer_properties: JsWriterProperties {
                         default_column_properties: JsColumnProperties {
@@ -145,6 +172,6 @@ pub async fn test_compression_codecs() {
             )
             .await
             .unwrap();
-        assert_eq!(parquet.len(), 1);
+        assert!(!rx.next().await.unwrap().is_empty());
     }
 }

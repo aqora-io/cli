@@ -15,8 +15,7 @@ use super::serde::{from_value, to_value, DeserializeTagged};
 
 #[derive(TS, Serialize, Debug, Clone, PartialEq)]
 #[serde(tag = "format", rename_all = "snake_case")]
-#[ts(rename = "Format")]
-#[ts(export, export_to = "bindings.ts")]
+#[ts(rename = "Format", export)]
 #[non_exhaustive]
 pub enum JsFormat {
     #[cfg(feature = "csv")]
@@ -76,25 +75,25 @@ impl<'de> Deserialize<'de> for JsFormat {
 }
 
 #[derive(TS, Serialize, Deserialize, Debug, Clone, Default)]
-#[ts(export, export_to = "bindings.ts")]
-struct InferSchemaOptions {
+#[ts(export)]
+pub struct InferSchemaOptions {
     #[serde(flatten)]
-    options: infer::Options,
+    pub options: infer::Options,
     #[serde(default)]
     #[ts(optional)]
-    sample_size: Option<usize>,
+    pub sample_size: Option<usize>,
 }
 
 #[derive(TS, Serialize, Deserialize, Debug, Clone, Default)]
-#[ts(export, export_to = "bindings.ts")]
-struct InferAndStreamRecordBatchesOptions {
+#[ts(export)]
+pub struct InferAndStreamRecordBatchesOptions {
     #[serde(flatten)]
-    infer_options: infer::Options,
+    pub infer_options: infer::Options,
     #[serde(default)]
     #[ts(optional)]
-    sample_size: Option<usize>,
+    pub sample_size: Option<usize>,
     #[serde(flatten)]
-    read_options: read::Options,
+    pub read_options: read::Options,
 }
 
 #[wasm_bindgen(js_name = FormatReader)]
@@ -115,7 +114,7 @@ impl JsFormatReader {
     #[wasm_bindgen(constructor)]
     pub fn new(
         reader: web_sys::Blob,
-        #[wasm_bindgen(unchecked_param_type = "bindings.Format")] format: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "Format")] format: JsValue,
     ) -> Self {
         Self { reader, format }
     }
@@ -130,23 +129,20 @@ impl JsFormatReader {
         self.reader = reader;
     }
 
-    #[wasm_bindgen(getter, unchecked_return_type = "bindings.Format")]
+    #[wasm_bindgen(getter, unchecked_return_type = "Format")]
     pub fn format(&self) -> JsValue {
         self.format.clone()
     }
 
     #[wasm_bindgen(setter)]
-    pub fn set_format(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "bindings.Format")] format: JsValue,
-    ) {
+    pub fn set_format(&mut self, #[wasm_bindgen(unchecked_param_type = "Format")] format: JsValue) {
         self.format = format;
     }
 
-    #[wasm_bindgen(js_name = "inferSchema", unchecked_return_type = "bindings.Schema")]
+    #[wasm_bindgen(js_name = "inferSchema", unchecked_return_type = "Schema")]
     pub async fn infer_schema(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "undefined | bindings.InferSchemaOptions | null")]
+        #[wasm_bindgen(unchecked_param_type = "undefined | InferSchemaOptions | null")]
         options: JsValue,
     ) -> Result<JsValue> {
         let options = from_value::<Option<InferSchemaOptions>>(options)?.unwrap_or_default();
@@ -172,9 +168,8 @@ impl JsFormatReader {
     #[wasm_bindgen(js_name = "streamRecordBatches")]
     pub async fn stream_record_batches(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "bindings.Schema")] schema: JsValue,
-        #[wasm_bindgen(unchecked_param_type = "undefined | bindings.ReadOptions | null")]
-        options: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "Schema")] schema: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "undefined | ReadOptions | null")] options: JsValue,
     ) -> Result<JsRecordBatchStream> {
         let schema = from_value::<SerdeSchema>(schema)?.into();
         let options = from_value::<Option<read::Options>>(options)?.unwrap_or_default();
@@ -189,7 +184,7 @@ impl JsFormatReader {
     pub async fn infer_and_stream_record_batches(
         &self,
         #[wasm_bindgen(
-            unchecked_param_type = "undefined | bindings.InferAndStreamRecordBatchesOptions | null"
+            unchecked_param_type = "undefined | InferAndStreamRecordBatchesOptions | null"
         )]
         options: JsValue,
     ) -> Result<JsRecordBatchStream> {

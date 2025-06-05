@@ -7,6 +7,7 @@ use crate::csv::{CsvFormat, CsvFormatChars, CsvFormatRegex};
 use crate::value::DateParseOptions;
 
 #[derive(TS, Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+#[ts(export, rename = "CsvFormatRegex")]
 pub struct JsCsvFormatRegex {
     #[serde(rename = "null", default, with = "super::serde::preserve::option")]
     #[ts(optional, type = "RegExp | string")]
@@ -66,7 +67,7 @@ impl TryFrom<CsvFormatRegex> for JsCsvFormatRegex {
 }
 
 #[derive(TS, Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
-#[ts(rename = "CsvFormat", export, export_to = "bindings.ts")]
+#[ts(rename = "CsvFormat", export)]
 pub struct JsCsvFormat {
     #[serde(default)]
     #[ts(optional, as = "Option<bool>")]
@@ -74,6 +75,7 @@ pub struct JsCsvFormat {
     #[serde(default)]
     pub chars: CsvFormatChars,
     #[serde(default)]
+    #[ts(optional, as = "Option<JsCsvFormatRegex>")]
     pub regex: JsCsvFormatRegex,
     #[serde(default)]
     #[ts(optional, as = "Option<DateParseOptions>")]

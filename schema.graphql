@@ -1,1212 +1,1158 @@
 enum Action {
-  ACCEPT_EVENT_INVITE
-  ADD_COMPETITION_JURY
-  ADD_COMPETITION_MEMBER
-  ADD_EVENT_COMPETITION
-  ADD_EVENT_MEMBER
-  AWARD_BADGE
-  CREATE_BLOG_ARTICLE
-  CREATE_COMMENT
-  CREATE_COMPETITION
-  CREATE_COMPETITION_RULE_AGREEMENT
-  CREATE_COMPETITION_STAGE
-  CREATE_DATASET
-  CREATE_DATASET_COMPETITION
-  CREATE_DATASET_MEMBER
-  CREATE_DATASET_VERSION
-  CREATE_EVENT
-  CREATE_EVENT_RULE_AGREEMENT
-  CREATE_FORUM
-  CREATE_OAUTH_2_CONFIG
-  CREATE_ORGANIZATION
-  CREATE_PROJECT_VERSION_APPROVAL
-  CREATE_SUBJECT_SUBSCRIPTION
-  CREATE_SUBMISSION_VERSION
-  CREATE_TAG
-  CREATE_TOPIC
-  CREATE_USE_CASE_VERSION
-  DELETE_BLOG_ARTICLE
-  DELETE_COMMENT
-  DELETE_COMPETITION
-  DELETE_DATASET
-  DELETE_DATASET_COMPETITION
-  DELETE_DATASET_MEMBER
-  DELETE_DATASET_VERSION
-  DELETE_EVENT
-  DELETE_FORUM
-  DELETE_OAUTH_2_CONFIG
-  DELETE_ORGANIZATION
-  DELETE_PROJECT_VERSION_APPROVAL
-  DELETE_SUBJECT_SUBSCRIPTION
-  DELETE_TAG
-  DELETE_TOPIC
-  DELETE_USER
-  FETCH_WEBSITE_METADATA
-  JOIN_COMPETITION
-  JOIN_EVENT
-  MANAGE_ENTITY_BAN
-  MANAGE_EVENT_INVITE_CODE
-  PUBLISH_DATASET_VERSION
-  PUBLISH_VOTE
-  READ_ACTIVITY_TRACKER
-  READ_COMMENT
-  READ_COMPETITION
-  READ_COMPETITION_MEMBERSHIP
-  READ_COMPETITION_PRIVATE_APPROVAL
-  READ_COMPETITION_RULE
-  READ_COMPETITION_RULE_AGREEMENT
-  READ_COMPETITION_SCORING_CRITERION
-  READ_DATASET
-  READ_DATASET_MEMBER
-  READ_DATASET_VERSION
-  READ_EVENT
-  READ_EVENT_COMPETITION
-  READ_EVENT_INVITATION
-  READ_EVENT_MEMBERSHIP
-  READ_EVENT_RULE
-  READ_EVENT_RULE_AGREEMENT
-  READ_OAUTH_2_CONFIG
-  READ_OAUTH_2_CONFIG_SECRET
-  READ_PROJECT_VERSION
-  READ_PROJECT_VERSION_APPROVAL
-  READ_PROJECT_VERSION_APPROVAL_SCORE
-  READ_PROJECT_VERSION_EVALUATION
-  READ_PROJECT_VERSION_FILE
-  READ_SUBJECT_SUBSCRIPTION
-  READ_SUBMISSION
-  READ_TOPIC
-  READ_USER_EMAIL
-  READ_USER_NOTIFICATIONS
-  READ_USER_PERMISSIONS
-  REMOVE_COMPETITION_JURY
-  REMOVE_COMPETITION_MEMBER
-  REMOVE_COMPETITION_STAGE
-  REMOVE_EVENT_COMPETITION
-  REMOVE_EVENT_MEMBER
-  REMOVE_ORGANIZATION_MEMBER
-  SET_COMPETITION_ORDERING_PRIORITY
-  SET_EVENT_ORDERING_PRIORITY
-  TRANSFER_COMPETITION_OWNERSHIP
-  TRANSFER_DATASET_OWNERSHIP
-  TRANSFER_EVENT_OWNERSHIP
-  TRANSFER_ORGANIZATION_OWNERSHIP
-  UPDATE_AGENDA
-  UPDATE_BLOG_ARTICLE
-  UPDATE_COMMENT
-  UPDATE_COMPETITION
-  UPDATE_COMPETITION_STAGE
-  UPDATE_DATASET
-  UPDATE_DATASET_MEMBER
-  UPDATE_DATASET_VERSION
-  UPDATE_EVENT
-  UPDATE_FORUM
-  UPDATE_OAUTH_2_CONFIG
-  UPDATE_ORGANIZATION
-  UPDATE_ORGANIZATION_MEMBERSHIP
-  UPDATE_PROJECT_VERSION
-  UPDATE_PROJECT_VERSION_APPROVAL
-  UPDATE_PROJECT_VERSION_FILE
-  UPDATE_TOPIC
-  UPDATE_USER
-  UPLOAD_FILES
+	ACCEPT_EVENT_INVITE
+	ADD_COMPETITION_JURY
+	ADD_COMPETITION_MEMBER
+	ADD_EVENT_COMPETITION
+	ADD_EVENT_MEMBER
+	AWARD_BADGE
+	CREATE_BLOG_ARTICLE
+	CREATE_COMMENT
+	CREATE_COMPETITION
+	CREATE_COMPETITION_RULE_AGREEMENT
+	CREATE_COMPETITION_STAGE
+	CREATE_DATASET
+	CREATE_DATASET_COMPETITION
+	CREATE_DATASET_MEMBER
+	CREATE_DATASET_VERSION
+	CREATE_EVENT
+	CREATE_EVENT_RULE_AGREEMENT
+	CREATE_FORUM
+	CREATE_OAUTH_2_CONFIG
+	CREATE_ORGANIZATION
+	CREATE_PROJECT_VERSION_APPROVAL
+	CREATE_SUBJECT_SUBSCRIPTION
+	CREATE_SUBMISSION_VERSION
+	CREATE_TAG
+	CREATE_TOPIC
+	CREATE_USE_CASE_VERSION
+	DELETE_BLOG_ARTICLE
+	DELETE_COMMENT
+	DELETE_COMPETITION
+	DELETE_DATASET
+	DELETE_DATASET_COMPETITION
+	DELETE_DATASET_MEMBER
+	DELETE_DATASET_VERSION
+	DELETE_EVENT
+	DELETE_FORUM
+	DELETE_OAUTH_2_CONFIG
+	DELETE_ORGANIZATION
+	DELETE_PROJECT_VERSION_APPROVAL
+	DELETE_SUBJECT_SUBSCRIPTION
+	DELETE_TAG
+	DELETE_TOPIC
+	DELETE_USER
+	FETCH_WEBSITE_METADATA
+	JOIN_COMPETITION
+	JOIN_EVENT
+	MANAGE_ENTITY_BAN
+	MANAGE_EVENT_INVITE_CODE
+	PUBLISH_DATASET_VERSION
+	PUBLISH_VOTE
+	READ_ACTIVITY_TRACKER
+	READ_COMMENT
+	READ_COMPETITION
+	READ_COMPETITION_MEMBERSHIP
+	READ_COMPETITION_PRIVATE_APPROVAL
+	READ_COMPETITION_RULE
+	READ_COMPETITION_RULE_AGREEMENT
+	READ_COMPETITION_SCORING_CRITERION
+	READ_DATASET
+	READ_DATASET_MEMBER
+	READ_DATASET_VERSION
+	READ_DATASET_VERSION_FILE
+	READ_EVENT
+	READ_EVENT_COMPETITION
+	READ_EVENT_INVITATION
+	READ_EVENT_MEMBERSHIP
+	READ_EVENT_RULE
+	READ_EVENT_RULE_AGREEMENT
+	READ_OAUTH_2_CONFIG
+	READ_OAUTH_2_CONFIG_SECRET
+	READ_PROJECT_VERSION
+	READ_PROJECT_VERSION_APPROVAL
+	READ_PROJECT_VERSION_APPROVAL_SCORE
+	READ_PROJECT_VERSION_EVALUATION
+	READ_PROJECT_VERSION_FILE
+	READ_SUBJECT_SUBSCRIPTION
+	READ_SUBMISSION
+	READ_TOPIC
+	READ_USER_EMAIL
+	READ_USER_NOTIFICATIONS
+	READ_USER_PERMISSIONS
+	REEVALUATE_COMPETITION
+	REMOVE_COMPETITION_JURY
+	REMOVE_COMPETITION_MEMBER
+	REMOVE_COMPETITION_STAGE
+	REMOVE_EVENT_COMPETITION
+	REMOVE_EVENT_MEMBER
+	REMOVE_ORGANIZATION_MEMBER
+	SET_COMPETITION_ORDERING_PRIORITY
+	SET_EVENT_ORDERING_PRIORITY
+	TRANSFER_COMPETITION_OWNERSHIP
+	TRANSFER_DATASET_OWNERSHIP
+	TRANSFER_EVENT_OWNERSHIP
+	TRANSFER_ORGANIZATION_OWNERSHIP
+	UPDATE_AGENDA
+	UPDATE_BLOG_ARTICLE
+	UPDATE_COMMENT
+	UPDATE_COMPETITION
+	UPDATE_COMPETITION_STAGE
+	UPDATE_DATASET
+	UPDATE_DATASET_MEMBER
+	UPDATE_DATASET_VERSION
+	UPDATE_EVENT
+	UPDATE_FORUM
+	UPDATE_OAUTH_2_CONFIG
+	UPDATE_ORGANIZATION
+	UPDATE_ORGANIZATION_MEMBERSHIP
+	UPDATE_PROJECT_VERSION
+	UPDATE_PROJECT_VERSION_APPROVAL
+	UPDATE_PROJECT_VERSION_FILE
+	UPDATE_TOPIC
+	UPDATE_USER
+	UPLOAD_FILES
 }
 
 type Activity {
-  date: NaiveDate!
-  points: Int!
-  level: Int!
+	date: NaiveDate!
+	points: Int!
+	level: Int!
 }
 
 type ActivityConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [ActivityEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [Activity!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [ActivityEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Activity!]!
 }
 
 """
 An edge in a connection.
 """
 type ActivityEdge {
-  """
-  The item at the end of the edge
-  """
-  node: Activity!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: Activity!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 enum ActivityVisibility {
-  """
-  Activity is only visible to invited members.
-  """
-  MEMBERS
-  """
-  Activity is visible by everyone, even unauthenticated users.
-  """
-  UNAUTHENTICATED
-  """
-  Activity is visible by every authenticated user.
-  """
-  AUTHENTICATED
+	"""
+	Activity is only visible to invited members.
+	"""
+	MEMBERS
+	"""
+	Activity is visible by everyone, even unauthenticated users.
+	"""
+	UNAUTHENTICATED
+	"""
+	Activity is visible by every authenticated user.
+	"""
+	AUTHENTICATED
 }
 
 enum ApprovalFilter {
-  HAS_ANY
-  HAS_MINE
-  AWAITING_ANY
-  AWAITING_MINE
+	HAS_ANY
+	HAS_MINE
+	AWAITING_ANY
+	AWAITING_MINE
 }
 
 enum ArchiveKind {
-  TAR
-  ZIP
+	TAR
+	ZIP
 }
 
 enum Badge {
-  TEST
-  """
-  Clinical Trial Optimization Competition 2024 by Ingenii First Prize
-  """
-  INGENII_2024_FIRST
-  """
-  Clinical Trial Optimization Competition 2024 by Ingenii Second Prize
-  """
-  INGENII_2024_SECOND
-  """
-  Clinical Trial Optimization Competition 2024 by Ingenii Third Prize
-  """
-  INGENII_2024_THIRD
-  """
-  Clinical Trial Optimization Competition 2024 by Ingenii Participant
-  """
-  INGENII_2024_OTHERS
-  """
-  Clinical Trial Optimization Competition 2024 by Ingenii Special Prize
-  """
-  INGENII_2024_SPECIAL
-  """
-  BIG Quantum Hackathon Sports Edition by QuantX & Aqora, May 2024, Paris (FR)
-  """
-  PARIS_2024_WINNERS
-  """
-  BIG Quantum Hackathon Sports Edition by QuantX & Aqora, May 2024, Paris (FR)
-  """
-  PARIS_2024_HACKERS
-  """
-  BIG Quantum Hackathon by the Chicago Quantum Exchange & QuantX, Sept 2023, Chicago (USA)
-  """
-  CHICAGO_2023
-  """
-  ICTP - Quantinuum Quantum Hackathon, April 2023, Trieste (IT)
-  """
-  TRIESTE_2023
-  """
-  BIG QC-AI-HPC Hackathon by QuantX, March 2023, Paris (FR)
-  """
-  PARIS_2023
-  """
-  Quantum Hackathon by QuantX, October 2022, Grenoble (FR)
-  """
-  GRENOBLE_2022
-  """
-  Quantum Hackathon by Québec Quantique & QuantX, June 2022, Montreal (CAN)
-  """
-  MONTREAL_2022
-  """
-  BIG Quantum Hackathon by QuantX, October 2021, Paris (FR)
-  """
-  BIG_PARIS_2021
-  """
-  Quantum hackathon by QuantX, March 2021, Paris (FR)
-  """
-  PARIS_2021
-  """
-  Badge awarded upon first submission
-  """
-  QUANTUM_PIONEER
-  """
-  Hackathon Champion - Q2B Silicon Valley 2024
-  """
-  Q2B2024_GOLD
-  """
-  Hackathon Innovator - 2nd Place Team - Q2B Silicon Valley 2024
-  """
-  Q2B2024_SILVER
-  """
-  Hackathon Trailblazer - 3rd Place Team - Q2B Silicon Valley 2024
-  """
-  Q2B2024_BRONZE
-  """
-  On-Site Participant - Q2B Hackathon 2024
-  """
-  Q2B2024_ONSITE
-  """
-  Global Participant - Q2B Hackathon 2024
-  """
-  Q2B2024_REMOTE
-  """
-  Malicious Login Detection 2024 by NovaceneAI – Winner
-  """
-  NOVACENE_2024
-  """
-  QInnovision Challenge 2024-2025 Winner!
-  """
-  QINNOVISION_2025_WINNER
-  """
-  QInnovision Challenge 2024-2025 Finalist!
-  """
-  QINNOVISION_2025_FINALIST
-  """
-  Quantum Trading Oracle  – 1st Place
-  """
-  QUANTUM_SIGNALS_LOB_2025_FIRST
-  """
-  Schrödinger’s Trader – 2nd Place - Second Prize
-  """
-  QUANTUM_SIGNALS_LOB_2025_SECOND
-  UNKNOWN
+	TEST
+	"""
+	Clinical Trial Optimization Competition 2024 by Ingenii First Prize
+	"""
+	INGENII_2024_FIRST
+	"""
+	Clinical Trial Optimization Competition 2024 by Ingenii Second Prize
+	"""
+	INGENII_2024_SECOND
+	"""
+	Clinical Trial Optimization Competition 2024 by Ingenii Third Prize
+	"""
+	INGENII_2024_THIRD
+	"""
+	Clinical Trial Optimization Competition 2024 by Ingenii Participant
+	"""
+	INGENII_2024_OTHERS
+	"""
+	Clinical Trial Optimization Competition 2024 by Ingenii Special Prize
+	"""
+	INGENII_2024_SPECIAL
+	"""
+	BIG Quantum Hackathon Sports Edition by QuantX & Aqora, May 2024, Paris (FR)
+	"""
+	PARIS_2024_WINNERS
+	"""
+	BIG Quantum Hackathon Sports Edition by QuantX & Aqora, May 2024, Paris (FR)
+	"""
+	PARIS_2024_HACKERS
+	"""
+	BIG Quantum Hackathon by the Chicago Quantum Exchange & QuantX, Sept 2023, Chicago (USA)
+	"""
+	CHICAGO_2023
+	"""
+	ICTP - Quantinuum Quantum Hackathon, April 2023, Trieste (IT)
+	"""
+	TRIESTE_2023
+	"""
+	BIG QC-AI-HPC Hackathon by QuantX, March 2023, Paris (FR)
+	"""
+	PARIS_2023
+	"""
+	Quantum Hackathon by QuantX, October 2022, Grenoble (FR)
+	"""
+	GRENOBLE_2022
+	"""
+	Quantum Hackathon by Québec Quantique & QuantX, June 2022, Montreal (CAN)
+	"""
+	MONTREAL_2022
+	"""
+	BIG Quantum Hackathon by QuantX, October 2021, Paris (FR)
+	"""
+	BIG_PARIS_2021
+	"""
+	Quantum hackathon by QuantX, March 2021, Paris (FR)
+	"""
+	PARIS_2021
+	"""
+	Badge awarded upon first submission
+	"""
+	QUANTUM_PIONEER
+	"""
+	Hackathon Champion - Q2B Silicon Valley 2024
+	"""
+	Q2B2024_GOLD
+	"""
+	Hackathon Innovator - 2nd Place Team - Q2B Silicon Valley 2024
+	"""
+	Q2B2024_SILVER
+	"""
+	Hackathon Trailblazer - 3rd Place Team - Q2B Silicon Valley 2024
+	"""
+	Q2B2024_BRONZE
+	"""
+	On-Site Participant - Q2B Hackathon 2024
+	"""
+	Q2B2024_ONSITE
+	"""
+	Global Participant - Q2B Hackathon 2024
+	"""
+	Q2B2024_REMOTE
+	"""
+	Malicious Login Detection 2024 by NovaceneAI – Winner
+	"""
+	NOVACENE_2024
+	"""
+	QInnovision Challenge 2024-2025 Winner!
+	"""
+	QINNOVISION_2025_WINNER
+	"""
+	QInnovision Challenge 2024-2025 Finalist!
+	"""
+	QINNOVISION_2025_FINALIST
+	"""
+	Quantum Trading Oracle  – 1st Place
+	"""
+	QUANTUM_SIGNALS_LOB_2025_FIRST
+	"""
+	Schrödinger’s Trader – 2nd Place - Second Prize
+	"""
+	QUANTUM_SIGNALS_LOB_2025_SECOND
+	UNKNOWN
 }
 
 type Blog implements ForumOwner {
-  id: ID!
-  slug: String!
-  forum: Forum!
-  forumOwnerKind: ForumOwnerKind!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	id: ID!
+	slug: String!
+	forum: Forum!
+	forumOwnerKind: ForumOwnerKind!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 }
 
 type BlogArticle implements Node {
-  shortDescription: String!
-  blurHash: String
-  seoTitle: String
-  seoDescription: String
-  imageAlt: String
-  id: ID!
-  image: Url
-  authors(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): BlogArticleAuthorConnection!
-  topic: Topic!
-  title: String!
-  slugLower: String!
-  content: String
-  createdAt: DateTime!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	shortDescription: String!
+	blurHash: String
+	seoTitle: String
+	seoDescription: String
+	imageAlt: String
+	id: ID!
+	image: Url
+	authors(after: String, before: String, first: Int, last: Int): BlogArticleAuthorConnection!
+	topic: Topic!
+	title: String!
+	slugLower: String!
+	content: String
+	createdAt: DateTime!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 }
 
 type BlogArticleAuthorConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [EntityEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [Entity!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [EntityEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Entity!]!
 }
 
 type BlogArticleConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [BlogArticleEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [BlogArticle!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [BlogArticleEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [BlogArticle!]!
 }
 
 """
 An edge in a connection.
 """
 type BlogArticleEdge {
-  """
-  The item at the end of the edge
-  """
-  node: BlogArticle!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: BlogArticle!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
+
 type Comment implements Votable & Node {
-  votes: Int!
-  createdAt: DateTime!
-  edited: Boolean!
-  id: ID!
-  content: String!
-  author: User!
-  topic: Topic!
-  parent: Comment
-  numChildren: Int!
-  voted: EntityVote
-  voterCount: Int!
-  voters(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): VotersConnection!
-  children(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    order: VotableOrder
-  ): CommentConnection!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	votes: Int!
+	createdAt: DateTime!
+	edited: Boolean!
+	id: ID!
+	content: String!
+	author: User!
+	topic: Topic!
+	parent: Comment
+	numChildren: Int!
+	voted: EntityVote
+	voterCount: Int!
+	voters(after: String, before: String, first: Int, last: Int): VotersConnection!
+	children(after: String, before: String, first: Int, last: Int, order: VotableOrder): CommentConnection!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 }
 
 type CommentConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [CommentEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [Comment!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [CommentEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Comment!]!
 }
 
 """
 An edge in a connection.
 """
 type CommentEdge {
-  """
-  The item at the end of the edge
-  """
-  node: Comment!
-  hotness: Float!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: Comment!
+	hotness: Float!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type Competition implements ForumOwner & Subscribable & Node {
-  slug: String!
-  title: String!
-  shortDescription: String!
-  createdAt: DateTime!
-  visibility: ActivityVisibility!
-  id: ID!
-  forumOwnerKind: ForumOwnerKind!
-  description: String
-  isPrivate: Boolean!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  host: Entity!
-  useCase: UseCase!
-  latestRule: CompetitionRule!
-  rules(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): CompetitionRuleConnection!
-  entityRuleAgreements(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    entity: UsernameOrID
-    latest: Boolean
-  ): CompetitionRuleAgreementConnection!
-  banner: Url
-  thumbnail: Url
-  leaderboard(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    stage: Int
-  ): SubmissionRankingConnection!
-  currentStage: CompetitionStage!
-  stage(stage: Int): CompetitionStage
-  stages(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    hasLeaderboard: Boolean
-    requiresApproval: Boolean
-  ): CompetitionStageConnection!
-  hasLeaderboard: Boolean!
-  requiresApproval: Boolean!
-  showMetric: Boolean!
-    @deprecated(reason: "Use currentStage.showMetric instead")
-  submissions(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    entityId: ID
-    approvalFilter: ApprovalFilter
-    stage: Int
-  ): SubmissionConnection!
-  hasSubmissions: Boolean!
-  submission(entity: UsernameOrID): Submission
-  forum: Forum!
-  timeline: Timeline
-  membership(entity: UsernameOrID): CompetitionMembership
-  members(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    search: String
-  ): CompetitionMembershipConnection!
-  tags(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): CompetitionTagConnection!
-  entitySubscription(entity: UsernameOrID): SubjectSubscription
-  jury(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): CompetitionJuryConnection!
-  scoringCriteria: [CompetitionScoringCriterion!]!
-  datasets(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): CompetitionDatasetConnection!
+	slug: String!
+	title: String!
+	shortDescription: String!
+	createdAt: DateTime!
+	visibility: ActivityVisibility!
+	id: ID!
+	forumOwnerKind: ForumOwnerKind!
+	description: String
+	isPrivate: Boolean!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	host: Entity!
+	useCase: UseCase!
+	latestRule: CompetitionRule!
+	rules(after: String, before: String, first: Int, last: Int): CompetitionRuleConnection!
+	entityRuleAgreements(after: String, before: String, first: Int, last: Int, entity: UsernameOrID, latest: Boolean): CompetitionRuleAgreementConnection!
+	banner: Url
+	thumbnail: Url
+	leaderboard(after: String, before: String, first: Int, last: Int, stage: Int): SubmissionRankingConnection!
+	currentStage: CompetitionStage!
+	stage(stage: Int): CompetitionStage
+	stages(after: String, before: String, first: Int, last: Int, hasLeaderboard: Boolean, requiresApproval: Boolean): CompetitionStageConnection!
+	hasLeaderboard: Boolean!
+	requiresApproval: Boolean!
+	showMetric: Boolean! @deprecated(reason: "Use currentStage.showMetric instead")
+	submissions(after: String, before: String, first: Int, last: Int, entityId: ID, approvalFilter: ApprovalFilter, stage: Int): SubmissionConnection!
+	hasSubmissions: Boolean!
+	submission(entity: UsernameOrID): Submission
+	forum: Forum!
+	timeline: Timeline
+	membership(entity: UsernameOrID): CompetitionMembership
+	members(after: String, before: String, first: Int, last: Int, search: String): CompetitionMembershipConnection!
+	tags(after: String, before: String, first: Int, last: Int): CompetitionTagConnection!
+	entitySubscription(entity: UsernameOrID): SubjectSubscription
+	jury(after: String, before: String, first: Int, last: Int): CompetitionJuryConnection!
+	datasets(after: String, before: String, first: Int, last: Int): CompetitionDatasetConnection!
 }
 
 type CompetitionConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [CompetitionEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [Competition!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [CompetitionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Competition!]!
 }
 
 type CompetitionDatasetConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [CompetitionDatasetConnectionEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [Dataset!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [CompetitionDatasetConnectionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Dataset!]!
 }
 
 """
 An edge in a connection.
 """
 type CompetitionDatasetConnectionEdge {
-  """
-  The item at the end of the edge
-  """
-  node: Dataset!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: Dataset!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 """
 An edge in a connection.
 """
 type CompetitionEdge {
-  """
-  The item at the end of the edge
-  """
-  node: Competition!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: Competition!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type CompetitionJuryConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [CompetitionJuryEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [Entity!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [CompetitionJuryEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Entity!]!
 }
 
 """
 An edge in a connection.
 """
 type CompetitionJuryEdge {
-  """
-  The item at the end of the edge
-  """
-  node: Entity!
-  selectedOn: DateTime!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: Entity!
+	selectedOn: DateTime!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type CompetitionMembership implements Node {
-  kind: CompetitionMembershipKind!
-  id: ID!
-  entity: Entity!
-  competition: Competition!
-  ruleAgreements(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    latest: Boolean
-  ): CompetitionRuleAgreementConnection!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	kind: CompetitionMembershipKind!
+	id: ID!
+	entity: Entity!
+	competition: Competition!
+	ruleAgreements(after: String, before: String, first: Int, last: Int, latest: Boolean): CompetitionRuleAgreementConnection!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 }
 
 type CompetitionMembershipConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [CompetitionMembershipEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [CompetitionMembership!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [CompetitionMembershipEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [CompetitionMembership!]!
 }
 
 """
 An edge in a connection.
 """
 type CompetitionMembershipEdge {
-  """
-  The item at the end of the edge
-  """
-  node: CompetitionMembership!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: CompetitionMembership!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 enum CompetitionMembershipKind {
-  HOST
-  PARTICIPANT
+	HOST
+	PARTICIPANT
 }
 
 type CompetitionRule implements Node {
-  createdAt: DateTime!
-  id: ID!
-  text: String!
-  competition: Competition!
-  entityAgreement(entity: UsernameOrID): CompetitionRuleAgreement
+	createdAt: DateTime!
+	id: ID!
+	text: String!
+	competition: Competition!
+	entityAgreement(entity: UsernameOrID): CompetitionRuleAgreement
 }
 
 type CompetitionRuleAgreement implements Node {
-  createdAt: DateTime!
-  id: ID!
-  competitionRule: CompetitionRule!
-  entity: Entity!
+	createdAt: DateTime!
+	id: ID!
+	competitionRule: CompetitionRule!
+	entity: Entity!
 }
 
 type CompetitionRuleAgreementConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [CompetitionRuleAgreementEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [CompetitionRuleAgreement!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [CompetitionRuleAgreementEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [CompetitionRuleAgreement!]!
 }
 
 """
 An edge in a connection.
 """
 type CompetitionRuleAgreementEdge {
-  """
-  The item at the end of the edge
-  """
-  node: CompetitionRuleAgreement!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: CompetitionRuleAgreement!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type CompetitionRuleConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [CompetitionRuleEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [CompetitionRule!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [CompetitionRuleEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [CompetitionRule!]!
 }
 
 """
 An edge in a connection.
 """
 type CompetitionRuleEdge {
-  """
-  The item at the end of the edge
-  """
-  node: CompetitionRule!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: CompetitionRule!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type CompetitionScoringCriterion implements Node {
-  title: String!
-  order: Int!
-  description: String
-  weight: Float!
-  id: ID!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  stage: CompetitionStage!
-  competition: Competition!
+	title: String!
+	order: Int!
+	description: String
+	weight: Float!
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	stage: CompetitionStage!
+	competition: Competition!
 }
 
 type CompetitionStage implements Node {
-  requiresApproval: Boolean!
-  noCode: Boolean!
-  useJuryScore: Boolean!
-  showMetric: Boolean!
-  privateApprovals: Boolean!
-  createdAt: DateTime!
-  validUntil: DateTime
-  id: ID!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  seq: Int!
-  hasLeaderboard: Boolean!
-  isActive: Boolean!
-  competition: Competition!
-  submissionPreamble: String
-  leaderboard(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): SubmissionRankingConnection!
-  submission(entity: UsernameOrID): Submission
-  scoringCriteria: [CompetitionScoringCriterion!]!
+	requiresApproval: Boolean!
+	noCode: Boolean!
+	useJuryScore: Boolean!
+	showMetric: Boolean!
+	privateApprovals: Boolean!
+	createdAt: DateTime!
+	validUntil: DateTime
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	seq: Int!
+	hasLeaderboard: Boolean!
+	isActive: Boolean!
+	competition: Competition!
+	submissionPreamble: String
+	leaderboard(after: String, before: String, first: Int, last: Int): SubmissionRankingConnection!
+	submissions(after: String, before: String, first: Int, last: Int): SubmissionConnection!
+	submission(entity: UsernameOrID): Submission
+	scoringCriteria: [CompetitionScoringCriterion!]!
 }
 
 type CompetitionStageConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [CompetitionStageEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [CompetitionStage!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [CompetitionStageEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [CompetitionStage!]!
 }
 
 """
 An edge in a connection.
 """
 type CompetitionStageEdge {
-  """
-  The item at the end of the edge
-  """
-  node: CompetitionStage!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: CompetitionStage!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type CompetitionSubscription implements SubjectSubscription & Node {
-  createdAt: DateTime!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  id: ID!
-  entity: Entity!
-  kind: SubjectKind!
-  competition: Competition!
-  subject: Subscribable!
+	createdAt: DateTime!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	id: ID!
+	entity: Entity!
+	kind: SubjectKind!
+	competition: Competition!
+	subject: Subscribable!
 }
 
 type CompetitionTagConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [TagEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [Tag!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [TagEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Tag!]!
 }
 
 input CreateBlogArticleInput {
-  title: String!
-  content: String!
-  shortDescription: String!
-  image: Upload
-  authorsIds: [ID!]!
-  seoTitle: String
-  seoDescription: String
-  imageAlt: String
+	title: String!
+	content: String!
+	shortDescription: String!
+	image: Upload
+	authorsIds: [ID!]!
+	seoTitle: String
+	seoDescription: String
+	imageAlt: String
 }
 
 input CreateCommentInput {
-  content: String!
+	content: String!
 }
 
 input CreateCompetitionInput {
-  slug: String!
-  title: String!
-  shortDescription: String!
-  description: String
-  banner: Upload
-  thumbnail: Upload
-  visibility: ActivityVisibility! = UNAUTHENTICATED
-  tagIds: [ID]
-  """
-  Message shown to participants before they submit a solution.
-  """
-  submissionPreamble: String = null
-  """
-  Enables jury system on competition
-  """
-  requiresApproval: Boolean! = false
-  """
-  Enables no-code system on competition. Requires jury system to work.
-  """
-  noCode: Boolean! = false
-  """
-  Use average jury score instead of automated use-case metric. Requires jury system to work.
-  """
-  useJuryScore: Boolean! = false
-  """
-  Show automated use-case metric.
-  """
-  showMetric: Boolean! = true
-  """
-  Only allow the competition host, the reviewer and the submission author to see the approval
-  score.
-  """
-  privateApprovals: Boolean! = true
-  timeline: CreateTimelineInput
+	slug: String!
+	title: String!
+	shortDescription: String!
+	description: String
+	banner: Upload
+	thumbnail: Upload
+	visibility: ActivityVisibility! = UNAUTHENTICATED
+	tagIds: [ID]
+	"""
+	Message shown to participants before they submit a solution.
+	"""
+	submissionPreamble: String = null
+	"""
+	Enables jury system on competition
+	"""
+	requiresApproval: Boolean! = false
+	"""
+	Enables no-code system on competition. Requires jury system to work.
+	"""
+	noCode: Boolean! = false
+	"""
+	Use average jury score instead of automated use-case metric. Requires jury system to work.
+	"""
+	useJuryScore: Boolean! = false
+	"""
+	Show automated use-case metric.
+	"""
+	showMetric: Boolean! = true
+	"""
+	Only allow the competition host, the reviewer and the submission author to see the approval
+	score.
+	"""
+	privateApprovals: Boolean! = true
+	timeline: CreateTimelineInput
 }
 
 input CreateCompetitionStageInput {
-  """
-  Enables jury system on competition
-  """
-  requiresApproval: Boolean! = false
-  """
-  Enables no-code system on competition. Requires jury system to work.
-  """
-  noCode: Boolean! = false
-  """
-  Use average jury score instead of automated use-case metric. Requires jury system to work.
-  """
-  useJuryScore: Boolean! = false
-  """
-  Show automated use-case metric.
-  """
-  showMetric: Boolean! = true
-  """
-  Only allow the competition host, the reviewer and the submission author to see the approval
-  score.
-  """
-  privateApprovals: Boolean! = true
-  """
-  Message shown to participants before they submit a solution.
-  """
-  submissionPreamble: String = null
+	"""
+	Enables jury system on competition
+	"""
+	requiresApproval: Boolean! = false
+	"""
+	Enables no-code system on competition. Requires jury system to work.
+	"""
+	noCode: Boolean! = false
+	"""
+	Use average jury score instead of automated use-case metric. Requires jury system to work.
+	"""
+	useJuryScore: Boolean! = false
+	"""
+	Show automated use-case metric.
+	"""
+	showMetric: Boolean! = true
+	"""
+	Only allow the competition host, the reviewer and the submission author to see the approval
+	score.
+	"""
+	privateApprovals: Boolean! = true
+	"""
+	Message shown to participants before they submit a solution.
+	"""
+	submissionPreamble: String = null
 }
 
 input CreateDatasetInput {
-  slug: String!
-  name: String!
-  visibility: ActivityVisibility!
+	localSlug: String!
+	name: String!
+	private: Boolean!
+	tags: [ID!]!
 }
 
 input CreateEventInput {
-  slug: String!
-  title: String!
-  shortDescription: String!
-  description: String
-  banner: Upload
-  thumbnail: Upload
-  visibility: ActivityVisibility! = UNAUTHENTICATED
+	slug: String!
+	title: String!
+	shortDescription: String!
+	description: String
+	banner: Upload
+	thumbnail: Upload
+	visibility: ActivityVisibility! = UNAUTHENTICATED
 }
 
 input CreateForumInput {
-  slug: String!
-  title: String!
-  shortDescription: String!
-  description: String
-  guidelines: String
-  icon: Upload
-  orderingPriority: Int
+	slug: String!
+	title: String!
+	shortDescription: String!
+	description: String
+	guidelines: String
+	icon: Upload
+	orderingPriority: Int
 }
 
 type CreateMultipartUploadResponse {
-  uploadId: String!
-  urls: [Url!]! @deprecated
+	uploadId: String!
+	urls: [Url!]! @deprecated
 }
 
 input CreateOauth2ConfigInput {
-  name: String!
-  description: String
-  redirectUri: Url!
+	name: String!
+	description: String
+	redirectUri: Url!
 }
 
 input CreateOrganizationInput {
-  username: String!
-  displayName: String!
-  github: String
-  linkedin: String
-  googleScholar: String
-  website: Url
-  location: String
-  bio: String
-  image: Upload
+	username: String!
+	displayName: String!
+	github: String
+	linkedin: String
+	googleScholar: String
+	website: Url
+	location: String
+	bio: String
+	image: Upload
 }
 
 input CreatePasswordResetInput {
-  usernameOrEmail: String!
+	usernameOrEmail: String!
 }
 
 input CreateTagInput {
-  name: String!
+	name: String!
 }
 
 input CreateTimelineInput {
-  startDate: NaiveDate!
-  endDate: NaiveDate!
-  online: Boolean!
-  timezone: TimeZone!
-  steps: [TimelineStepInput!]!
+	startDate: NaiveDate!
+	endDate: NaiveDate!
+	online: Boolean!
+	timezone: TimeZone!
+	steps: [TimelineStepInput!]!
 }
 
 input CreateTopicInput {
-  title: String!
-  url: Url
-  description: String
+	title: String!
+	url: Url
+	description: String
 }
 
-type Dataset implements Node {
-  slug: String!
-  name: String!
-  visibility: ActivityVisibility!
-  createdAt: DateTime!
-  id: ID!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  owner: Entity!
-  members(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    search: String
-  ): DatasetMembershipConnection!
-  latestVersion: DatasetVersion
-  versions(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): DatasetVersionConnection!
-  competitions(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    search: String
-  ): DatasetCompetitionConnection!
+type Dataset implements Votable & ForumOwner & Node {
+	localSlug: String!
+	name: String!
+	private: Boolean!
+	createdAt: DateTime!
+	votes: Int!
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	owner: Entity!
+	forumOwnerKind: ForumOwnerKind!
+	slug: String!
+	forum: Forum!
+	members(after: String, before: String, first: Int, last: Int, search: String): DatasetMembershipConnection!
+	analytics: DatasetAnalytics!
+	latestVersion: DatasetVersion
+	versions(after: String, before: String, first: Int, last: Int, published: Boolean): DatasetVersionConnection!
+	competitions(after: String, before: String, first: Int, last: Int, search: String): DatasetCompetitionConnection!
+	tags(after: String, before: String, first: Int, last: Int): DatasetTagConnection!
+	voted: EntityVote
+	voterCount: Int!
+	voters(after: String, before: String, first: Int, last: Int): VotersConnection!
 }
 
 type DatasetAnalytics {
-  rowCount: Int!
-  fileSize: Int!
+	rowCount: Int!
+	fileSize: Int!
+	downloadCount: Int!
 }
 
 type DatasetCompetitionConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [DatasetCompetitionConnectionEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [Competition!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [DatasetCompetitionConnectionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Competition!]!
 }
 
 """
 An edge in a connection.
 """
 type DatasetCompetitionConnectionEdge {
-  """
-  The item at the end of the edge
-  """
-  node: Competition!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: Competition!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type DatasetConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [DatasetEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [Dataset!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [DatasetEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Dataset!]!
+	totalCount: Int!
+}
+
+enum DatasetConnectionOrder {
+	CREATED_AT
+	TRENDING
+	DOWNLOADS
+}
+
+enum DatasetConnectionSortDirection {
+	ASCENDING
+	DESCENDING
 }
 
 """
 An edge in a connection.
 """
 type DatasetEdge {
-  """
-  The item at the end of the edge
-  """
-  node: Dataset!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: Dataset!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type DatasetMembershipConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [DatasetMembershipConnectionEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [Entity!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [DatasetMembershipConnectionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Entity!]!
 }
 
 """
 An edge in a connection.
 """
 type DatasetMembershipConnectionEdge {
-  """
-  The item at the end of the edge
-  """
-  node: Entity!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: Entity!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+"""
+At least one field must be set.
+"""
+input DatasetQueryFilterSize {
+	low: Int
+	high: Int
+}
+
+input DatasetQueryFilters {
+	search: String
+	tags: [ID!]
+	size: DatasetQueryFilterSize
+	order: DatasetConnectionOrder! = CREATED_AT
+	sortDirection: DatasetConnectionSortDirection! = DESCENDING
+}
+
+type DatasetTagConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [TagEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Tag!]!
 }
 
 type DatasetVersion implements Node {
-  version: Semver!
-  description: String!
-  schema: JSON!
-  publishedAt: DateTime
-  id: ID!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  dataset: Dataset!
-  fileByName(name: String!): DatasetVersionFile
-  files(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): DatasetVersionFileConnection!
-  analytics: DatasetAnalytics!
-  authors(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    search: String
-  ): DatasetVersionAuthorConnection!
-  metadata: JSON!
+	version: Semver!
+	description: String!
+	publishedAt: DateTime
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	dataset: Dataset!
+	fileByPartitionNum(partitionNum: Int!): DatasetVersionFile
+	files(after: String, before: String, first: Int, last: Int): DatasetVersionFileConnection!
+	analytics: DatasetAnalytics!
+	authors(after: String, before: String, first: Int, last: Int, search: String): DatasetVersionAuthorConnection!
 }
 
 interface DatasetVersionAuthor {
-  displayName: String!
+	displayName: String!
 }
 
 type DatasetVersionAuthorConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [DatasetVersionAuthorConnectionEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [DatasetVersionAuthor!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [DatasetVersionAuthorConnectionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [DatasetVersionAuthor!]!
 }
 
 """
 An edge in a connection.
 """
 type DatasetVersionAuthorConnectionEdge {
-  """
-  The item at the end of the edge
-  """
-  node: DatasetVersionAuthor!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: DatasetVersionAuthor!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 input DatasetVersionAuthorInput @oneOf {
-  registered: UsernameOrID
-  unregistered: UnregisteredDatasetVersionAuthorInput
+	registered: UsernameOrID
+	unregistered: UnregisteredDatasetVersionAuthorInput
 }
 
 type DatasetVersionConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [DatasetVersionEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [DatasetVersion!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [DatasetVersionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [DatasetVersion!]!
 }
 
 """
 An edge in a connection.
 """
 type DatasetVersionEdge {
-  """
-  The item at the end of the edge
-  """
-  node: DatasetVersion!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: DatasetVersion!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
-type DatasetVersionFile {
-  name: String!
-  size: Int!
-  id: ID!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  datasetVersion: DatasetVersion!
-  url: Url!
+type DatasetVersionFile implements Node {
+	partitionNum: Int!
+	size: Int
+	rows: Int
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	datasetVersion: DatasetVersion!
+	url: Url!
 }
 
 type DatasetVersionFileConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [DatasetVersionFileEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [DatasetVersionFile!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [DatasetVersionFileEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [DatasetVersionFile!]!
 }
 
 """
 An edge in a connection.
 """
 type DatasetVersionFileEdge {
-  """
-  The item at the end of the edge
-  """
-  node: DatasetVersionFile!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: DatasetVersionFile!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 """
@@ -1217,669 +1163,604 @@ The input/output is a string in RFC3339 format.
 scalar DateTime
 
 type DeletedComment {
-  topicId: ID!
-  parentId: ID
-  commentId: ID!
+	topicId: ID!
+	parentId: ID
+	commentId: ID!
 }
 
 type EmailSignupRequest implements Node {
-  lastEmailSentAt: DateTime!
-  emailSentCount: Int!
-  expiresAt: DateTime!
-  id: ID!
-  emailCanResendAt: DateTime!
+	lastEmailSentAt: DateTime!
+	emailSentCount: Int!
+	expiresAt: DateTime!
+	id: ID!
+	emailCanResendAt: DateTime!
 }
 
 input EmailSignupVerficationInput {
-  id: ID!
-  token: String!
+	id: ID!
+	token: String!
 }
 
 interface Entity {
-  id: ID!
-  kind: EntityKind!
-  username: String!
-  displayName: String!
-  image: Url
-  imageThumbnail: Url
-  location: String
-  github: String
-  googleScholar: String
-  linkedin: String
-  website: String
-  bio: String
-  createdAt: DateTime!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  submissions(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    competitionId: ID
-    allStages: Boolean
-  ): SubmissionConnection!
-  badges(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): EntityBadgeConnection!
-  subjectSubscriptions(
-    kinds: [SubjectKind!]
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): SubjectSubscriptionConnection!
-  projectVersionApprovals(
-    projectVersionId: UUID
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): ProjectVersionApprovalConnection!
-  points: Int!
-  rank: Int!
+	id: ID!
+	kind: EntityKind!
+	username: String!
+	displayName: String!
+	image: Url
+	imageThumbnail: Url
+	location: String
+	github: String
+	googleScholar: String
+	linkedin: String
+	website: String
+	bio: String
+	createdAt: DateTime!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID, allStages: Boolean): SubmissionConnection!
+	badges(after: String, before: String, first: Int, last: Int): EntityBadgeConnection!
+	subjectSubscriptions(kinds: [SubjectKind!], after: String, before: String, first: Int, last: Int): SubjectSubscriptionConnection!
+	projectVersionApprovals(projectVersionId: UUID, after: String, before: String, first: Int, last: Int): ProjectVersionApprovalConnection!
+	points: Int!
+	rank: Int!
 }
 
 enum EntityActivitiesConnectionKind {
-  SUBMISSION
-  TOPIC
-  COMMENT
+	SUBMISSION
+	TOPIC
+	COMMENT
 }
 
 type EntityBadge implements Node {
-  badge: Badge!
-  createdAt: DateTime!
-  id: ID!
+	badge: Badge!
+	createdAt: DateTime!
+	id: ID!
 }
 
 type EntityBadgeConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [EntityBadgeEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [EntityBadge!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [EntityBadgeEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [EntityBadge!]!
 }
 
 """
 An edge in a connection.
 """
 type EntityBadgeEdge {
-  """
-  The item at the end of the edge
-  """
-  node: EntityBadge!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: EntityBadge!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type EntityConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [EntityEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [Entity!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [EntityEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Entity!]!
 }
 
 """
 An edge in a connection.
 """
 type EntityEdge {
-  """
-  The item at the end of the edge
-  """
-  node: Entity!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: Entity!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 enum EntityKind {
-  USER
-  ORGANIZATION
+	USER
+	ORGANIZATION
 }
 
 type EntityVote {
-  score: Int!
-  votedAt: DateTime!
-  subject: VotableEdge!
+	score: Int!
+	votedAt: DateTime!
+	subject: VotableEdge!
 }
 
 type Event implements ForumOwner & Node {
-  slug: String!
-  title: String!
-  shortDescription: String!
-  createdAt: DateTime!
-  visibility: ActivityVisibility!
-  id: ID!
-  forumOwnerKind: ForumOwnerKind!
-  description: String
-  isPrivate: Boolean!
-  agenda: JSON
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  host: Entity!
-  forum: Forum!
-  banner: Url
-  thumbnail: Url
-  membership(entity: UsernameOrID): EventMembership
-  members(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    search: String
-  ): EventMembershipConnection!
-  teams(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): OrganizationConnection!
-  invitations(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): EventInvitationConnection!
-  invitationsCount: Int!
-  competitions(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): EventCompetitionConnection!
-  latestRule: EventRule!
-  rules(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): EventRuleConnection!
-  entityRuleAgreements(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    entity: UsernameOrID
-    latest: Boolean
-  ): EventRuleAgreementConnection!
-  invite: EventPublicInvite!
+	slug: String!
+	title: String!
+	shortDescription: String!
+	createdAt: DateTime!
+	visibility: ActivityVisibility!
+	id: ID!
+	forumOwnerKind: ForumOwnerKind!
+	description: String
+	isPrivate: Boolean!
+	agenda: JSON
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	host: Entity!
+	forum: Forum!
+	banner: Url
+	thumbnail: Url
+	membership(entity: UsernameOrID): EventMembership
+	members(after: String, before: String, first: Int, last: Int, search: String): EventMembershipConnection!
+	teams(after: String, before: String, first: Int, last: Int): OrganizationConnection!
+	invitations(after: String, before: String, first: Int, last: Int): EventInvitationConnection!
+	competitions(after: String, before: String, first: Int, last: Int): EventCompetitionConnection!
+	latestRule: EventRule!
+	rules(after: String, before: String, first: Int, last: Int): EventRuleConnection!
+	entityRuleAgreements(after: String, before: String, first: Int, last: Int, entity: UsernameOrID, latest: Boolean): EventRuleAgreementConnection!
+	invite: EventPublicInvite!
 }
 
 type EventCompetition implements Node {
-  id: ID!
-  competition: Competition!
-  event: Event!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	id: ID!
+	competition: Competition!
+	event: Event!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 }
 
 type EventCompetitionConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [EventCompetitionEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [EventCompetition!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [EventCompetitionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [EventCompetition!]!
 }
 
 """
 An edge in a connection.
 """
 type EventCompetitionEdge {
-  """
-  The item at the end of the edge
-  """
-  node: EventCompetition!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: EventCompetition!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type EventConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [EventEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [Event!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [EventEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Event!]!
 }
 
 """
 An edge in a connection.
 """
 type EventEdge {
-  """
-  The item at the end of the edge
-  """
-  node: Event!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: Event!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type EventInvitation implements Node {
-  username: String
-  email: String!
-  id: ID!
-  event: Event!
-  organization: Organization
-  registeredAs: User
+	username: String
+	email: String!
+	id: ID!
+	event: Event!
+	organization: Organization
+	registeredAs: User
 }
 
 type EventInvitationConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [EventInvitationEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [EventInvitation!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [EventInvitationEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [EventInvitation!]!
+	totalCount: Int!
 }
 
 """
 An edge in a connection.
 """
 type EventInvitationEdge {
-  """
-  The item at the end of the edge
-  """
-  node: EventInvitation!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: EventInvitation!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 interface EventInvite {
-  id: ID!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  event: Event!
-  title: String!
-  shortDescription: String!
-  thumbnail: Url
-  latestRuleText: String!
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	event: Event!
+	title: String!
+	shortDescription: String!
+	thumbnail: Url
+	latestRuleText: String!
 }
 
 input EventMemberInvite {
-  """
-  Optional username used to send invitation email when the member has not registered yet.
-  """
-  username: String
-  """
-  Required email used to find registered members, or send invitation email otherwise.
-  """
-  email: String!
-  """
-  Optional team name used to create teams for the event.
-  """
-  team: String
+	"""
+	Optional username used to send invitation email when the member has not registered yet.
+	"""
+	username: String
+	"""
+	Required email used to find registered members, or send invitation email otherwise.
+	"""
+	email: String!
+	"""
+	Optional team name used to create teams for the event.
+	"""
+	team: String
 }
 
 type EventMembership implements Node {
-  kind: EventMembershipKind!
-  id: ID!
-  entity: Entity!
-  event: Event!
-  ruleAgreements(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    latest: Boolean
-  ): EventRuleAgreementConnection!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	kind: EventMembershipKind!
+	id: ID!
+	entity: Entity!
+	event: Event!
+	ruleAgreements(after: String, before: String, first: Int, last: Int, latest: Boolean): EventRuleAgreementConnection!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 }
 
 type EventMembershipConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [EventMembershipEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [EventMembership!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [EventMembershipEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [EventMembership!]!
 }
 
 """
 An edge in a connection.
 """
 type EventMembershipEdge {
-  """
-  The item at the end of the edge
-  """
-  node: EventMembership!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: EventMembership!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 enum EventMembershipKind {
-  HOST
-  PARTICIPANT
+	HOST
+	PARTICIPANT
 }
 
 type EventPrivateInvite implements Node & EventInvite {
-  id: ID!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  event: Event!
-  title: String!
-  shortDescription: String!
-  thumbnail: Url
-  latestRuleText: String!
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	event: Event!
+	title: String!
+	shortDescription: String!
+	thumbnail: Url
+	latestRuleText: String!
 }
 
 type EventPublicInvite implements Node & EventInvite {
-  id: ID!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  event: Event!
-  code: String
-  title: String!
-  shortDescription: String!
-  thumbnail: Url
-  latestRuleText: String!
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	event: Event!
+	code: String
+	title: String!
+	shortDescription: String!
+	thumbnail: Url
+	latestRuleText: String!
 }
 
 type EventRule implements Node {
-  createdAt: DateTime!
-  id: ID!
-  text: String!
-  event: Event!
-  entityAgreement(entity: UsernameOrID): EventRuleAgreement
+	createdAt: DateTime!
+	id: ID!
+	text: String!
+	event: Event!
+	entityAgreement(entity: UsernameOrID): EventRuleAgreement
 }
 
 type EventRuleAgreement implements Node {
-  createdAt: DateTime!
-  id: ID!
-  eventRule: EventRule!
-  entity: Entity!
+	createdAt: DateTime!
+	id: ID!
+	eventRule: EventRule!
+	entity: Entity!
 }
 
 type EventRuleAgreementConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [EventRuleAgreementEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [EventRuleAgreement!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [EventRuleAgreementEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [EventRuleAgreement!]!
 }
 
 """
 An edge in a connection.
 """
 type EventRuleAgreementEdge {
-  """
-  The item at the end of the edge
-  """
-  node: EventRuleAgreement!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: EventRuleAgreement!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type EventRuleConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [EventRuleEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [EventRule!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [EventRuleEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [EventRule!]!
 }
 
 """
 An edge in a connection.
 """
 type EventRuleEdge {
-  """
-  The item at the end of the edge
-  """
-  node: EventRule!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: EventRule!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type FileBrowser {
-  readDir(path: String, first: Int, after: String): FileBrowserEntryConnection!
-  readMeta(path: String): FileBrowserEntry
+	readDir(path: String, first: Int, after: String): FileBrowserEntryConnection!
+	readMeta(path: String): FileBrowserEntry
 }
 
 type FileBrowserDirectoryEntry implements FileBrowserEntry {
-  name: String!
-  kind: FileBrowserEntryKind!
+	name: String!
+	kind: FileBrowserEntryKind!
 }
 
 interface FileBrowserEntry {
-  name: String!
-  kind: FileBrowserEntryKind!
+	name: String!
+	kind: FileBrowserEntryKind!
 }
 
 type FileBrowserEntryConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [FileBrowserEntryEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [FileBrowserEntry!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [FileBrowserEntryEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [FileBrowserEntry!]!
 }
 
 """
 An edge in a connection.
 """
 type FileBrowserEntryEdge {
-  """
-  The item at the end of the edge
-  """
-  node: FileBrowserEntry!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: FileBrowserEntry!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 enum FileBrowserEntryKind {
-  FILE
-  DIRECTORY
+	FILE
+	DIRECTORY
 }
 
 type FileBrowserFileEntry implements FileBrowserEntry {
-  name: String!
-  contentType: String!
-  mode: Int!
-  contentLength: Int!
-  kind: FileBrowserEntryKind!
-  downloadUrl: Url!
+	name: String!
+	contentType: String!
+	mode: Int!
+	contentLength: Int!
+	kind: FileBrowserEntryKind!
+	downloadUrl: Url!
 }
 
 type FinishUploadFile {
-  downloadUrl: Url!
+	downloadUrl: Url!
 }
 
 input FinishUploadFileInput {
-  key: String!
+	key: String!
 }
 
+
 type Forum implements ForumOwner & Subscribable & Node {
-  forumOwnerKind: ForumOwnerKind!
-  slug: String!
-  title: String!
-  shortDescription: String!
-  guidelines: String
-  orderingPriority: Int!
-  createdAt: DateTime!
-  id: ID!
-  description: String
-  owner: ForumOwner!
-  forum: Forum!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  icon: Url
-  topics(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    order: VotableOrder
-  ): TopicConnection!
-  entitySubscription(entity: UsernameOrID): SubjectSubscription
+	forumOwnerKind: ForumOwnerKind!
+	slug: String!
+	title: String!
+	shortDescription: String!
+	guidelines: String
+	orderingPriority: Int!
+	createdAt: DateTime!
+	id: ID!
+	description: String
+	owner: ForumOwner!
+	forum: Forum!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	icon: Url
+	topics(after: String, before: String, first: Int, last: Int, order: VotableOrder): TopicConnection!
+	entitySubscription(entity: UsernameOrID): SubjectSubscription
 }
 
 type ForumConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [ForumEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [Forum!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [ForumEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Forum!]!
 }
 
 """
 An edge in a connection.
 """
 type ForumEdge {
-  """
-  The item at the end of the edge
-  """
-  node: Forum!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: Forum!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 interface ForumOwner {
-  id: ID!
-  slug: String!
-  forum: Forum!
-  forumOwnerKind: ForumOwnerKind!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	id: ID!
+	slug: String!
+	forum: Forum!
+	forumOwnerKind: ForumOwnerKind!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 }
 
 enum ForumOwnerKind {
-  TOP_LEVEL
-  BLOG
-  COMPETITION
-  EVENT
+	TOP_LEVEL
+	BLOG
+	COMPETITION
+	EVENT
+	DATASET
 }
 
 type ForumSubscription implements SubjectSubscription & Node {
-  createdAt: DateTime!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  id: ID!
-  entity: Entity!
-  kind: SubjectKind!
-  forum: Forum!
-  subject: Subscribable!
+	createdAt: DateTime!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	id: ID!
+	entity: Entity!
+	kind: SubjectKind!
+	forum: Forum!
+	subject: Subscribable!
 }
 
 type GlobalLeaderboardConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [GlobalLeaderboardEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [Entity!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [GlobalLeaderboardEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Entity!]!
 }
 
 """
 An edge in a connection.
 """
 type GlobalLeaderboardEdge {
-  """
-  The item at the end of the edge
-  """
-  node: Entity!
-  rank: Int!
-  points: Int!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: Entity!
+	rank: Int!
+	points: Int!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
+
 type InitUploadFile {
-  key: String!
-  uploadUrl: Url!
+	key: String!
+	uploadUrl: Url!
 }
 
 input InitUploadFileInput {
-  filename: String!
-  contentType: String!
-  contentLength: Int!
+	filename: String!
+	contentType: String!
+	contentLength: Int!
 }
+
 
 """
 A scalar that can represent any JSON value.
@@ -1887,250 +1768,149 @@ A scalar that can represent any JSON value.
 scalar JSON
 
 input LoginUserInput {
-  usernameOrEmail: String!
-  password: String!
+	usernameOrEmail: String!
+	password: String!
 }
 
 type Mutation {
-  signupUser(input: SignupUserInput!): UserEdge!
-  loginUser(input: LoginUserInput!): UserEdge!
-  logoutUser: Boolean!
-  createPasswordReset(input: CreatePasswordResetInput!): PasswordReset!
-  resetPassword(input: ResetPasswordInput!): Boolean!
-  updateUser(id: ID!, input: UpdateUserInput!): UserEdge!
-  deleteUser(id: ID!): ID!
-  setUserIsBanned(entityId: ID!, isBanned: Boolean!): User!
-  createCompetition(input: CreateCompetitionInput!): CompetitionEdge!
-  updateCompetition(id: ID!, input: UpdateCompetitionInput!): CompetitionEdge!
-  deleteCompetition(id: ID!): ID!
-  setCompetitionOrderingPriority(id: ID!, priority: Int!): CompetitionEdge!
-  createSubmissionVersion(
-    competitionId: ID!
-    input: UpdateSubmissionInput!
-    asEntity: UsernameOrID
-  ): ProjectVersionEdge!
-  validateSubmissionVersion(projectVersionId: ID!): ProjectVersionEdge!
-  """
-  Submit files for a "no-code" competition. This feature is not available for regular
-  competitions.
-  """
-  uploadNoCodeSubmissionVersion(
-    competitionId: ID!
-    input: UploadNoCodeSubmissionInput!
-    asEntity: UsernameOrID
-  ): ProjectVersionEdge!
-  createTopic(forumId: ID!, input: CreateTopicInput!): TopicEdge!
-  updateTopic(id: ID!, input: UpdateTopicInput!): Topic!
-  deleteTopic(id: ID!): ID!
-  createCommentForTopic(topicId: ID!, input: CreateCommentInput!): CommentEdge!
-  createCommentForComment(
-    commentId: ID!
-    input: CreateCommentInput!
-  ): CommentEdge!
-  deleteComment(id: ID!): ID!
-  updateComment(id: ID!, input: UpdateCommentInput!): CommentEdge!
-  createOrganization(input: CreateOrganizationInput!): OrganizationEdge!
-  deleteOrganization(id: ID!): ID!
-  updateOrganization(
-    id: ID!
-    input: UpdateOrganizationInput!
-  ): OrganizationEdge!
-  updateOrganizationMembership(
-    organizationId: ID!
-    userId: ID!
-    kind: OrganizationMembershipKind!
-  ): OrganizationMembershipEdge!
-  removeOrganizationMember(id: ID!): ID!
-  transferOrganizationOwnership(
-    organizationId: ID!
-    toUserId: ID!
-  ): [OrganizationMembershipEdge!]!
-  oauth2Authorize(
-    input: Oauth2AuthorizeInput!
-    consent: Boolean! = true
-  ): Oauth2AuthorizeOutput!
-  oauth2Token(input: Oauth2TokenInput!): Oauth2TokenOutput!
-  oauth2Refresh(input: Oauth2RefreshInput!): Oauth2TokenOutput!
-  createUseCaseVersion(
-    competitionId: ID!
-    input: UpdateUseCaseInput!
-  ): ProjectVersionEdge!
-  validateUseCaseVersion(projectVersionId: ID!): ProjectVersionEdge!
-  awardBadge(entityId: ID!, badge: Badge!): EntityBadgeEdge!
-  withdrawBadge(id: ID!): ID!
-  agreeToCompetitionRule(
-    competition: ID!
-    asEntity: UsernameOrID
-  ): CompetitionRuleAgreement!
-  agreeToEventRule(event: ID!, asEntity: UsernameOrID): EventRuleAgreement!
-  addCompetitionMember(
-    competitionId: ID!
-    entityId: ID!
-  ): CompetitionMembershipEdge!
-  joinCompetition(
-    competitionId: ID!
-    asEntity: UsernameOrID
-  ): CompetitionMembershipEdge!
-  removeCompetitionMember(id: ID!): ID!
-  transferCompetitionOwnership(
-    competitionId: ID!
-    toEntityId: ID!
-  ): [CompetitionMembershipEdge!]!
-  setUserNotificationSubscription(
-    notification: NotificationKind!
-    subscribe: Boolean!
-  ): UserEdge!
-  unsubscribeFromAllNotifications: UserEdge!
-  unsubscribeNotificationForToken(token: String!): NotificationKind
-  createEvent(input: CreateEventInput!): EventEdge!
-  updateEvent(id: ID!, input: UpdateEventInput!): EventEdge!
-  deleteEvent(id: ID!): ID!
-  updateEventAgenda(input: UpdateAgendaInput!, eventId: ID!): EventEdge!
-  setEventOrderingPriority(id: ID!, priority: Int!): EventEdge!
-  inviteEventMembers(eventId: ID!, invites: [EventMemberInvite!]!): Event!
-  remindEventInvitees(eventId: ID!): Event!
-  addEventMember(eventId: ID!, entityId: ID!): EventMembershipEdge!
-  joinEvent(eventId: ID!, asEntity: UsernameOrID): EventMembershipEdge!
-  removeEventMember(id: ID!): ID!
-  transferEventOwnership(eventId: ID!, toEntityId: ID!): [EventMembershipEdge!]!
-  addEventCompetition(eventId: ID!, competitionId: ID!): EventCompetitionEdge!
-  removeEventCompetition(id: ID!): ID!
-  createProjectVersionFileMultipartUpload(
-    id: ID!
-    chunks: [Int!]! = [] @deprecated
-    contentType: String = null @deprecated
-  ): CreateMultipartUploadResponse!
-  uploadProjectVersionFilePart(
-    id: ID!
-    uploadId: String!
-    chunk: Int!
-    chunkLen: Int!
-  ): Url!
-  completeProjectVersionFileMultipartUpload(
-    id: ID!
-    uploadId: String!
-    eTags: [String!]!
-  ): ProjectVersionFile!
-  createTag(input: CreateTagInput!, entityId: ID!): TagEdge!
-  deleteTag(tagId: ID!): ID!
-  initUploadFile(input: InitUploadFileInput!): InitUploadFile!
-  finishUploadFile(input: FinishUploadFileInput!): FinishUploadFile!
-  publishVote(id: ID!, kind: VoteKind!): VotableEdge!
-  resetVote(id: ID!): VotableEdge!
-  createForum(input: CreateForumInput!): ForumEdge!
-  updateForum(id: ID!, input: UpdateForumInput!): ForumEdge!
-  deleteForum(id: ID!): ID!
-  subscribeToSubject(
-    subject: ID!
-    asEntity: UsernameOrID
-  ): SubjectSubscriptionEdge!
-  unsubscribeFromSubject(subscription: ID!): ID!
-  createProjectVersionApproval(
-    projectVersionId: ID!
-    input: ProjectVersionApprovalInput!
-  ): ProjectVersionApprovalEdge!
-  updateProjectVersionApproval(
-    projectVersionApprovalId: ID!
-    input: ProjectVersionApprovalInput!
-  ): ProjectVersionApprovalEdge!
-  deleteProjectVersionApproval(projectVersionApprovalId: ID!): ID!
-  fetchWebsiteMetadata(url: Url!): WebsiteMetadata!
-  generateEventInviteCode(id: ID!): EventPublicInvite!
-  removeEventInviteCode(id: ID!): EventPublicInvite!
-  acceptEventInvite(id: ID!, code: String, asEntity: UsernameOrID): EventInvite!
-  createBlogArticle(input: CreateBlogArticleInput!): BlogArticleEdge!
-  updateBlogArticle(id: ID!, input: UpdateBlogArticleInput!): BlogArticleEdge!
-  deleteBlogArticle(id: ID!): ID!
-  sendEmailSignupVerification(
-    input: SendEmailSignupVerificationInput!
-  ): EmailSignupRequest!
-  resendEmailSignupVerification(id: ID!): EmailSignupRequest!
-  checkEmailSignupVerification(
-    input: EmailSignupVerficationInput!
-  ): EmailSignupRequest!
-  createOauth2AuthRequest(provider: Oauth2Provider!): Url!
-  checkOauth2Auth(code: String!, state: String!): Oauth2AuthResponse!
-  createOauth2Config(
-    input: CreateOauth2ConfigInput!
-    asEntity: UsernameOrID
-  ): Oauth2ConfigEdge!
-  updateOauth2Config(
-    oauth2ConfigId: ID!
-    input: UpdateOauth2ConfigInput!
-  ): Oauth2ConfigEdge!
-  deleteOauth2Config(oauth2ConfigId: ID!): ID!
-  addCompetitionJury(competitionId: ID!, entityId: ID!): CompetitionJuryEdge!
-  removeCompetitionJury(competitionId: ID!, entityId: ID!): Entity!
-  """
-  Archive currently active leaderboard into a new stage, creating a new empty leaderboard.
-  Returns previously active leaderboard.
-  """
-  createCompetitionStage(
-    competitionId: ID!
-    input: CreateCompetitionStageInput!
-  ): CompetitionStageEdge!
-  updateCompetitionStage(
-    stageId: ID!
-    input: UpdateCompetitionStageInput!
-  ): CompetitionStageEdge!
-  """
-  Withdraw currently active leaderboard if it is still empty, making last stage the currently
-  active leaderboard. Useful when a new stage was created by error.
-  Returns previously staged leaderboard that now became active.
-  """
-  removeCompetitionStage(stageId: ID!): Competition!
-  createDataset(
-    input: CreateDatasetInput!
-    asEntity: UsernameOrID
-  ): DatasetEdge!
-  updateDataset(datasetId: ID!, input: UpdateDatasetInput!): DatasetEdge!
-  deleteDataset(datasetId: ID!): ID!
-  transferDatasetOwnership(
-    datasetId: ID!
-    newOwner: UsernameOrID!
-  ): DatasetEdge!
-  addDatasetCompetition(
-    datasetId: ID!
-    competitionId: ID!
-  ): DatasetCompetitionConnectionEdge!
-  removeDatasetCompetition(datasetId: ID!, competitionId: ID!): Competition!
-  addDatasetMember(
-    datasetId: ID!
-    entityId: ID!
-  ): DatasetMembershipConnectionEdge!
-  removeDatasetMember(datasetId: ID!, entityId: ID!): ID!
-  createDatasetVersion(datasetId: ID!, schema: JSON!): ID!
-  publishDatasetVersion(datasetVersionId: ID!): DatasetVersionEdge!
-  updateDatasetVersion(
-    datasetVersionId: ID!
-    input: UpdateDatasetVersionInput!
-  ): DatasetVersionEdge!
-  deleteDatasetVersion(datasetVersionId: ID!): DatasetVersion!
-  """
-  Attach a file to a dataset version. Returns an upload ID which you can use
-  to call `uploadDatasetVersionFilePart`.
-  """
-  createDatasetVersionFile(datasetVersionId: ID!, fileName: String!): ID!
-  """
-  Upload a part of the file that was attached to a dataset version.
-  Returns a short-lived URL that you can HTTP PUT.
-  May be called any number of times, but at least once.
-  """
-  uploadDatasetVersionFilePart(
-    datasetVersionFileId: ID!
-    part: Int!
-    partSize: Int!
-  ): Url!
-  """
-  Finalize the upload of a file attached to a dataset version.
-  Must be called exactly one time.
-  If not called, all uploaded files get garbage collected 6 hours after
-  the last part was uploaded.
-  """
-  completeDatasetVersionFile(
-    datasetVersionFileId: ID!
-    eTags: [String!]!
-  ): DatasetVersionFile!
+	signupUser(input: SignupUserInput!): UserEdge!
+	loginUser(input: LoginUserInput!): UserEdge!
+	logoutUser: Boolean!
+	createPasswordReset(input: CreatePasswordResetInput!): PasswordReset!
+	resetPassword(input: ResetPasswordInput!): Boolean!
+	updateUser(id: ID!, input: UpdateUserInput!): UserEdge!
+	deleteUser(id: ID!): ID!
+	setUserIsBanned(entityId: ID!, isBanned: Boolean!): User!
+	createCompetition(input: CreateCompetitionInput!): CompetitionEdge!
+	updateCompetition(id: ID!, input: UpdateCompetitionInput!): CompetitionEdge!
+	deleteCompetition(id: ID!): ID!
+	setCompetitionOrderingPriority(id: ID!, priority: Int!): CompetitionEdge!
+	createSubmissionVersion(competitionId: ID!, input: UpdateSubmissionInput!, asEntity: UsernameOrID): ProjectVersionEdge!
+	validateSubmissionVersion(projectVersionId: ID!): ProjectVersionEdge!
+	"""
+	Submit files for a "no-code" competition. This feature is not available for regular
+	competitions.
+	"""
+	uploadNoCodeSubmissionVersion(competitionId: ID!, input: UploadNoCodeSubmissionInput!, asEntity: UsernameOrID): ProjectVersionEdge!
+	createTopic(forumId: ID!, input: CreateTopicInput!): TopicEdge!
+	updateTopic(id: ID!, input: UpdateTopicInput!): Topic!
+	deleteTopic(id: ID!): ID!
+	createCommentForTopic(topicId: ID!, input: CreateCommentInput!): CommentEdge!
+	createCommentForComment(commentId: ID!, input: CreateCommentInput!): CommentEdge!
+	deleteComment(id: ID!): ID!
+	updateComment(id: ID!, input: UpdateCommentInput!): CommentEdge!
+	createOrganization(input: CreateOrganizationInput!): OrganizationEdge!
+	deleteOrganization(id: ID!): ID!
+	updateOrganization(id: ID!, input: UpdateOrganizationInput!): OrganizationEdge!
+	updateOrganizationMembership(organizationId: ID!, userId: ID!, kind: OrganizationMembershipKind!): OrganizationMembershipEdge!
+	removeOrganizationMember(id: ID!): ID!
+	transferOrganizationOwnership(organizationId: ID!, toUserId: ID!): [OrganizationMembershipEdge!]!
+	oauth2Authorize(input: Oauth2AuthorizeInput!, consent: Boolean! = true): Oauth2AuthorizeOutput!
+	oauth2Token(input: Oauth2TokenInput!): Oauth2TokenOutput!
+	oauth2Refresh(input: Oauth2RefreshInput!): Oauth2TokenOutput!
+	createUseCaseVersion(competitionId: ID!, input: UpdateUseCaseInput!): ProjectVersionEdge!
+	validateUseCaseVersion(projectVersionId: ID!): ProjectVersionEdge!
+	awardBadge(entityId: ID!, badge: Badge!): EntityBadgeEdge!
+	withdrawBadge(id: ID!): ID!
+	agreeToCompetitionRule(competition: ID!, asEntity: UsernameOrID): CompetitionRuleAgreement!
+	agreeToEventRule(event: ID!, asEntity: UsernameOrID): EventRuleAgreement!
+	addCompetitionMember(competitionId: ID!, entityId: ID!): CompetitionMembershipEdge!
+	joinCompetition(competitionId: ID!, asEntity: UsernameOrID): CompetitionMembershipEdge!
+	removeCompetitionMember(id: ID!): ID!
+	transferCompetitionOwnership(competitionId: ID!, toEntityId: ID!): [CompetitionMembershipEdge!]!
+	setUserNotificationSubscription(notification: NotificationKind!, subscribe: Boolean!): UserEdge!
+	unsubscribeFromAllNotifications: UserEdge!
+	unsubscribeNotificationForToken(token: String!): NotificationKind
+	createEvent(input: CreateEventInput!): EventEdge!
+	updateEvent(id: ID!, input: UpdateEventInput!): EventEdge!
+	deleteEvent(id: ID!): ID!
+	updateEventAgenda(input: UpdateAgendaInput!, eventId: ID!): EventEdge!
+	setEventOrderingPriority(id: ID!, priority: Int!): EventEdge!
+	inviteEventMembers(eventId: ID!, invites: [EventMemberInvite!]!): Event!
+	remindEventInvitees(eventId: ID!): Event!
+	addEventMember(eventId: ID!, entityId: ID!): EventMembershipEdge!
+	joinEvent(eventId: ID!, asEntity: UsernameOrID): EventMembershipEdge!
+	removeEventMember(id: ID!): ID!
+	transferEventOwnership(eventId: ID!, toEntityId: ID!): [EventMembershipEdge!]!
+	addEventCompetition(eventId: ID!, competitionId: ID!): EventCompetitionEdge!
+	removeEventCompetition(id: ID!): ID!
+	createProjectVersionFileMultipartUpload(id: ID!, chunks: [Int!]! = [] @deprecated, contentType: String = null @deprecated): CreateMultipartUploadResponse!
+	uploadProjectVersionFilePart(id: ID!, uploadId: String!, chunk: Int!, chunkLen: Int!): Url!
+	completeProjectVersionFileMultipartUpload(id: ID!, uploadId: String!, eTags: [String!]!): ProjectVersionFile!
+	createTag(input: CreateTagInput!, entityId: ID!): TagEdge!
+	deleteTag(tagId: ID!): ID!
+	initUploadFile(input: InitUploadFileInput!): InitUploadFile!
+	finishUploadFile(input: FinishUploadFileInput!): FinishUploadFile!
+	publishVote(id: ID!, kind: VoteKind!): VotableEdge!
+	resetVote(id: ID!): VotableEdge!
+	createForum(input: CreateForumInput!): ForumEdge!
+	updateForum(id: ID!, input: UpdateForumInput!): ForumEdge!
+	deleteForum(id: ID!): ID!
+	subscribeToSubject(subject: ID!, asEntity: UsernameOrID): SubjectSubscriptionEdge!
+	unsubscribeFromSubject(subscription: ID!): ID!
+	createProjectVersionApproval(projectVersionId: ID!, input: ProjectVersionApprovalInput!): ProjectVersionApprovalEdge!
+	updateProjectVersionApproval(projectVersionApprovalId: ID!, input: ProjectVersionApprovalInput!): ProjectVersionApprovalEdge!
+	deleteProjectVersionApproval(projectVersionApprovalId: ID!): ID!
+	fetchWebsiteMetadata(url: Url!): WebsiteMetadata!
+	generateEventInviteCode(id: ID!): EventPublicInvite!
+	removeEventInviteCode(id: ID!): EventPublicInvite!
+	acceptEventInvite(id: ID!, code: String, asEntity: UsernameOrID): EventInvite!
+	createBlogArticle(input: CreateBlogArticleInput!): BlogArticleEdge!
+	updateBlogArticle(id: ID!, input: UpdateBlogArticleInput!): BlogArticleEdge!
+	deleteBlogArticle(id: ID!): ID!
+	sendEmailSignupVerification(input: SendEmailSignupVerificationInput!): EmailSignupRequest!
+	resendEmailSignupVerification(id: ID!): EmailSignupRequest!
+	checkEmailSignupVerification(input: EmailSignupVerficationInput!): EmailSignupRequest!
+	createOauth2AuthRequest(provider: Oauth2Provider!): Url!
+	checkOauth2Auth(code: String!, state: String!): Oauth2AuthResponse!
+	createOauth2Config(input: CreateOauth2ConfigInput!, asEntity: UsernameOrID): Oauth2ConfigEdge!
+	updateOauth2Config(oauth2ConfigId: ID!, input: UpdateOauth2ConfigInput!): Oauth2ConfigEdge!
+	deleteOauth2Config(oauth2ConfigId: ID!): ID!
+	addCompetitionJury(competitionId: ID!, entityId: ID!): CompetitionJuryEdge!
+	removeCompetitionJury(competitionId: ID!, entityId: ID!): Entity!
+	"""
+	Archive currently active leaderboard into a new stage, creating a new empty leaderboard.
+	Returns previously active leaderboard.
+	"""
+	createCompetitionStage(competitionId: ID!, input: CreateCompetitionStageInput!): CompetitionStageEdge!
+	updateCompetitionStage(stageId: ID!, input: UpdateCompetitionStageInput!): CompetitionStageEdge!
+	"""
+	Withdraw currently active leaderboard if it is still empty, making last stage the currently
+	active leaderboard. Useful when a new stage was created by error.
+	Returns previously staged leaderboard that now became active.
+	"""
+	removeCompetitionStage(stageId: ID!): Competition!
+	reevaluateCompetitionStage(competitionId: ID!, stage: Int): CompetitionStageEdge!
+	createDataset(input: CreateDatasetInput!, asEntity: UsernameOrID): Dataset!
+	updateDataset(datasetId: ID!, input: UpdateDatasetInput!): Dataset!
+	deleteDataset(datasetId: ID!): ID!
+	transferDatasetOwnership(datasetId: ID!, newOwner: UsernameOrID!): Dataset!
+	addDatasetCompetition(datasetId: ID!, competitionId: ID!): DatasetCompetitionConnectionEdge!
+	removeDatasetCompetition(datasetId: ID!, competitionId: ID!): Competition!
+	addDatasetMember(datasetId: ID!, entityId: ID!): DatasetMembershipConnectionEdge!
+	removeDatasetMember(datasetId: ID!, entityId: ID!): ID!
+	createDatasetVersion(datasetId: ID!): DatasetVersionEdge!
+	publishDatasetVersion(datasetVersionId: ID!): DatasetVersionEdge!
+	updateDatasetVersion(datasetVersionId: ID!, input: UpdateDatasetVersionInput!): DatasetVersionEdge!
+	deleteDatasetVersion(datasetVersionId: ID!): ID!
+	"""
+	Attach a file to a dataset version. Returns an upload ID which you can use
+	to call `uploadDatasetVersionFilePart`.
+	"""
+	createDatasetVersionFile(datasetVersionId: ID!, partitionNum: Int!): ID!
+	"""
+	Upload a part of the file that was attached to a dataset version.
+	Returns a short-lived URL that you can HTTP PUT.
+	May be called any number of times, but at least once.
+	"""
+	uploadDatasetVersionFilePart(datasetVersionFileId: ID!, part: Int!, partSize: Int!): Url!
+	"""
+	Finalize the upload of a file attached to a dataset version.
+	Must be called exactly one time.
+	If not called, all uploaded files get garbage collected 6 hours after
+	the last part was uploaded.
+	"""
+	completeDatasetVersionFile(datasetVersionFileId: ID!, eTags: [String!]!): DatasetVersionFile!
 }
 
 """
@@ -2145,919 +1925,807 @@ Format: %Y-%m-%d
 scalar NaiveDate
 
 interface Node {
-  id: ID!
+	id: ID!
 }
 
 enum NotificationKind {
-  AWARD_BADGE
-  CREATE_SUBMISSION
-  CREATE_TOPIC
-  REPLY_TOPIC
-  CONTENT_MENTIONED
-  REPLY_COMMENT
-  PROMOTIONAL_NEWSLETTER
-  JURY_SELECTED
-  PROJECT_VERSION_APPROVAL_CREATED
-  SYSTEM
+	AWARD_BADGE
+	CREATE_SUBMISSION
+	CREATE_TOPIC
+	REPLY_TOPIC
+	CONTENT_MENTIONED
+	REPLY_COMMENT
+	PROMOTIONAL_NEWSLETTER
+	JURY_SELECTED
+	PROJECT_VERSION_APPROVAL_CREATED
+	SYSTEM
 }
 
 enum Oauth2Action {
-  LOGGED_IN
-  SIGNUP_REQUIRED
+	LOGGED_IN
+	SIGNUP_REQUIRED
 }
 
 interface Oauth2AuthResponse {
-  action: Oauth2Action!
+	action: Oauth2Action!
 }
 
 type Oauth2AuthorizationCode {
-  code: String!
+	code: String!
 }
 
 input Oauth2AuthorizeInput {
-  clientId: String!
-  state: String
-  redirectUri: Url
-  scope: String
+	clientId: String!
+	state: String
+	redirectUri: Url
+	scope: String
 }
 
 type Oauth2AuthorizeOutput {
-  redirectUri: Url
-  clientError: Boolean!
-  unauthorized: Boolean!
+	redirectUri: Url
+	clientError: Boolean!
+	unauthorized: Boolean!
 }
 
 type Oauth2Config implements Node {
-  name: String!
-  description: String
-  redirectUri: String!
-  id: ID!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  entity: Entity!
-  secret: String!
+	name: String!
+	description: String
+	redirectUri: String!
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	entity: Entity!
+	secret: String!
 }
 
 type Oauth2ConfigConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [Oauth2ConfigEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [Oauth2Config!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [Oauth2ConfigEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Oauth2Config!]!
 }
 
 """
 An edge in a connection.
 """
 type Oauth2ConfigEdge {
-  """
-  The item at the end of the edge
-  """
-  node: Oauth2Config!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: Oauth2Config!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type Oauth2LoggedIn implements Oauth2AuthResponse {
-  user: User!
-  action: Oauth2Action!
+	user: User!
+	action: Oauth2Action!
 }
 
 type Oauth2PreGrant {
-  clientId: String!
-  redirectUri: Url
-  scope: [Scope!]!
-  state: String
-  valid: Boolean!
-  oauth2Config: Oauth2Config
+	clientId: String!
+	redirectUri: Url
+	scope: [Scope!]!
+	state: String
+	valid: Boolean!
+	oauth2Config: Oauth2Config
 }
 
 enum Oauth2Provider {
-  GITHUB
-  GOOGLE
+	GITHUB
+	GOOGLE
 }
 
 input Oauth2RedirectInput {
-  authorizationUrl: Url!
-  signature: String!
+	authorizationUrl: Url!
+	signature: String!
 }
 
 input Oauth2RefreshInput {
-  clientId: String!
-  clientSecret: String
-  refreshToken: String!
+	clientId: String!
+	clientSecret: String
+	refreshToken: String!
 }
 
 type Oauth2Signup {
-  secret: String!
+	secret: String!
 }
 
 input Oauth2SignupInput {
-  secret: String!
+	secret: String!
 }
 
 type Oauth2SignupRequired implements Oauth2AuthResponse {
-  oauth2Signup: Oauth2Signup!
-  userInfo: Oauth2UserInfo!
-  action: Oauth2Action!
+	oauth2Signup: Oauth2Signup!
+	userInfo: Oauth2UserInfo!
+	action: Oauth2Action!
 }
 
 type Oauth2Token {
-  accessToken: String!
-  refreshToken: String!
-  expiresIn: Int!
-  scope: String!
+	accessToken: String!
+	refreshToken: String!
+	expiresIn: Int!
+	scope: String!
 }
 
 input Oauth2TokenInput {
-  clientId: String!
-  redirectUri: Url!
-  code: String!
+	clientId: String!
+	redirectUri: Url!
+	code: String!
 }
 
 type Oauth2TokenOutput {
-  issued: Oauth2Token
-  clientError: Boolean!
-  unauthorized: Boolean!
+	issued: Oauth2Token
+	clientError: Boolean!
+	unauthorized: Boolean!
 }
 
 type Oauth2UserInfo {
-  email: String!
-  name: String
-  username: String
-  avatarUrl: Url
-  bio: String
+	email: String!
+	name: String
+	username: String
+	avatarUrl: Url
+	bio: String
 }
 
 type Organization implements Entity & Node {
-  username: String!
-  displayName: String!
-  location: String
-  linkedin: String
-  github: String
-  googleScholar: String
-  website: String
-  bio: String
-  createdAt: DateTime!
-  id: ID!
-  kind: EntityKind!
-  image: Url
-  imageThumbnail: Url
-  users(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): OrganizationUserConnection!
-  submissions(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    competitionId: ID
-    allStages: Boolean
-  ): SubmissionConnection!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  badges(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): EntityBadgeConnection!
-  userMembership(user: UsernameOrID): OrganizationMembership
-  subjectSubscriptions(
-    kinds: [SubjectKind!]
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): SubjectSubscriptionConnection!
-  projectVersionApprovals(
-    projectVersionId: UUID
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): ProjectVersionApprovalConnection!
-  rank: Int!
-  points: Int!
+	username: String!
+	displayName: String!
+	location: String
+	linkedin: String
+	github: String
+	googleScholar: String
+	website: String
+	bio: String
+	createdAt: DateTime!
+	id: ID!
+	kind: EntityKind!
+	image: Url
+	imageThumbnail: Url
+	users(after: String, before: String, first: Int, last: Int): OrganizationUserConnection!
+	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID, allStages: Boolean): SubmissionConnection!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	badges(after: String, before: String, first: Int, last: Int): EntityBadgeConnection!
+	userMembership(user: UsernameOrID): OrganizationMembership
+	subjectSubscriptions(kinds: [SubjectKind!], after: String, before: String, first: Int, last: Int): SubjectSubscriptionConnection!
+	projectVersionApprovals(projectVersionId: UUID, after: String, before: String, first: Int, last: Int): ProjectVersionApprovalConnection!
+	rank: Int!
+	points: Int!
+	datasets(after: String, before: String, first: Int, last: Int, filters: DatasetQueryFilters): DatasetConnection!
 }
 
 type OrganizationConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [OrganizationEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [Organization!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [OrganizationEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Organization!]!
 }
 
 """
 An edge in a connection.
 """
 type OrganizationEdge {
-  """
-  The item at the end of the edge
-  """
-  node: Organization!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: Organization!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type OrganizationMembership implements Node {
-  kind: OrganizationMembershipKind!
-  id: ID!
-  user: User!
-  organization: Organization!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	kind: OrganizationMembershipKind!
+	id: ID!
+	user: User!
+	organization: Organization!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 }
 
 """
 An edge in a connection.
 """
 type OrganizationMembershipEdge {
-  """
-  The item at the end of the edge
-  """
-  node: OrganizationMembership!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: OrganizationMembership!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 enum OrganizationMembershipKind {
-  OWNER
-  ADMIN
-  EDITOR
-  READER
+	OWNER
+	ADMIN
+	EDITOR
+	READER
 }
 
 type OrganizationUserConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [OrganizationMembershipEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [OrganizationMembership!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [OrganizationMembershipEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [OrganizationMembership!]!
 }
 
 """
 Information about pagination in a connection
 """
 type PageInfo {
-  """
-  When paginating backwards, are there more items?
-  """
-  hasPreviousPage: Boolean!
-  """
-  When paginating forwards, are there more items?
-  """
-  hasNextPage: Boolean!
-  """
-  When paginating backwards, the cursor to continue.
-  """
-  startCursor: String
-  """
-  When paginating forwards, the cursor to continue.
-  """
-  endCursor: String
+	"""
+	When paginating backwards, are there more items?
+	"""
+	hasPreviousPage: Boolean!
+	"""
+	When paginating forwards, are there more items?
+	"""
+	hasNextPage: Boolean!
+	"""
+	When paginating backwards, the cursor to continue.
+	"""
+	startCursor: String
+	"""
+	When paginating forwards, the cursor to continue.
+	"""
+	endCursor: String
 }
 
 type PasswordReset {
-  expiresAt: DateTime!
-  createdAt: DateTime!
-  canResendAt: DateTime!
+	expiresAt: DateTime!
+	createdAt: DateTime!
+	canResendAt: DateTime!
 }
 
 input Permission {
-  to: Action!
-  on: ID
-  actingAs: UsernameOrID
+	to: Action!
+	on: ID
+	actingAs: UsernameOrID
 }
 
 interface Project {
-  id: ID!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  stage: CompetitionStage!
-  competition: Competition!
-  name: String!
-  latest: ProjectVersion
-  version(version: Semver): ProjectVersion
-  versions(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): ProjectVersionConnection!
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	stage: CompetitionStage!
+	competition: Competition!
+	name: String!
+	latest: ProjectVersion
+	version(version: Semver): ProjectVersion
+	versions(after: String, before: String, first: Int, last: Int): ProjectVersionConnection!
 }
 
 type ProjectVersion implements Node {
-  pythonRequires: String
-  pyprojectToml: String!
-  readme: String
-  version: Semver!
-  latest: Boolean!
-  validatedAt: DateTime
-  createdAt: DateTime!
-  id: ID!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  entity: Entity!
-  project: Project!
-  files: [ProjectVersionFile!]!
-  fileByKind(kind: ProjectVersionFileKind!): ProjectVersionFile
-  evaluation: ProjectVersionEvaluation
-  approval(entity: UsernameOrID): ProjectVersionApproval
-  approvals(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): ProjectVersionApprovalConnection!
-  status: ProjectVersionStatus!
+	pythonRequires: String
+	pyprojectToml: String!
+	readme: String
+	version: Semver!
+	latest: Boolean!
+	validatedAt: DateTime
+	createdAt: DateTime!
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	entity: Entity!
+	project: Project!
+	files: [ProjectVersionFile!]!
+	fileByKind(kind: ProjectVersionFileKind!): ProjectVersionFile
+	evaluation: ProjectVersionEvaluation
+	approval(entity: UsernameOrID): ProjectVersionApproval
+	approvals(after: String, before: String, first: Int, last: Int): ProjectVersionApprovalConnection!
+	status: ProjectVersionStatus!
 }
 
 type ProjectVersionApproval implements Node {
-  accept: Boolean!
-  notes: String
-  createdAt: DateTime!
-  id: ID!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  projectVersion: ProjectVersion!
-  entity: Entity!
-  scores: [ProjectVersionApprovalScore!]!
+	accept: Boolean!
+	notes: String
+	createdAt: DateTime!
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	projectVersion: ProjectVersion!
+	entity: Entity!
+	scores: [ProjectVersionApprovalScore!]!
 }
 
 input ProjectVersionApprovalAcceptInput {
-  notes: String
-  scores: [ProjectVersionApprovalScoreInput!]!
+	notes: String
+	scores: [ProjectVersionApprovalScoreInput!]!
 }
 
 type ProjectVersionApprovalConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [ProjectVersionApprovalEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [ProjectVersionApproval!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [ProjectVersionApprovalEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [ProjectVersionApproval!]!
 }
 
 """
 An edge in a connection.
 """
 type ProjectVersionApprovalEdge {
-  """
-  The item at the end of the edge
-  """
-  node: ProjectVersionApproval!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: ProjectVersionApproval!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 input ProjectVersionApprovalInput @oneOf {
-  accept: ProjectVersionApprovalAcceptInput
-  reject: ProjectVersionApprovalRejectInput
+	accept: ProjectVersionApprovalAcceptInput
+	reject: ProjectVersionApprovalRejectInput
 }
 
 input ProjectVersionApprovalRejectInput {
-  reason: String!
+	reason: String!
 }
 
 type ProjectVersionApprovalScore implements Node {
-  value: Float
-  id: ID!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  projectVersionApproval: ProjectVersionApproval!
-  competitionScoringCriterion: CompetitionScoringCriterion!
+	value: Float
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	projectVersionApproval: ProjectVersionApproval!
+	competitionScoringCriterion: CompetitionScoringCriterion!
 }
 
 input ProjectVersionApprovalScoreInput {
-  competitionScoringCriterionId: ID!
-  value: Float
+	competitionScoringCriterionId: ID!
+	value: Float
 }
 
 enum ProjectVersionCompressor {
-  GZIP
-  ZSTANDARD
+	GZIP
+	ZSTANDARD
 }
 
 type ProjectVersionConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [ProjectVersionEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [ProjectVersion!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [ProjectVersionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [ProjectVersion!]!
 }
 
 """
 An edge in a connection.
 """
 type ProjectVersionEdge {
-  """
-  The item at the end of the edge
-  """
-  node: ProjectVersion!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: ProjectVersion!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type ProjectVersionEvaluation implements Node {
-  score: Float
-  error: String
-  latest: Boolean!
-  max: Boolean!
-  finalizedAt: DateTime
-  createdAt: DateTime!
-  id: ID!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  projectVersion: ProjectVersion!
-  submission: Submission!
+	score: Float
+	error: String
+	latest: Boolean!
+	max: Boolean!
+	finalizedAt: DateTime
+	createdAt: DateTime!
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	projectVersion: ProjectVersion!
+	submission: Submission!
 }
 
 type ProjectVersionFile implements Node {
-  kind: ProjectVersionFileKind!
-  id: ID!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  extension: String
-  projectVersion: ProjectVersion!
-  downloadUrl(archKind: ArchiveKind! = TAR): Url!
-  uploadUrl: Url
-  browse: FileBrowser!
+	kind: ProjectVersionFileKind!
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	extension: String
+	projectVersion: ProjectVersion!
+	downloadUrl(archKind: ArchiveKind! = TAR): Url!
+	uploadUrl: Url
+	browse: FileBrowser!
 }
 
 enum ProjectVersionFileKind {
-  DATA
-  PACKAGE
-  TEMPLATE
-  SUBMISSION_EVALUATION
+	DATA
+	PACKAGE
+	TEMPLATE
+	SUBMISSION_EVALUATION
 }
 
 enum ProjectVersionStatus {
-  AWAITING_VALIDATION
-  AWAITING_EVALUATION
-  AWAITING_APPROVAL
-  ERROR
-  OK
+	AWAITING_VALIDATION
+	AWAITING_EVALUATION
+	AWAITING_APPROVAL
+	ERROR
+	OK
 }
 
 type Query {
-  node(id: ID!): Node!
-  viewer: User!
-  competitions(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    search: String
-  ): CompetitionConnection!
-  competitionBySlug(slug: String!): Competition
-  entities(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    search: String
-    kinds: [EntityKind!]
-  ): EntityConnection!
-  entityByUsername(username: String!): Entity
-  leaderboard(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    search: String
-    kinds: [EntityKind!]
-  ): GlobalLeaderboardConnection!
-  events(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    search: String
-  ): EventConnection!
-  eventBySlug(slug: String!): Event
-  version: Version!
-  tags(after: String, before: String, first: Int, last: Int): TagConnection!
-  forums(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    search: String
-  ): ForumConnection!
-  forumBySlug(slug: String!): Forum
-  blogArticles(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): BlogArticleConnection!
-  blogArticleBySlug(slug: String!): BlogArticle
-  oauth2Providers: [Oauth2Provider!]!
-  oauth2Configs(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): Oauth2ConfigConnection!
-  oauth2Authorize(input: Oauth2AuthorizeInput!): Oauth2PreGrant
-  datasets(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    owner: UsernameOrID
-    search: String
-  ): DatasetConnection!
-  datasetBySlug(owner: String!, slug: String!): Dataset
+	node(id: ID!): Node!
+	viewer: User!
+	competitions(after: String, before: String, first: Int, last: Int, search: String): CompetitionConnection!
+	competitionBySlug(slug: String!): Competition
+	entities(after: String, before: String, first: Int, last: Int, search: String, kinds: [EntityKind!]): EntityConnection!
+	entityByUsername(username: String!): Entity
+	leaderboard(after: String, before: String, first: Int, last: Int, search: String, kinds: [EntityKind!]): GlobalLeaderboardConnection!
+	events(after: String, before: String, first: Int, last: Int, search: String): EventConnection!
+	eventBySlug(slug: String!): Event
+	version: Version!
+	tags(after: String, before: String, first: Int, last: Int): TagConnection!
+	forums(after: String, before: String, first: Int, last: Int, search: String): ForumConnection!
+	forumBySlug(slug: String!): Forum
+	blogArticles(after: String, before: String, first: Int, last: Int): BlogArticleConnection!
+	blogArticleBySlug(slug: String!): BlogArticle
+	oauth2Providers: [Oauth2Provider!]!
+	oauth2Configs(after: String, before: String, first: Int, last: Int): Oauth2ConfigConnection!
+	oauth2Authorize(input: Oauth2AuthorizeInput!): Oauth2PreGrant
+	datasets(after: String, before: String, first: Int, last: Int, filters: DatasetQueryFilters): DatasetConnection!
+	datasetBySlug(owner: String!, localSlug: String!): Dataset
 }
 
 input ResetPasswordInput {
-  secret: String!
-  password: String!
+	secret: String!
+	password: String!
 }
 
 enum Scope {
-  ALL
-  DEFAULT
-  READ_COMPETITION
-  READ_PROJECT
+	ALL
+	DEFAULT
+	READ_COMPETITION
+	READ_PROJECT
 }
 
 scalar Semver
 
 input SendEmailSignupVerificationInput {
-  email: String!
-  password: String!
-  agreeToTermsAndPrivacyPolicy: Boolean!
+	email: String!
+	password: String!
+	agreeToTermsAndPrivacyPolicy: Boolean!
 }
 
 input SignupInput @oneOf {
-  email: EmailSignupVerficationInput
-  oauth2: Oauth2SignupInput
+	email: EmailSignupVerficationInput
+	oauth2: Oauth2SignupInput
 }
 
 input SignupUserInput {
-  username: String!
-  displayName: String!
-  github: String
-  linkedin: String
-  googleScholar: String
-  website: Url
-  location: String
-  bio: String
-  image: Upload
-  signup: SignupInput!
-  subscribePromotionalNewsletter: Boolean
+	username: String!
+	displayName: String!
+	github: String
+	linkedin: String
+	googleScholar: String
+	website: Url
+	location: String
+	bio: String
+	image: Upload
+	signup: SignupInput!
+	subscribePromotionalNewsletter: Boolean
 }
 
+
 enum SubjectKind {
-  TOPIC
-  FORUM
-  COMPETITION
+	TOPIC
+	FORUM
+	COMPETITION
 }
 
 interface SubjectSubscription {
-  id: ID!
-  entity: Entity!
-  kind: SubjectKind!
-  subject: Subscribable!
-  createdAt: DateTime!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	id: ID!
+	entity: Entity!
+	kind: SubjectKind!
+	subject: Subscribable!
+	createdAt: DateTime!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 }
 
 type SubjectSubscriptionConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [SubjectSubscriptionEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [SubjectSubscription!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [SubjectSubscriptionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [SubjectSubscription!]!
 }
 
 """
 An edge in a connection.
 """
 type SubjectSubscriptionEdge {
-  """
-  The item at the end of the edge
-  """
-  node: SubjectSubscription!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: SubjectSubscription!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type Submission implements Project & Node {
-  id: ID!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  latest: ProjectVersion
-  version(version: Semver): ProjectVersion
-  versions(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): ProjectVersionConnection!
-  maxEvaluation: ProjectVersionEvaluation
-  stage: CompetitionStage!
-  competition: Competition!
-  entity: Entity!
-  name: String!
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	latest: ProjectVersion
+	version(version: Semver): ProjectVersion
+	versions(after: String, before: String, first: Int, last: Int): ProjectVersionConnection!
+	maxEvaluation: ProjectVersionEvaluation
+	stage: CompetitionStage!
+	competition: Competition!
+	entity: Entity!
+	name: String!
 }
 
 type SubmissionConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [SubmissionEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [Submission!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [SubmissionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Submission!]!
 }
 
 """
 An edge in a connection.
 """
 type SubmissionEdge {
-  """
-  The item at the end of the edge
-  """
-  node: Submission!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: Submission!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type SubmissionRankingConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [SubmissionRankingSubmissionEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [Submission!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [SubmissionRankingSubmissionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Submission!]!
 }
 
 """
 An edge in a connection.
 """
 type SubmissionRankingSubmissionEdge {
-  """
-  The item at the end of the edge
-  """
-  node: Submission!
-  score: Float!
-  rank: Int!
-  projectVersion: ProjectVersion!
-  submission: Submission!
-  competition: Competition!
-  stage: CompetitionStage!
-  validatedAt: DateTime!
-  entity: Entity!
-  points: Int!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: Submission!
+	score: Float!
+	rank: Int!
+	projectVersion: ProjectVersion!
+	submission: Submission!
+	competition: Competition!
+	stage: CompetitionStage!
+	validatedAt: DateTime!
+	entity: Entity!
+	points: Int!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 interface Subscribable {
-  id: ID!
-  entitySubscription(entity: UsernameOrID): SubjectSubscription
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	id: ID!
+	entitySubscription(entity: UsernameOrID): SubjectSubscription
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 }
 
 type Subscription {
-  newComments(topicId: ID): CommentEdge!
-  deletedComments(topicId: ID): DeletedComment!
-  updatedComments(topicId: ID): CommentEdge!
-  projectVersionStatusUpdate(
-    competitionId: ID
-    entityId: ID
-    projectId: ID
-    projectVersionId: ID
-  ): ProjectVersion!
-  updatedEntity(id: ID): Entity!
-  oauth2Redirect(input: Oauth2RedirectInput!): Oauth2AuthorizationCode!
+	newComments(topicId: ID): CommentEdge!
+	deletedComments(topicId: ID): DeletedComment!
+	updatedComments(topicId: ID): CommentEdge!
+	projectVersionStatusUpdate(competitionId: ID, entityId: ID, projectId: ID, projectVersionId: ID): ProjectVersion!
+	updatedEntity(id: ID): Entity!
+	oauth2Redirect(input: Oauth2RedirectInput!): Oauth2AuthorizationCode!
 }
 
 type Tag implements Node {
-  name: String!
-  id: ID!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	name: String!
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 }
 
 type TagConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [TagEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [Tag!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [TagEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Tag!]!
 }
 
 """
 An edge in a connection.
 """
 type TagEdge {
-  """
-  The item at the end of the edge
-  """
-  node: Tag!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: Tag!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 scalar TimeZone
 
 type Timeline {
-  startDate: NaiveDate!
-  endDate: NaiveDate!
-  online: Boolean!
-  id: ID!
-  timezone: TimeZone!
-  steps(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): TimelineStepConnection!
+	startDate: NaiveDate!
+	endDate: NaiveDate!
+	online: Boolean!
+	id: ID!
+	timezone: TimeZone!
+	steps(after: String, before: String, first: Int, last: Int): TimelineStepConnection!
 }
 
 type TimelineStep {
-  date: NaiveDate!
-  label: String!
-  id: ID!
+	date: NaiveDate!
+	label: String!
+	id: ID!
 }
 
 type TimelineStepConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [TimelineStepEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [TimelineStep!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [TimelineStepEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [TimelineStep!]!
 }
 
 """
 An edge in a connection.
 """
 type TimelineStepEdge {
-  """
-  The item at the end of the edge
-  """
-  node: TimelineStep!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: TimelineStep!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 input TimelineStepInput {
-  date: NaiveDate!
-  label: String!
+	date: NaiveDate!
+	label: String!
 }
 
 type Topic implements Votable & Subscribable & Node {
-  title: String!
-  url: String
-  slugLower: String!
-  votes: Int!
-  createdAt: DateTime!
-  id: ID!
-  description: String
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  author: Entity!
-  forum: Forum!
-  commentCount: Int!
-  voted: EntityVote
-  voterCount: Int!
-  voters(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): VotersConnection!
-  comments(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    order: VotableOrder
-  ): CommentConnection!
-  entitySubscription(entity: UsernameOrID): SubjectSubscription
+	title: String!
+	url: String
+	slugLower: String!
+	votes: Int!
+	createdAt: DateTime!
+	id: ID!
+	description: String
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	author: Entity!
+	forum: Forum!
+	commentCount: Int!
+	voted: EntityVote
+	voterCount: Int!
+	voters(after: String, before: String, first: Int, last: Int): VotersConnection!
+	comments(after: String, before: String, first: Int, last: Int, order: VotableOrder): CommentConnection!
+	entitySubscription(entity: UsernameOrID): SubjectSubscription
 }
 
 type TopicConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [TopicEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [Topic!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [TopicEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Topic!]!
 }
 
 """
 An edge in a connection.
 """
 type TopicEdge {
-  """
-  The item at the end of the edge
-  """
-  node: Topic!
-  hotness: Float!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: Topic!
+	hotness: Float!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type TopicSubscription implements SubjectSubscription & Node {
-  createdAt: DateTime!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  id: ID!
-  entity: Entity!
-  kind: SubjectKind!
-  topic: Topic!
-  subject: Subscribable!
+	createdAt: DateTime!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	id: ID!
+	entity: Entity!
+	kind: SubjectKind!
+	topic: Topic!
+	subject: Subscribable!
 }
 
 """
@@ -3073,207 +2741,208 @@ entities without requiring a central allocating authority.
 scalar UUID
 
 input UnregisteredDatasetVersionAuthorInput {
-  fullName: String!
+	fullName: String!
 }
 
 type UnregisteredUser implements DatasetVersionAuthor {
-  displayName: String!
+	displayName: String!
 }
 
 input UpdateAgendaInput {
-  agenda: JSON
+	agenda: JSON
 }
 
 input UpdateBlogArticleInput {
-  title: String
-  shortDescription: String
-  content: String
-  image: Upload
-  authorsIds: [ID!]
-  seoTitle: String
-  seoDescription: String
-  imageAlt: String
+	title: String
+	shortDescription: String
+	content: String
+	image: Upload
+	authorsIds: [ID!]
+	seoTitle: String
+	seoDescription: String
+	imageAlt: String
 }
 
 input UpdateCommentInput {
-  content: String!
+	content: String!
 }
 
 input UpdateCompetitionInput {
-  slug: String
-  title: String
-  shortDescription: String
-  description: String
-  banner: Upload
-  thumbnail: Upload
-  rules: String
-  visibility: ActivityVisibility
-  tagIds: [ID]
-  """
-  Enables jury system on competition
-  """
-  requiresApproval: Boolean
-  """
-  Enables no-code system on competition. Requires jury system to work.
-  """
-  noCode: Boolean
-  """
-  Use average jury score instead of automated use-case metric. Requires jury system to work.
-  """
-  useJuryScore: Boolean
-  """
-  Show automated use-case metric.
-  """
-  showMetric: Boolean
-  """
-  Only allow the competition host, the reviewer and the submission author to see the approval
-  score.
-  """
-  privateApprovals: Boolean
-  """
-  Message shown to participants before they submit a solution.
-  """
-  submissionPreamble: String
-  scoringCriteria: [UpdateCompetitionScoringCriterionInput!]
-  timeline: UpdateTimelineInput
+	slug: String
+	title: String
+	shortDescription: String
+	description: String
+	banner: Upload
+	thumbnail: Upload
+	rules: String
+	visibility: ActivityVisibility
+	tagIds: [ID]
+	"""
+	Enables jury system on competition
+	"""
+	requiresApproval: Boolean
+	"""
+	Enables no-code system on competition. Requires jury system to work.
+	"""
+	noCode: Boolean
+	"""
+	Use average jury score instead of automated use-case metric. Requires jury system to work.
+	"""
+	useJuryScore: Boolean
+	"""
+	Show automated use-case metric.
+	"""
+	showMetric: Boolean
+	"""
+	Only allow the competition host, the reviewer and the submission author to see the approval
+	score.
+	"""
+	privateApprovals: Boolean
+	"""
+	Message shown to participants before they submit a solution.
+	"""
+	submissionPreamble: String
+	scoringCriteria: [UpdateCompetitionScoringCriterionInput!]
+	timeline: UpdateTimelineInput
 }
 
 input UpdateCompetitionScoringCriterionInput {
-  id: ID
-  title: String!
-  description: String
-  weight: Float!
+	id: ID
+	title: String!
+	description: String
+	weight: Float!
 }
 
 input UpdateCompetitionStageInput {
-  """
-  Enables jury system on competition
-  """
-  requiresApproval: Boolean
-  """
-  Enables no-code system on competition. Requires jury system to work.
-  """
-  noCode: Boolean
-  """
-  Use average jury score instead of automated use-case metric. Requires jury system to work.
-  """
-  useJuryScore: Boolean
-  """
-  Show automated use-case metric.
-  """
-  showMetric: Boolean
-  """
-  Only allow the competition host, the reviewer and the submission author to see the approval
-  score.
-  """
-  privateApprovals: Boolean
-  """
-  Message shown to participants before they submit a solution.
-  """
-  submissionPreamble: String
-  scoringCriteria: [UpdateCompetitionScoringCriterionInput!]
+	"""
+	Enables jury system on competition
+	"""
+	requiresApproval: Boolean
+	"""
+	Enables no-code system on competition. Requires jury system to work.
+	"""
+	noCode: Boolean
+	"""
+	Use average jury score instead of automated use-case metric. Requires jury system to work.
+	"""
+	useJuryScore: Boolean
+	"""
+	Show automated use-case metric.
+	"""
+	showMetric: Boolean
+	"""
+	Only allow the competition host, the reviewer and the submission author to see the approval
+	score.
+	"""
+	privateApprovals: Boolean
+	"""
+	Message shown to participants before they submit a solution.
+	"""
+	submissionPreamble: String
+	scoringCriteria: [UpdateCompetitionScoringCriterionInput!]
 }
 
 input UpdateDatasetInput {
-  slug: String
-  name: String
-  visibility: ActivityVisibility
+	localSlug: String
+	name: String
+	private: Boolean
+	tags: [ID!]
 }
 
 input UpdateDatasetVersionInput {
-  version: Semver
-  description: String
-  authors: [DatasetVersionAuthorInput!]
+	version: Semver
+	description: String
+	authors: [DatasetVersionAuthorInput!]
 }
 
 input UpdateEventInput {
-  slug: String
-  title: String
-  shortDescription: String
-  description: String
-  banner: Upload
-  thumbnail: Upload
-  visibility: ActivityVisibility
-  rules: String
+	slug: String
+	title: String
+	shortDescription: String
+	description: String
+	banner: Upload
+	thumbnail: Upload
+	visibility: ActivityVisibility
+	rules: String
 }
 
 input UpdateForumInput {
-  slug: String
-  title: String
-  shortDescription: String
-  description: String
-  guidelines: String
-  icon: Upload
-  orderingPriority: Int
+	slug: String
+	title: String
+	shortDescription: String
+	description: String
+	guidelines: String
+	icon: Upload
+	orderingPriority: Int
 }
 
 input UpdateOauth2ConfigInput {
-  name: String
-  description: String
-  redirectUri: Url
-  refreshSecret: Boolean
+	name: String
+	description: String
+	redirectUri: Url
+	refreshSecret: Boolean
 }
 
 input UpdateOrganizationInput {
-  username: String
-  displayName: String
-  github: String
-  linkedin: String
-  googleScholar: String
-  website: Url
-  location: String
-  bio: String
-  image: Upload
-  inQuantumJob: Boolean
+	username: String
+	displayName: String
+	github: String
+	linkedin: String
+	googleScholar: String
+	website: Url
+	location: String
+	bio: String
+	image: Upload
+	inQuantumJob: Boolean
 }
 
 input UpdateSubmissionInput {
-  pyprojectToml: String!
-  readme: String
-  compression: ProjectVersionCompressor
+	pyprojectToml: String!
+	readme: String
+	compression: ProjectVersionCompressor
 }
 
 input UpdateTimelineInput {
-  startDate: NaiveDate
-  endDate: NaiveDate
-  online: Boolean
-  timezone: TimeZone
-  steps: [TimelineStepInput!]
+	startDate: NaiveDate
+	endDate: NaiveDate
+	online: Boolean
+	timezone: TimeZone
+	steps: [TimelineStepInput!]
 }
 
 input UpdateTopicInput {
-  title: String
-  description: String
+	title: String
+	description: String
 }
 
 input UpdateUseCaseInput {
-  pyprojectToml: String!
-  readme: String
-  compression: ProjectVersionCompressor
+	pyprojectToml: String!
+	readme: String
+	compression: ProjectVersionCompressor
 }
 
 input UpdateUserInput {
-  username: String
-  displayName: String
-  github: String
-  linkedin: String
-  googleScholar: String
-  website: Url
-  location: String
-  bio: String
-  image: Upload
-  inQuantumJob: Boolean
-  password: String
-  oldPassword: String
-  email: String
-  jobTitle: String
-  organization: String
+	username: String
+	displayName: String
+	github: String
+	linkedin: String
+	googleScholar: String
+	website: Url
+	location: String
+	bio: String
+	image: Upload
+	inQuantumJob: Boolean
+	password: String
+	oldPassword: String
+	email: String
+	jobTitle: String
+	organization: String
 }
 
 scalar Upload
 
 input UploadNoCodeSubmissionInput {
-  files: [Upload!]!
+	files: [Upload!]!
 }
 
 """
@@ -3282,241 +2951,176 @@ URL is a String implementing the [URL Standard](http://url.spec.whatwg.org/)
 scalar Url
 
 type UseCase implements Project & Node {
-  id: ID!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  latest: ProjectVersion
-  version(version: Semver): ProjectVersion
-  versions(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): ProjectVersionConnection!
-  stage: CompetitionStage!
-  competition: Competition!
-  name: String!
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	latest: ProjectVersion
+	version(version: Semver): ProjectVersion
+	versions(after: String, before: String, first: Int, last: Int): ProjectVersionConnection!
+	stage: CompetitionStage!
+	competition: Competition!
+	name: String!
 }
 
 type User implements Entity & DatasetVersionAuthor & Node {
-  username: String!
-  displayName: String!
-  location: String
-  linkedin: String
-  github: String
-  googleScholar: String
-  website: String
-  bio: String
-  isAvailableOnQuantumJobs: Boolean!
-  createdAt: DateTime!
-  id: ID!
-  kind: EntityKind!
-  email: String!
-  jobTitle: String
-  organization: String
-  image: Url
-  imageThumbnail: Url
-  """
-  can this user perform the action on the given resource
-  """
-  can(action: Action!, on: ID, actingAs: UsernameOrID): Boolean!
-  organizations(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): UserOrganizationConnection!
-  submissions(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    competitionId: ID
-    allStages: Boolean
-  ): SubmissionConnection!
-  topics(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    order: VotableOrder
-  ): TopicConnection!
-  comments(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    order: VotableOrder
-  ): CommentConnection!
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  badges(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): EntityBadgeConnection!
-  entities(
-    permission: Permission
-    search: String
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): UserEntitiesConnection!
-  notifications: UserNotifications!
-  subjectSubscriptions(
-    kinds: [SubjectKind!]
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): SubjectSubscriptionConnection!
-  projectVersionApprovals(
-    projectVersionId: UUID
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): ProjectVersionApprovalConnection!
-  karma: Int!
-  jobBoardProfileLink: Url
-  rank: Int!
-  points: Int!
-  activities(
-    after: String
-    before: String
-    first: Int
-    last: Int
-    kinds: [EntityActivitiesConnectionKind!]
-  ): ActivityConnection!
-  isBanned: Boolean!
+	username: String!
+	displayName: String!
+	location: String
+	linkedin: String
+	github: String
+	googleScholar: String
+	website: String
+	bio: String
+	isAvailableOnQuantumJobs: Boolean!
+	createdAt: DateTime!
+	id: ID!
+	kind: EntityKind!
+	email: String!
+	jobTitle: String
+	organization: String
+	image: Url
+	imageThumbnail: Url
+	"""
+	can this user perform the action on the given resource
+	"""
+	can(action: Action!, on: ID, actingAs: UsernameOrID): Boolean!
+	organizations(after: String, before: String, first: Int, last: Int): UserOrganizationConnection!
+	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID, allStages: Boolean): SubmissionConnection!
+	topics(after: String, before: String, first: Int, last: Int, order: VotableOrder): TopicConnection!
+	comments(after: String, before: String, first: Int, last: Int, order: VotableOrder): CommentConnection!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	badges(after: String, before: String, first: Int, last: Int): EntityBadgeConnection!
+	entities(permission: Permission, search: String, after: String, before: String, first: Int, last: Int): UserEntitiesConnection!
+	notifications: UserNotifications!
+	subjectSubscriptions(kinds: [SubjectKind!], after: String, before: String, first: Int, last: Int): SubjectSubscriptionConnection!
+	projectVersionApprovals(projectVersionId: UUID, after: String, before: String, first: Int, last: Int): ProjectVersionApprovalConnection!
+	karma: Int!
+	jobBoardProfileLink: Url
+	rank: Int!
+	points: Int!
+	activities(after: String, before: String, first: Int, last: Int, kinds: [EntityActivitiesConnectionKind!]): ActivityConnection!
+	isBanned: Boolean!
+	datasets(after: String, before: String, first: Int, last: Int, filters: DatasetQueryFilters): DatasetConnection!
 }
 
 """
 An edge in a connection.
 """
 type UserEdge {
-  """
-  The item at the end of the edge
-  """
-  node: User!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: User!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type UserEntitiesConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [EntityEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [Entity!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [EntityEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Entity!]!
 }
 
 type UserNotifications {
-  enabled: [NotificationKind!]!
-  disabled: [NotificationKind!]!
+	enabled: [NotificationKind!]!
+	disabled: [NotificationKind!]!
 }
 
 type UserOrganizationConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [OrganizationMembershipEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [OrganizationMembership!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [OrganizationMembershipEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [OrganizationMembership!]!
 }
 
 scalar UsernameOrID
 
 type Version {
-  current: String!
-  gitCommit: String
+	current: String!
+	gitCommit: String
 }
 
 interface Votable {
-  id: ID!
-  votes: Int!
-  voterCount: Int!
-  voted: EntityVote
-  viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-  voters(
-    after: String
-    before: String
-    first: Int
-    last: Int
-  ): VotersConnection!
+	id: ID!
+	votes: Int!
+	voterCount: Int!
+	voted: EntityVote
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	voters(after: String, before: String, first: Int, last: Int): VotersConnection!
 }
 
 """
 An edge in a connection.
 """
 type VotableEdge {
-  """
-  The item at the end of the edge
-  """
-  node: Votable!
-  """
-  A cursor for use in pagination
-  """
-  cursor: String!
+	"""
+	The item at the end of the edge
+	"""
+	node: Votable!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 enum VotableOrder {
-  OLDEST
-  NEWEST
-  HOT
+	OLDEST
+	NEWEST
+	HOT
 }
 
 enum VoteKind {
-  UPVOTE
-  DOWNVOTE
+	UPVOTE
+	DOWNVOTE
 }
 
 type VotersConnection {
-  """
-  Information to aid in pagination.
-  """
-  pageInfo: PageInfo!
-  """
-  A list of edges.
-  """
-  edges: [EntityEdge!]!
-  """
-  A list of nodes.
-  """
-  nodes: [Entity!]!
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [EntityEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Entity!]!
 }
 
 type WebsiteMetadata {
-  title: String
-  description: String
+	title: String
+	description: String
 }
 
-directive @deprecated(
-  reason: String = "No longer supported"
-) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
+directive @deprecated(reason: String = "No longer supported") on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
 directive @include(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
 directive @oneOf on INPUT_OBJECT
 directive @skip(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
 directive @specifiedBy(url: String!) on SCALAR
 schema {
-  query: Query
-  mutation: Mutation
-  subscription: Subscription
+	query: Query
+	mutation: Mutation
+	subscription: Subscription
 }
 
 directive @ifAllowed on FIELD
