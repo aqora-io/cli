@@ -2,6 +2,24 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.15.0 - 2025-06-06
+#### Bug Fixes
+- use project name from backend - (6ee6e68) - Antoine Chauvin
+- deserialize issues for serde_json arbitrary precision - (ca4e4ce) - Julian Popescu
+#### Build system
+- reset version to 0.14.3 - (682989c) - Antoine Chauvin
+#### Continuous Integration
+- use official sccache workflow - (08c4fdf) - Julian Popescu
+#### Features
+- add version to user-agent - (d50e947) - Antoine Chauvin
+- competition stages - (0c284d5) - Antoine Chauvin
+#### Miscellaneous Chores
+- switch to pyo3 v0.24 - (996c684) - Antoine Chauvin
+#### Refactoring
+- move client to separate package - (92c0549) - Julian Popescu
+
+- - -
+
 ## v0.14.3 - 2025-04-25
 #### Bug Fixes
 - remove deprecated pyo3 functions - (477e2a3) - Julian Popescu
