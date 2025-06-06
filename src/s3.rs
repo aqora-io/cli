@@ -84,6 +84,18 @@ impl From<UploadError> for error::Error {
     }
 }
 
+impl UploadError {
+    pub fn is_retryable(&self) -> bool {
+        let Self::Response { status, code, .. } = self else {
+            return false;
+        };
+        match (status, code) {
+            (&StatusCode::FORBIDDEN, UploadErrorCode::SignatureDoesNotMatch) => false,
+            (_, code) => code.is_retryable(),
+        }
+    }
+}
+
 pub struct UploadResponse {
     pub e_tag: String,
 }
