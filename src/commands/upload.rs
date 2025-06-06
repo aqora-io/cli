@@ -530,7 +530,9 @@ pub async fn upload_use_case(
 
     use_case_pb.finish_with_message("Version updated");
 
-    let data_fut = {
+    let futs = stream::FuturesUnordered::new();
+
+    futs.push({
         let (id, upload_url) = find_project_version_file(
             &project_version.files,
             update_use_case_mutation::ProjectVersionFileKind::DATA,
@@ -563,7 +565,6 @@ pub async fn upload_use_case(
             )
             .await
         }
-        .instrument(tracing::debug_span!("data"))
         .inspect(move |res| {
             if res.is_ok() {
                 data_pb.finish_with_message("Data uploaded");
@@ -571,11 +572,12 @@ pub async fn upload_use_case(
                 data_pb.finish_with_message("An error occurred while processing data");
             }
         })
-        .boxed()
-    };
+        .instrument(tracing::debug_span!("data"))
+        .boxed_local()
+    });
 
-    let template_fut = {
-        if let Some(template_path) = template_path {
+    if let Some(template_path) = template_path {
+        futs.push({
             let (id, upload_url) = find_project_version_file(
                 &project_version.files,
                 update_use_case_mutation::ProjectVersionFileKind::TEMPLATE,
@@ -614,7 +616,6 @@ pub async fn upload_use_case(
                 )
                 .await
             }
-            .instrument(tracing::debug_span!("template"))
             .inspect(move |res| {
                 if res.is_ok() {
                     template_pb.finish_with_message("Template uploaded");
@@ -622,13 +623,12 @@ pub async fn upload_use_case(
                     template_pb.finish_with_message("An error occurred while processing template");
                 }
             })
-            .boxed()
-        } else {
-            futures::future::ready(Ok(())).boxed()
-        }
-    };
+            .instrument(tracing::debug_span!("template"))
+            .boxed_local()
+        });
+    }
 
-    let package_fut = {
+    futs.push({
         let (id, upload_url) = find_project_version_file(
             &project_version.files,
             update_use_case_mutation::ProjectVersionFileKind::PACKAGE,
@@ -661,7 +661,6 @@ pub async fn upload_use_case(
             )
             .await
         }
-        .instrument(tracing::debug_span!("package"))
         .inspect(move |res| {
             if res.is_ok() {
                 package_pb.finish_with_message("Package uploaded");
@@ -669,10 +668,11 @@ pub async fn upload_use_case(
                 package_pb.finish_with_message("An error occurred while processing package");
             }
         })
-        .boxed()
-    };
+        .instrument(tracing::debug_span!("package"))
+        .boxed_local()
+    });
 
-    futures::future::try_join_all([data_fut, template_fut, package_fut])
+    futs.try_collect::<()>()
         .instrument(tracing::debug_span!("try_join_all"))
         .await?;
 
@@ -1039,7 +1039,7 @@ Do you want to run the tests now?"#,
                 evaluation_pb.finish_with_message("An error occurred while processing evaluation");
             }
         })
-        .boxed()
+        .boxed_local()
     };
 
     let package_fut = {
@@ -1085,7 +1085,7 @@ Do you want to run the tests now?"#,
                 package_pb.finish_with_message("An error occurred while processing package");
             }
         })
-        .boxed()
+        .boxed_local()
     };
 
     futures::future::try_join_all([evaluation_fut, package_fut]).await?;

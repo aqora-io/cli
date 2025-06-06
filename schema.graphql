@@ -778,7 +778,7 @@ input CreateForumInput {
 
 type CreateMultipartUploadResponse {
 	uploadId: String!
-	urls: [Url!]!
+	urls: [Url!]! @deprecated
 }
 
 input CreateOauth2ConfigInput {
@@ -1499,7 +1499,8 @@ type Mutation {
 	transferEventOwnership(eventId: ID!, toEntityId: ID!): [EventMembershipEdge!]!
 	addEventCompetition(eventId: ID!, competitionId: ID!): EventCompetitionEdge!
 	removeEventCompetition(id: ID!): ID!
-	createProjectVersionFileMultipartUpload(id: ID!, chunks: [Int!]!, contentType: String): CreateMultipartUploadResponse!
+	createProjectVersionFileMultipartUpload(id: ID!, chunks: [Int!]! = [] @deprecated, contentType: String = null @deprecated): CreateMultipartUploadResponse!
+	uploadProjectVersionFilePart(id: ID!, uploadId: String!, chunk: Int!, chunkLen: Int!): Url!
 	completeProjectVersionFileMultipartUpload(id: ID!, uploadId: String!, eTags: [String!]!): ProjectVersionFile!
 	createTag(input: CreateTagInput!, entityId: ID!): TagEdge!
 	deleteTag(tagId: ID!): ID!

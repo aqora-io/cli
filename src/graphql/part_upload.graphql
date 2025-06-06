@@ -1,0 +1,3 @@
+mutation PartUpload($id: ID!, $uploadId: String!, $chunk: Int!, $chunkLen: Int!) {
+  uploadProjectVersionFilePart(id: $id, uploadId: $uploadId, chunk: $chunk, chunkLen: $chunkLen)
+}
