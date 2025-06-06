@@ -1,6 +1,5 @@
-mutation CreateMultipartUpload($id: String!, $chunks: [Int!]!) {
-  createProjectVersionFileMultipartUpload(id: $id, chunks: $chunks) {
+mutation CreateMultipartUpload($id: String!) {
+  createProjectVersionFileMultipartUpload(id: $id) {
     uploadId
-    urls
   }
 }

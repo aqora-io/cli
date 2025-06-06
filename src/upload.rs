@@ -1,5 +1,6 @@
-use std::{convert::Infallible, io::SeekFrom, path::Path, pin::Pin};
+use std::{convert::Infallible, future::Future, io::SeekFrom, path::Path, pin::Pin};
 
+use futures::{future, stream};
 use graphql_client::GraphQLQuery;
 use indicatif::ProgressBar;
 use reqwest::header::{HeaderName, HeaderValue, InvalidHeaderValue};
@@ -22,6 +23,14 @@ use crate::{
     response_derives = "Debug"
 )]
 struct CreateMultipartUpload;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+    query_path = "src/graphql/part_upload.graphql",
+    schema_path = "schema.graphql",
+    response_derives = "Debug"
+)]
+struct PartUpload;
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -107,10 +116,43 @@ impl<'a> FileRef<'a> {
     }
 }
 
+trait UploadDestination {
+    async fn get_url(&mut self) -> Result<Url>;
+}
+
+impl UploadDestination for &Url {
+    fn get_url(&mut self) -> impl Future<Output = Result<Url>> {
+        future::ok(Url::clone(self))
+    }
+}
+
+struct RetryUploadDestination {
+    client: GraphQLClient,
+    id: String,
+    upload_id: String,
+    chunk: i64,
+    chunk_len: i64,
+}
+
+impl UploadDestination for RetryUploadDestination {
+    async fn get_url(&mut self) -> Result<Url> {
+        Ok(self
+            .client
+            .send::<PartUpload>(part_upload::Variables {
+                id: self.id.clone(),
+                upload_id: self.upload_id.clone(),
+                chunk: self.chunk,
+                chunk_len: self.chunk_len,
+            })
+            .await?
+            .upload_project_version_file_part)
+    }
+}
+
 async fn retry_upload(
     client: &reqwest::Client,
     part: FileRef<'_>,
-    upload_url: &Url,
+    mut dest: impl UploadDestination,
     content_type: Option<&str>,
     pb: &ProgressBar,
 ) -> Result<s3::UploadResponse> {
@@ -127,11 +169,13 @@ async fn retry_upload(
             });
         }
 
+        let upload_url = dest.get_url().await?;
+
         // prepare request body
         let result = s3::upload(
             client,
             part.open().await?,
-            upload_url,
+            &upload_url,
             part.length,
             content_type,
             cksum.clone(),
@@ -167,13 +211,21 @@ async fn simple_upload(
 }
 
 async fn upload_part(
-    client: &reqwest::Client,
+    client: &GraphQLClient,
     part: FileRef<'_>,
-    upload_url: Url,
+    id: &Id,
+    upload_id: String,
     content_type: Option<&str>,
     pb: &ProgressBar,
 ) -> Result<String> {
-    Ok(retry_upload(client, part, &upload_url, content_type, pb)
+    let dest = RetryUploadDestination {
+        client: client.clone(),
+        id: id.to_node_id(),
+        upload_id,
+        chunk: part.id as i64,
+        chunk_len: part.length as i64,
+    };
+    Ok(retry_upload(client.inner(), part, dest, content_type, pb)
         .await?
         .e_tag)
 }
@@ -185,31 +237,34 @@ async fn multipart_upload(
     content_type: Option<&str>,
     pb: &ProgressBar,
 ) -> Result<()> {
-    let create_multipart_upload = client
+    let upload_id = client
         .send::<CreateMultipartUpload>(create_multipart_upload::Variables {
             id: id.to_node_id(),
-            chunks: parts.iter().map(|x| x.id as i64).collect(),
         })
         .await?
-        .create_project_version_file_multipart_upload;
+        .create_project_version_file_multipart_upload
+        .upload_id;
 
-    if create_multipart_upload.urls.len() != parts.len() {
-        return Err(error::system(
-            "Multipart upload preparation is invalid",
-            "Please report this bug to our support",
-        ));
-    }
-
-    let e_tags = futures::future::try_join_all(
-        std::iter::zip(parts, create_multipart_upload.urls)
-            .map(|(part, url)| upload_part(client.inner(), part.clone(), url, content_type, pb)),
-    )
-    .await?;
+    use stream::{StreamExt as _, TryStreamExt as _};
+    let e_tags = stream::iter(parts)
+        .map(|part| {
+            upload_part(
+                client,
+                part.clone(),
+                id,
+                upload_id.clone(),
+                content_type,
+                pb,
+            )
+        })
+        .buffered(2)
+        .try_collect::<Vec<_>>()
+        .await?;
 
     let _ = client
         .send::<CompleteMultipartUpload>(complete_multipart_upload::Variables {
             id: id.to_node_id(),
-            upload_id: create_multipart_upload.upload_id,
+            upload_id,
             e_tags,
         })
         .await?;
