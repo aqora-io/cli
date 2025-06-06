@@ -141,7 +141,9 @@ async fn retry_upload(
 
         match result {
             Ok(response) => return Ok(response),
-            Err(s3::UploadError::Response { code, .. }) if code.is_retryable() => {}
+            Err(error) if error.is_retryable() => {
+                tracing::debug!(error = ?error, "Cannot upload part {}", part.id);
+            }
             Err(error) => return Err(error.into()),
         }
     }
