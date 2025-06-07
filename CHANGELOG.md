@@ -2,6 +2,13 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.15.1 - 2025-06-07
+#### Bug Fixes
+- multipart upload - (ea159f3) - Antoine Chauvin
+- do not retry on forbidden S3 responses - (8430d67) - Antoine Chauvin
+
+- - -
+
 ## v0.15.0 - 2025-06-06
 #### Bug Fixes
 - use project name from backend - (6ee6e68) - Antoine Chauvin
