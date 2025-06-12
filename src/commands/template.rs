@@ -174,7 +174,7 @@ This may overwrite files. Do you want to continue?",
     };
 
     pb.set_message("Downloading competition template...");
-    match download_archive(download_url, &destination, &pb).await {
+    match download_archive(&client, download_url, &destination, &pb).await {
         Ok(_) => {
             init_repository(&pb, &destination, None)
                 .inspect_err(|e| {

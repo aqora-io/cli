@@ -1,7 +1,7 @@
 use crate::{
     dirs::credentials_path,
     error::{self, Result},
-    graphql_client::{graphql_url, send as graphql_send},
+    graphql_client::unauthenticated_client,
 };
 use chrono::{DateTime, Duration, Utc};
 use fs4::tokio::AsyncFileExt;
@@ -32,26 +32,21 @@ impl Credentials {
             return Ok(Some(self));
         }
 
-        let client = reqwest::Client::new();
-        let issued = graphql_send::<Oauth2RefreshMutation>(
-            &client,
-            graphql_url(url)?,
-            oauth2_refresh_mutation::Variables {
+        let issued = unauthenticated_client(url.clone())?
+            .send::<Oauth2RefreshMutation>(oauth2_refresh_mutation::Variables {
                 client_id: self.client_id.clone(),
                 client_secret: self.client_secret.clone(),
                 refresh_token: self.refresh_token,
-            },
-            None,
-        )
-        .await?
-        .oauth2_refresh
-        .issued
-        .ok_or_else(|| {
-            error::system(
-                "GraphQL response missing issued",
-                "This is a bug, please report it",
-            )
-        })?;
+            })
+            .await?
+            .oauth2_refresh
+            .issued
+            .ok_or_else(|| {
+                error::system(
+                    "GraphQL response missing issued",
+                    "This is a bug, please report it",
+                )
+            })?;
 
         Ok(Some(Credentials {
             client_id: self.client_id,
