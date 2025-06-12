@@ -2,7 +2,14 @@ use crate::{
     credentials::{get_credentials, Credentials},
     error::{self, Error, Result},
 };
-use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
+use aqora_client::{
+    checksum::{crc32fast::Crc32, S3ChecksumMiddleware},
+    credentials::{CredentialsMiddleware, CredentialsProvider},
+    middleware::{Middleware, MiddlewareError, Next},
+    trace::DebugMiddleware,
+};
+use futures::future::{BoxFuture, FutureExt};
+use reqwest::header::{HeaderValue, USER_AGENT};
 use std::path::Path;
 use url::Url;
 
@@ -10,9 +17,7 @@ pub mod custom_scalars {
     pub type Semver = String;
 }
 
-pub use aqora_client::{client::send, CredentialsProvider, Error as GraphQLError};
-
-pub type GraphQLClient = aqora_client::Client<Option<Credentials>>;
+pub use aqora_client::{Client as GraphQLClient, Error as GraphQLError};
 
 impl From<GraphQLError> for Error {
     fn from(error: GraphQLError) -> Self {
@@ -23,6 +28,7 @@ impl From<GraphQLError> for Error {
             GraphQLError::Json(error) => {
                 error::system(&format!("Failed to parse JSON: {error:?}"), "")
             }
+            GraphQLError::S3(error) => error::system(&format!("S3 Error: {error:?}"), ""),
             GraphQLError::Response(errors) => error::user(
                 &errors
                     .into_iter()
@@ -38,9 +44,10 @@ impl From<GraphQLError> for Error {
             GraphQLError::GraphQLWs(error) => {
                 error::system(&format!("Subscription failed: {error:?}"), "")
             }
+            GraphQLError::WsClosed => error::system("Websocket closed early", ""),
             GraphQLError::NoData => error::system("Invalid response received from server", ""),
-            GraphQLError::Credentials(error) => {
-                error::system(&format!("Invalid credentials: {error:?}"), "")
+            GraphQLError::Middleware(error) => {
+                error::system(&format!("Middleware error: {error:?}"), "")
             }
             GraphQLError::InvalidHeaderValue(_) => {
                 error::system("Invalid header value from client", "")
@@ -49,19 +56,21 @@ impl From<GraphQLError> for Error {
     }
 }
 
-#[async_trait::async_trait]
 impl CredentialsProvider for Credentials {
-    type Error = Error;
-    async fn access_token(&self, url: &Url) -> Result<Option<String>> {
-        if let Some(credentials) = self.clone().refresh(url).await? {
-            return Ok(Some(credentials.access_token));
+    fn access_token<'a>(
+        &'a self,
+        url: &Url,
+    ) -> BoxFuture<'a, Result<Option<String>, Box<dyn std::error::Error + Send + Sync + 'static>>>
+    {
+        let url = url.clone();
+        async move {
+            if let Some(credentials) = self.clone().refresh(&url).await? {
+                return Ok(Some(credentials.access_token));
+            }
+            Ok(None)
         }
-        Ok(None)
+        .boxed()
     }
-}
-
-pub fn graphql_url(url: &Url) -> Result<Url> {
-    Ok(url.join("/graphql")?)
 }
 
 const AQORA_USER_AGENT: HeaderValue = HeaderValue::from_static(concat!(
@@ -70,16 +79,38 @@ const AQORA_USER_AGENT: HeaderValue = HeaderValue::from_static(concat!(
     env!("CARGO_PKG_VERSION")
 ));
 
-pub async fn new(config_home: impl AsRef<Path>, url: Url) -> Result<GraphQLClient> {
-    let credentials = get_credentials(config_home, url.clone()).await?;
-    let mut headers = HeaderMap::new();
-    headers.insert(USER_AGENT, AQORA_USER_AGENT);
-    let client = reqwest::Client::builder()
-        .default_headers(headers)
-        .build()?;
-    Ok(GraphQLClient::new_with_client(
-        client,
-        graphql_url(&url)?,
-        credentials,
-    ))
+pub struct AqoraUserAgentMiddleware;
+
+impl Middleware for AqoraUserAgentMiddleware {
+    fn handle<'a>(
+        &'a self,
+        mut request: reqwest::Request,
+        next: Next<'a>,
+    ) -> BoxFuture<'a, Result<reqwest::Response, MiddlewareError>> {
+        request.headers_mut().insert(USER_AGENT, AQORA_USER_AGENT);
+        next.handle(request)
+    }
+}
+
+pub fn graphql_url(url: &Url) -> Result<Url> {
+    Ok(url.join("/graphql")?)
+}
+
+pub fn unauthenticated_client(url: Url) -> Result<GraphQLClient> {
+    let mut client = GraphQLClient::new(graphql_url(&url)?);
+    client
+        .with(AqoraUserAgentMiddleware)
+        .with(DebugMiddleware)
+        .s3_with(S3ChecksumMiddleware::new(Crc32::new()))
+        .s3_with(DebugMiddleware)
+        .ws_with(DebugMiddleware);
+    Ok(client)
+}
+
+pub async fn client(config_home: impl AsRef<Path>, url: Url) -> Result<GraphQLClient> {
+    let mut client = unauthenticated_client(url.clone())?;
+    client.with(CredentialsMiddleware::new(
+        get_credentials(config_home, url).await?,
+    ));
+    Ok(client)
 }

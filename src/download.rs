@@ -1,17 +1,53 @@
 use crate::{
     compress::decompress,
     error::{self, Result},
+    graphql_client::GraphQLClient,
     progress_bar::{self, TempProgressStyle},
 };
-use futures::prelude::*;
 use indicatif::ProgressBar;
-use reqwest::header::CONTENT_DISPOSITION;
 use std::path::Path;
+use tokio::io::AsyncWriteExt;
 use url::Url;
 
-pub async fn download_archive(url: Url, dir: impl AsRef<Path>, pb: &ProgressBar) -> Result<()> {
-    let _guard = TempProgressStyle::new(pb);
+struct DownloadInspector<'a> {
+    _temp: TempProgressStyle<'a>,
+    pb: &'a ProgressBar,
+    should_inc: bool,
+}
 
+impl<'a> DownloadInspector<'a> {
+    fn new(pb: &'a ProgressBar, content_length: Option<usize>) -> Self {
+        let _temp = TempProgressStyle::new(pb);
+        let should_inc = if let Some(content_length) = content_length {
+            pb.reset();
+            pb.set_style(progress_bar::pretty_bytes());
+            pb.disable_steady_tick();
+            pb.set_position(0);
+            pb.set_length(content_length as u64);
+            true
+        } else {
+            false
+        };
+        Self {
+            _temp,
+            pb,
+            should_inc,
+        }
+    }
+
+    fn inspect(&self, bytes: &[u8]) {
+        if self.should_inc {
+            self.pb.inc(bytes.len() as u64)
+        }
+    }
+}
+
+pub async fn download_archive(
+    client: &GraphQLClient,
+    url: Url,
+    dir: impl AsRef<Path>,
+    pb: &ProgressBar,
+) -> Result<()> {
     tokio::fs::create_dir_all(&dir).await.map_err(|e| {
         error::user(
             &format!(
@@ -22,52 +58,34 @@ pub async fn download_archive(url: Url, dir: impl AsRef<Path>, pb: &ProgressBar)
             "Please make sure you have permission to create directories in this directory",
         )
     })?;
-    let client = reqwest::Client::new();
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| {
-            error::user(
-                &format!("Failed to download data: {e}"),
-                "Check your internet connection and try again",
-            )
-        })?
-        .error_for_status()
-        .map_err(|e| error::system(&format!("Failed to download data: {e}"), ""))?;
-    let attachment = response
-        .headers()
-        .get(CONTENT_DISPOSITION)
-        .and_then(parse_content_disposition_attachment)
-        .map(ToString::to_string)
-        .ok_or_else(|| error::system("todo", "fixme"))?;
-    let show_progress = if let Some(content_length) = response.content_length() {
-        pb.reset();
-        pb.set_style(progress_bar::pretty_bytes());
-        pb.disable_steady_tick();
-        pb.set_position(0);
-        pb.set_length(content_length);
-        true
-    } else {
-        false
-    };
-    let mut byte_stream = response.bytes_stream();
 
+    let response = client.s3_get(url).await?;
+
+    let filename = response
+        .content_disposition
+        .as_ref()
+        .map(|s| content_disposition::parse_content_disposition(s))
+        .and_then(|cd| cd.filename_full())
+        .ok_or_else(|| error::system("No filename found for download", ""))?;
     let tar_dir = tempfile::TempDir::new().map_err(|e| {
         error::user(
             &format!("Failed to create temporary file: {e}"),
             "Please make sure you have permission to create files in this directory",
         )
     })?;
-    let tar_path = tar_dir.path().join(attachment);
-    let mut tar_file = tokio::fs::File::create(&tar_path).await?;
-    while let Some(item) = byte_stream.next().await {
-        let item = item?;
-        tokio::io::copy(&mut item.as_ref(), &mut tar_file).await?;
-        if show_progress {
-            pb.inc(item.len() as u64);
-        }
-    }
+    let tar_path = tar_dir.path().join(filename);
+
+    let inspector = DownloadInspector::new(pb, response.content_length);
+    let mut tar_file = tokio::io::BufWriter::new(tokio_util::io::InspectWriter::new(
+        tokio::fs::File::create(&tar_path).await?,
+        move |bytes| {
+            inspector.inspect(bytes);
+        },
+    ));
+    tokio::io::copy_buf(&mut response.into_async_read(), &mut tar_file).await?;
+    tar_file.flush().await?;
+    drop(tar_file);
+
     decompress(tar_path, &dir, pb).await.map_err(|e| {
         error::user(
             &format!("Failed to decompress data: {e}"),
@@ -75,20 +93,4 @@ pub async fn download_archive(url: Url, dir: impl AsRef<Path>, pb: &ProgressBar)
         )
     })?;
     Ok(())
-}
-
-fn parse_content_disposition_attachment(header: &reqwest::header::HeaderValue) -> Option<&str> {
-    let header = header.to_str().ok()?;
-    let mut is_attachment = false;
-    let mut out_filename = None;
-    for part in header.split(';') {
-        let part = part.trim();
-        if part == "attachment" {
-            is_attachment = true;
-        } else if let Some(filename) = part.strip_prefix("filename=") {
-            out_filename = Some(filename.trim_matches('"'));
-        }
-    }
-
-    out_filename.filter(|_| is_attachment)
 }
