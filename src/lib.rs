@@ -1,5 +1,4 @@
 mod cfg_file;
-mod checksum;
 mod colors;
 mod commands;
 mod compress;
@@ -24,7 +23,6 @@ mod python;
 mod readme;
 mod revert_file;
 mod run;
-mod s3;
 pub mod sentry;
 mod shutdown;
 mod upload;

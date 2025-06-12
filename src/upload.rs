@@ -1,19 +1,30 @@
-use std::{convert::Infallible, future::Future, io::SeekFrom, path::Path, pin::Pin};
+use std::path::Path;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering as AtomicOrdering},
+    Arc,
+};
+use std::time::Duration;
 
-use futures::{future, stream};
-use graphql_client::GraphQLQuery;
+use aqora_client::multipart::BufferOptions;
+use aqora_client::{
+    error::BoxError,
+    middleware::{Middleware, MiddlewareError, Next},
+    multipart::{Multipart, DEFAULT_PART_SIZE},
+    retry::{BackoffBuilder, ExponentialBackoffBuilder, RetryMiddleware},
+    Client, GraphQLQuery,
+};
+use bytes::Bytes;
+use futures::stream::StreamExt;
 use indicatif::ProgressBar;
-use reqwest::header::{HeaderName, HeaderValue, InvalidHeaderValue};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt};
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use url::Url;
 
 use crate::{
-    checksum::Checksum,
-    error::{self, Result},
+    error::Result,
     graphql_client::GraphQLClient,
     id::Id,
     progress_bar::{self, TempProgressStyle},
-    s3,
 };
 
 #[derive(GraphQLQuery)]
@@ -40,236 +51,185 @@ struct PartUpload;
 )]
 struct CompleteMultipartUpload;
 
-const MB: usize = 1024 * 1024;
-const CHUNK_SIZE: usize = 10 * MB;
-const MAX_RETRY_UPLOAD: usize = 3;
-
-impl TryFrom<&Checksum> for HeaderName {
-    type Error = Infallible;
-
-    fn try_from(value: &Checksum) -> std::result::Result<Self, Self::Error> {
-        Ok(match value {
-            Checksum::Crc32(_) => HeaderName::from_static("x-amz-checksum-crc32"),
-        })
-    }
-}
-
-impl TryFrom<&Checksum> for HeaderValue {
-    type Error = InvalidHeaderValue;
-
-    fn try_from(value: &Checksum) -> std::result::Result<Self, Self::Error> {
-        Self::try_from(value.to_be_base64())
-    }
-}
-
-/// `FileRef` identifies a file by its path, an offset within the file, a length, and an ID.
-///
-/// It can either be:
-///   - a complete file, with `id=0`, `offset=0`, `length=N` where `N` is the full length of the file,
-///   - a chunk of `length=M` of a file, with `id` incrementally increasing along with `offset`
-///     where `M` is determined by the chunking algorithm (nb: fixed at the time of writing).
-///
-/// Users of this API cannot assume a single `FileRef` is complete or not.
-#[derive(Clone, Debug, PartialEq)]
-struct FileRef<'a> {
-    path: &'a Path,
-    id: u64,
-    offset: u64,
-    length: usize,
-}
-
-impl<'a> FileRef<'a> {
-    /// Logical chunking algorithm with fixed chunk size.
-    /// Returns at least one chunk, even when the file is empty.
-    async fn chunks(path: &'a Path, chunk_size: usize) -> std::io::Result<(Vec<Self>, usize)> {
-        let total_length = tokio::fs::File::open(path)
-            .await?
-            .seek(SeekFrom::End(0))
-            .await? as usize;
-
-        let chunk_count = std::cmp::max(1, total_length.div_ceil(chunk_size));
-
-        let mut chunks = Vec::with_capacity(chunk_count);
-        let mut remaining = total_length;
-        for index in 0..chunk_count {
-            let chunk_length = std::cmp::min(chunk_size, remaining);
-            remaining -= chunk_length;
-
-            chunks.push(FileRef {
-                path,
-                id: index as u64,
-                offset: (index * chunk_size) as u64,
-                length: chunk_length,
-            });
-        }
-
-        Ok((chunks, total_length))
-    }
-
-    /// Open the file in read-only mode, ready to be read at `offset` with exactly `length` bytes.
-    /// Returns a file descriptor that you can drop, and read monotonously.
-    async fn open(&self) -> std::io::Result<Pin<Box<dyn AsyncRead + Send + 'static>>> {
-        let mut file = tokio::fs::File::open(self.path).await?;
-        file.seek(SeekFrom::Start(self.offset)).await?;
-        let part = file.take(self.length as u64);
-        Ok(Box::pin(part))
-    }
-}
-
-trait UploadDestination {
-    async fn get_url(&mut self) -> Result<Url>;
-}
-
-impl UploadDestination for &Url {
-    fn get_url(&mut self) -> impl Future<Output = Result<Url>> {
-        future::ok(Url::clone(self))
-    }
-}
-
-struct RetryUploadDestination {
-    client: GraphQLClient,
+struct ProjectVersionFileMultipart {
     id: String,
-    upload_id: String,
-    chunk: i64,
-    chunk_len: i64,
 }
 
-impl UploadDestination for RetryUploadDestination {
-    async fn get_url(&mut self) -> Result<Url> {
-        Ok(self
-            .client
+impl ProjectVersionFileMultipart {
+    fn new(id: &Id) -> Self {
+        Self {
+            id: id.to_node_id(),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl Multipart for ProjectVersionFileMultipart {
+    type File = String;
+    type Output = ();
+    async fn create(&self, client: &Client) -> Result<Self::File, BoxError> {
+        Ok(client
+            .send::<CreateMultipartUpload>(create_multipart_upload::Variables {
+                id: self.id.clone(),
+            })
+            .await?
+            .create_project_version_file_multipart_upload
+            .upload_id)
+    }
+    async fn create_part(
+        &self,
+        client: &Client,
+        file: &Self::File,
+        index: usize,
+        size: usize,
+    ) -> Result<Url, BoxError> {
+        Ok(client
             .send::<PartUpload>(part_upload::Variables {
                 id: self.id.clone(),
-                upload_id: self.upload_id.clone(),
-                chunk: self.chunk,
-                chunk_len: self.chunk_len,
+                upload_id: file.clone(),
+                chunk: index as i64,
+                chunk_len: size as i64,
             })
             .await?
             .upload_project_version_file_part)
     }
+    async fn complete(
+        &self,
+        client: &Client,
+        file: &Self::File,
+        etags: Vec<String>,
+    ) -> Result<Self::Output, BoxError> {
+        let _ = client
+            .send::<CompleteMultipartUpload>(complete_multipart_upload::Variables {
+                id: self.id.clone(),
+                upload_id: file.clone(),
+                e_tags: etags,
+            })
+            .await?;
+        Ok(())
+    }
 }
 
-async fn retry_upload(
-    client: &reqwest::Client,
-    part: FileRef<'_>,
-    mut dest: impl UploadDestination,
-    content_type: Option<&str>,
-    pb: &ProgressBar,
-) -> Result<s3::UploadResponse> {
-    let cksum = Checksum::read_default_from(part.open().await?).await?;
+const DEFAULT_CHUNK_SIZE: usize = 64 * 1024; // 64 KiB
 
-    for retry in 0..MAX_RETRY_UPLOAD {
-        if retry > 0 {
-            pb.suspend(|| {
-                tracing::warn!(
-                    "Retrying upload... ({} of {} max)",
-                    retry + 1,
-                    MAX_RETRY_UPLOAD
-                );
-            });
-        }
+struct ByteChunks {
+    bytes: Bytes,
+    chunk_size: usize,
+}
 
-        let upload_url = dest.get_url().await?;
-
-        // prepare request body
-        let result = s3::upload(
-            client,
-            part.open().await?,
-            &upload_url,
-            part.length,
-            content_type,
-            cksum.clone(),
-            pb,
-        )
-        .await;
-
-        match result {
-            Ok(response) => return Ok(response),
-            Err(error) if error.is_retryable() => {
-                tracing::debug!(error = ?error, "Cannot upload part {}", part.id);
-            }
-            Err(error) => return Err(error.into()),
+impl ByteChunks {
+    fn new(bytes: &[u8], chunk_size: usize) -> Self {
+        Self {
+            bytes: Bytes::copy_from_slice(bytes),
+            chunk_size,
         }
     }
-
-    // abort upload if checksum verification fails too much
-    Err(error::system(
-        "Upload failed",
-        "Please verify reliability of your network and/or disk",
-    ))
 }
 
-async fn simple_upload(
-    client: &reqwest::Client,
-    file: FileRef<'_>,
-    upload_url: &Url,
-    content_type: Option<&str>,
-    pb: &ProgressBar,
-) -> Result<()> {
-    let _ = retry_upload(client, file, upload_url, content_type, pb).await?;
-    Ok(())
+impl Iterator for ByteChunks {
+    type Item = Bytes;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.bytes.is_empty() {
+            return None;
+        }
+        let index = std::cmp::min(self.chunk_size, self.bytes.len());
+        let next = self.bytes.split_to(index);
+        Some(next)
+    }
 }
 
-async fn upload_part(
-    client: &GraphQLClient,
-    part: FileRef<'_>,
-    id: &Id,
-    upload_id: String,
-    content_type: Option<&str>,
-    pb: &ProgressBar,
-) -> Result<String> {
-    let dest = RetryUploadDestination {
-        client: client.clone(),
-        id: id.to_node_id(),
-        upload_id,
-        chunk: part.id as i64,
-        chunk_len: part.length as i64,
-    };
-    Ok(retry_upload(client.inner(), part, dest, content_type, pb)
-        .await?
-        .e_tag)
+pub struct ChunkProgressMiddleware {
+    chunk_size: usize,
+    _temp_style: TempProgressStyle<'static>,
+    pb: ProgressBar,
 }
 
-async fn multipart_upload(
-    client: &GraphQLClient,
-    parts: Vec<FileRef<'_>>,
-    id: &Id,
-    content_type: Option<&str>,
-    pb: &ProgressBar,
-) -> Result<()> {
-    let upload_id = client
-        .send::<CreateMultipartUpload>(create_multipart_upload::Variables {
-            id: id.to_node_id(),
-        })
-        .await?
-        .create_project_version_file_multipart_upload
-        .upload_id;
+impl ChunkProgressMiddleware {
+    pub fn new(total_size: usize, chunk_size: usize, pb: ProgressBar) -> Self {
+        let _temp_style = TempProgressStyle::owned(pb.clone());
+        pb.reset();
+        pb.set_style(progress_bar::pretty_bytes());
+        pb.disable_steady_tick();
+        pb.set_position(0);
+        pb.set_length(total_size as u64);
+        Self {
+            chunk_size,
+            _temp_style,
+            pb,
+        }
+    }
+}
 
-    use stream::{StreamExt as _, TryStreamExt as _};
-    let e_tags = stream::iter(parts)
-        .map(|part| {
-            upload_part(
-                client,
-                part.clone(),
-                id,
-                upload_id.clone(),
-                content_type,
-                pb,
-            )
-        })
-        .buffered(2)
-        .try_collect::<Vec<_>>()
-        .await?;
+#[async_trait::async_trait]
+impl Middleware for ChunkProgressMiddleware {
+    async fn handle(
+        &self,
+        mut req: reqwest::Request,
+        next: Next<'_>,
+    ) -> Result<reqwest::Response, MiddlewareError> {
+        let processed = Arc::new(AtomicUsize::new(0));
+        if let Some(bytes) = req.body().and_then(|body| body.as_bytes()) {
+            let pb = self.pb.clone();
+            let processed = processed.clone();
+            let chunks = ByteChunks::new(bytes, self.chunk_size);
+            req.body_mut().replace(reqwest::Body::wrap_stream(
+                futures::stream::iter(chunks)
+                    .inspect(move |chunk| {
+                        let len = chunk.len();
+                        pb.inc(len as u64);
+                        processed.fetch_add(len, AtomicOrdering::Relaxed);
+                    })
+                    .map(Result::<_, std::convert::Infallible>::Ok),
+            ));
+        }
+        match next.handle(req).await?.error_for_status() {
+            Ok(res) => Ok(res),
+            Err(err) => {
+                self.pb.dec(processed.load(AtomicOrdering::Relaxed) as u64);
+                Err(MiddlewareError::Request(err))
+            }
+        }
+    }
+}
 
-    let _ = client
-        .send::<CompleteMultipartUpload>(complete_multipart_upload::Variables {
-            id: id.to_node_id(),
-            upload_id,
-            e_tags,
-        })
-        .await?;
+struct InspectedBackoff<T> {
+    pb: ProgressBar,
+    backoff: T,
+}
 
-    Ok(())
+impl<T> Iterator for InspectedBackoff<T>
+where
+    T: Iterator<Item = Duration>,
+{
+    type Item = Duration;
+    fn next(&mut self) -> Option<Duration> {
+        if let Some(next) = self.backoff.next() {
+            self.pb.suspend(|| {
+                tracing::warn!("An error occurred, retrying in {:?}", next);
+            });
+            Some(next)
+        } else {
+            None
+        }
+    }
+}
+
+struct InspectedBackoffBuilder<T> {
+    pb: ProgressBar,
+    builder: T,
+}
+
+impl<T> BackoffBuilder for InspectedBackoffBuilder<T>
+where
+    T: BackoffBuilder,
+{
+    type Iter = InspectedBackoff<T::Iter>;
+    fn build(&self) -> Self::Iter {
+        InspectedBackoff {
+            pb: self.pb.clone(),
+            backoff: self.builder.build(),
+        }
+    }
 }
 
 #[tracing::instrument(ret, err, skip(client, pb))]
@@ -281,49 +241,34 @@ pub async fn upload_project_version_file(
     upload_url: &Url,
     pb: &ProgressBar,
 ) -> Result<()> {
-    let (parts, total_length) = FileRef::chunks(path.as_ref(), CHUNK_SIZE).await?;
-
-    let _guard = TempProgressStyle::new(pb);
-    pb.reset();
-    pb.set_style(progress_bar::pretty_bytes());
-    pb.disable_steady_tick();
-    pb.set_position(0);
-    pb.set_length(total_length as u64);
-
-    if parts.len() == 1 {
-        let mut parts = parts;
-        let file = parts.pop().expect("Vec is unexpectly empty");
-        simple_upload(client.inner(), file, upload_url, content_type, pb).await
+    let mut file = File::open(path).await?;
+    let len = file.metadata().await?.len() as usize;
+    let mut client = client.clone();
+    client
+        .s3_with(RetryMiddleware::new(InspectedBackoffBuilder {
+            pb: pb.clone(),
+            builder: ExponentialBackoffBuilder::default(),
+        }))
+        .s3_with(ChunkProgressMiddleware::new(
+            len,
+            DEFAULT_CHUNK_SIZE,
+            pb.clone(),
+        ));
+    if len > DEFAULT_PART_SIZE {
+        let mut multipart = client
+            .multipart(ProjectVersionFileMultipart::new(id))
+            .with_buffer_options(
+                BufferOptions::default()
+                    .for_total_size(len)
+                    .for_concurrency(3),
+            )
+            .expect("Buffer options with positive concurrency should always be valid");
+        tokio::io::copy(&mut file, &mut multipart).await?;
+        multipart.shutdown().await?;
     } else {
-        multipart_upload(client, parts, id, content_type, pb).await
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes).await?;
+        client.s3_put(upload_url.clone(), bytes).await?;
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{io::Write, path::Path};
-
-    use rand::{thread_rng, RngCore};
-    use tempfile::NamedTempFile;
-
-    #[tokio::test]
-    async fn test_chunks() {
-        let mut file = NamedTempFile::new().unwrap();
-        let mut buf = vec![0u8; 512 * 1024];
-        for _ in 0..50 {
-            thread_rng().fill_bytes(&mut buf[..]);
-            file.write_all(&buf[..]).unwrap();
-        }
-
-        let path = file.into_temp_path();
-        let (chunks, total_size) = super::FileRef::chunks(path.as_ref(), 1024 * 1024)
-            .await
-            .unwrap();
-        assert_eq!(total_size, 50 * 512 * 1024);
-        assert_eq!(chunks.len(), 25);
-        assert_eq!(chunks[0].id, 0);
-        assert_eq!(chunks[0].offset, 0);
-        assert_eq!(chunks[0].length, 1024 * 1024);
-        assert_eq!(chunks[0].path, path.as_ref() as &Path);
-    }
+    Ok(())
 }
