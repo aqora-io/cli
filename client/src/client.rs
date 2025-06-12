@@ -1,3 +1,6 @@
+use std::fmt;
+use std::sync::Arc;
+
 use graphql_client::GraphQLQuery;
 use reqwest::header::{HeaderMap, AUTHORIZATION};
 use url::Url;
@@ -21,14 +24,8 @@ async fn post_graphql<Q: GraphQLQuery>(
     client: &reqwest::Client,
     url: Url,
     variables: Q::Variables,
-    bearer_token: Option<String>,
+    headers: HeaderMap,
 ) -> Result<graphql_client::Response<Q::ResponseData>> {
-    let mut headers = HeaderMap::new();
-
-    if let Some(token) = bearer_token {
-        headers.insert(AUTHORIZATION, token.parse()?);
-    }
-
     let body = Q::build_query(variables);
     tracing::debug!("sending request: {}", serde_json::to_string(&body)?);
     let reqwest_response = client.post(url).headers(headers).json(&body).send().await?;
@@ -38,33 +35,50 @@ async fn post_graphql<Q: GraphQLQuery>(
     Ok(serde_json::from_value(json)?)
 }
 
-pub async fn send<Q: GraphQLQuery>(
+async fn send<Q: GraphQLQuery>(
     client: &reqwest::Client,
     url: Url,
     variables: Q::Variables,
-    bearer_token: Option<String>,
+    headers: HeaderMap,
 ) -> Result<Q::ResponseData> {
-    get_data::<Q>(post_graphql::<Q>(client, url, variables, bearer_token).await?)
+    get_data::<Q>(post_graphql::<Q>(client, url, variables, headers).await?)
 }
 
-#[derive(Clone, Debug)]
-pub struct Client<C> {
+#[derive(Clone)]
+pub struct Client {
     client: reqwest::Client,
     url: Url,
-    credentials: C,
+    default_headers: HeaderMap,
+    credentials: Arc<dyn CredentialsProvider>,
 }
 
-impl<C> Client<C> {
-    pub fn new_with_client(client: reqwest::Client, url: Url, credentials: C) -> Self {
+impl fmt::Debug for Client {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Client")
+            .field("client", &self.client)
+            .field("url", &self.url)
+            .finish()
+    }
+}
+
+impl Client {
+    pub fn new(url: Url) -> Self {
         Client {
-            client,
+            client: reqwest::Client::new(),
             url,
-            credentials,
+            default_headers: HeaderMap::new(),
+            credentials: Arc::new(Option::<String>::None),
         }
     }
 
-    pub fn new(url: Url, credentials: C) -> Self {
-        Client::new_with_client(reqwest::Client::new(), url, credentials)
+    pub fn with_credentials(mut self, credentials: impl CredentialsProvider + 'static) -> Self {
+        self.credentials = Arc::new(credentials);
+        self
+    }
+
+    pub fn with_default_headers(mut self, headers: HeaderMap) -> Self {
+        self.default_headers = headers;
+        self
     }
 
     #[inline]
@@ -78,39 +92,32 @@ impl<C> Client<C> {
     }
 
     #[inline]
-    pub fn credentials(&self) -> &C {
-        &self.credentials
+    pub fn default_headers(&self) -> &HeaderMap {
+        &self.default_headers
     }
-}
 
-impl Client<Option<String>> {
     #[inline]
-    pub fn unauthenticated(url: Url) -> Self {
-        Self::new(url, None)
+    pub fn credentials(&self) -> impl CredentialsProvider + '_ {
+        self.credentials.as_ref()
     }
 }
 
-impl<C> Client<C>
-where
-    C: CredentialsProvider,
-{
+impl Client {
     pub(crate) async fn bearer_token(&self) -> Result<Option<String>> {
         Ok(self
             .credentials
             .access_token(&self.url)
             .await
-            .map_err(|err| Error::Credentials(Box::new(err)))?
+            .map_err(Error::Credentials)?
             .map(|access_token| format!("Bearer {access_token}")))
     }
 
     #[inline]
     pub async fn send<Q: GraphQLQuery>(&self, variables: Q::Variables) -> Result<Q::ResponseData> {
-        send::<Q>(
-            &self.client,
-            self.url.clone(),
-            variables,
-            self.bearer_token().await?,
-        )
-        .await
+        let mut headers = self.default_headers.clone();
+        if let Some(token) = self.bearer_token().await? {
+            headers.insert(AUTHORIZATION, token.parse()?);
+        }
+        send::<Q>(&self.client, self.url.clone(), variables, headers).await
     }
 }

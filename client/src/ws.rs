@@ -2,13 +2,9 @@ use futures::prelude::*;
 use graphql_client::GraphQLQuery;
 
 use crate::client::{get_data, Client};
-use crate::credentials::CredentialsProvider;
 use crate::error::Result;
 
-impl<C> Client<C>
-where
-    C: CredentialsProvider,
-{
+impl Client {
     pub async fn subscribe<Q>(
         &self,
         variables: Q::Variables,

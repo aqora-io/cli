@@ -30,7 +30,6 @@ aqora-config = { path = "config" }
 aqora-runner = { path = "runner", features = ["clap"] }
 aqora-template = { path = "template" }
 aqora-client = { path = "client", features = ["ws", "rustls-tls-webpki-roots"] }
-async-tempfile = "0.6"
 axum = "0.7"
 base32 = "0.5"
 base64 = "0.22"
@@ -57,7 +56,6 @@ pyo3-async-runtimes = { version = "0.24", features = [
   "attributes",
   "tokio-runtime",
 ] }
-quick-xml = { version = "0.37", features = ["serialize"] }
 rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = [
   "stream",

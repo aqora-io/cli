@@ -111,11 +111,12 @@ impl GlobalArgs {
     }
 
     pub async fn graphql_client(&self) -> Result<GraphQLClient> {
+        let url = self.aqora_url()?;
         match self.config_home().await {
-            Ok(config_home) => Ok(graphql_client::new(config_home, self.aqora_url()?).await?),
+            Ok(config_home) => Ok(graphql_client::new(config_home, url).await?),
             Err(err) => {
                 tracing::warn!("Could not access credentials: {}", err.description());
-                Ok(GraphQLClient::new(self.aqora_url()?, None))
+                Ok(GraphQLClient::new(url))
             }
         }
     }

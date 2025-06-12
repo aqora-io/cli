@@ -1,4 +1,15 @@
+use std::sync::Arc;
+
 use thiserror::Error;
+
+#[cfg(feature = "threaded")]
+pub type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
+#[cfg(feature = "threaded")]
+pub(crate) type ArcError = Arc<dyn std::error::Error + Send + Sync + 'static>;
+#[cfg(not(feature = "threaded"))]
+pub type BoxError = Box<dyn std::error::Error + 'static>;
+#[cfg(not(feature = "threaded"))]
+pub(crate) type ArcError = Arc<dyn std::error::Error + 'static>;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -19,7 +30,7 @@ pub enum Error {
     #[error("GraphQL response contained no data")]
     NoData,
     #[error(transparent)]
-    Credentials(Box<dyn std::error::Error + Send + Sync + 'static>),
+    Credentials(BoxError),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
