@@ -5,11 +5,22 @@ edition = "2021"
 publish = false
 
 [features]
-default = []
+default = ["ws", "rustls-tls-webpki-roots", "threaded", "tokio-time"]
+threaded = []
 ws = ["graphql-ws-client", "tokio-tungstenite"]
 rustls-tls-webpki-roots = [
   "reqwest/rustls-tls-webpki-roots",
   "tokio-tungstenite/rustls-tls-webpki-roots",
+]
+tokio-time = ["tokio/time"]
+
+default-wasm = ["wasm-bindgen", "wasm-time"]
+wasm-bindgen = ["backoff/wasm-bindgen"]
+wasm-time = [
+  "wasm-bindgen-futures",
+  "web-sys",
+  "web-sys/Window",
+  "web-sys/WorkerGlobalScope",
 ]
 
 [dependencies]
@@ -21,9 +32,23 @@ serde_json = "1.0"
 tracing = "0.1"
 async-trait = "0.1"
 futures = "0.3"
+pin-project-lite = "0.2"
+bytes = "1.10"
+crc32fast = "1.4"
+base64 = "0.22"
+backoff = "0.4"
+tokio = "1.45"
 
 graphql-ws-client = { version = "0.11", features = [
   "client-graphql-client",
   "tungstenite",
 ], optional = true }
 tokio-tungstenite = { version = "0.24", optional = true }
+
+wasm-bindgen-futures = { version = "0.4", optional = true }
+web-sys = { version = "0.3", optional = true }
+
+[dev-dependencies]
+aws-config = "1.1"
+aws-sdk-s3 = "1.91"
+tokio = { version = "1", features = ["macros"] }

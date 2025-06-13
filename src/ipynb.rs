@@ -594,6 +594,7 @@ mod tests {
     use super::*;
     use aqora_runner::python::PyEnvOptions;
     use pretty_assertions::assert_eq;
+    use tempfile::TempDir;
 
     const EXAMPLE_IPYNB: &str = r###"{
  "cells": [
@@ -758,16 +759,16 @@ get_ipython().system('echo "hello"')
     #[tokio::test]
     async fn test_notebook_to_script() {
         pyo3::prepare_freethreaded_python();
-        let temp_dir = async_tempfile::TempDir::new().await.unwrap();
+        let temp_dir = TempDir::new().unwrap();
         let env = PyEnv::init(
             which::which("uv").unwrap(),
-            &temp_dir.dir_path().join(".venv"),
+            &temp_dir.path().join(".venv"),
             PyEnvOptions::default(),
         )
         .await
         .unwrap();
-        let input = temp_dir.dir_path().join("input.ipynb");
-        let output = temp_dir.dir_path().join("output.py");
+        let input = temp_dir.path().join("input.ipynb");
+        let output = temp_dir.path().join("output.py");
         std::fs::write(&input, EXAMPLE_IPYNB).unwrap();
         notebook_to_script(&env, &input, &output).await.unwrap();
         let script = std::fs::read_to_string(output).unwrap();

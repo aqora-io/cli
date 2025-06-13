@@ -2,6 +2,7 @@ use crate::{
     credentials::{get_credentials, Credentials},
     error::{self, Error, Result},
 };
+use futures::future::{BoxFuture, FutureExt};
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use std::path::Path;
 use url::Url;
@@ -10,9 +11,9 @@ pub mod custom_scalars {
     pub type Semver = String;
 }
 
-pub use aqora_client::{client::send, CredentialsProvider, Error as GraphQLError};
+pub use aqora_client::{CredentialsProvider, Error as GraphQLError};
 
-pub type GraphQLClient = aqora_client::Client<Option<Credentials>>;
+pub type GraphQLClient = aqora_client::Client;
 
 impl From<GraphQLError> for Error {
     fn from(error: GraphQLError) -> Self {
@@ -49,14 +50,20 @@ impl From<GraphQLError> for Error {
     }
 }
 
-#[async_trait::async_trait]
 impl CredentialsProvider for Credentials {
-    type Error = Error;
-    async fn access_token(&self, url: &Url) -> Result<Option<String>> {
-        if let Some(credentials) = self.clone().refresh(url).await? {
-            return Ok(Some(credentials.access_token));
+    fn access_token<'a>(
+        &'a self,
+        url: &Url,
+    ) -> BoxFuture<'a, Result<Option<String>, Box<dyn std::error::Error + Send + Sync + 'static>>>
+    {
+        let url = url.clone();
+        async move {
+            if let Some(credentials) = self.clone().refresh(&url).await? {
+                return Ok(Some(credentials.access_token));
+            }
+            Ok(None)
         }
-        Ok(None)
+        .boxed()
     }
 }
 
@@ -71,15 +78,9 @@ const AQORA_USER_AGENT: HeaderValue = HeaderValue::from_static(concat!(
 ));
 
 pub async fn new(config_home: impl AsRef<Path>, url: Url) -> Result<GraphQLClient> {
-    let credentials = get_credentials(config_home, url.clone()).await?;
     let mut headers = HeaderMap::new();
     headers.insert(USER_AGENT, AQORA_USER_AGENT);
-    let client = reqwest::Client::builder()
-        .default_headers(headers)
-        .build()?;
-    Ok(GraphQLClient::new_with_client(
-        client,
-        graphql_url(&url)?,
-        credentials,
-    ))
+    Ok(GraphQLClient::new(graphql_url(&url)?)
+        .with_credentials(get_credentials(config_home, url.clone()).await?)
+        .with_default_headers(headers))
 }

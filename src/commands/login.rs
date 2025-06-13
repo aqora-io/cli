@@ -73,7 +73,7 @@ async fn get_oauth_code(
     let signature_bytes = keypair.sign(authorize_url.as_str().as_bytes());
     let signature = BASE64_URL_SAFE_NO_PAD.encode(signature_bytes.as_ref());
 
-    let client = GraphQLClient::new(global.graphql_url()?, None);
+    let client = GraphQLClient::new(global.graphql_url()?);
     let mut subscription = client
         .subscribe::<Oauth2RedirectSubscription>(oauth2_redirect_subscription::Variables {
             auth_url: authorize_url.clone(),
@@ -294,7 +294,7 @@ async fn do_login(args: Login, global: GlobalArgs, progress: ProgressBar) -> Res
                 // cancelled
                 return Ok(());
             };
-            let result = GraphQLClient::new(global.graphql_url()?, None)
+            let result = GraphQLClient::new(global.graphql_url()?)
                 .send::<Oauth2TokenMutation>(oauth2_token_mutation::Variables {
                     client_id: client_id.clone(),
                     code,

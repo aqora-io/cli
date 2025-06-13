@@ -1,31 +1,48 @@
-use std::convert::Infallible;
 use url::Url;
 
-#[async_trait::async_trait]
-pub trait CredentialsProvider {
-    type Error: std::error::Error + Send + Sync + 'static;
-    async fn access_token(&self, url: &Url) -> Result<Option<String>, Self::Error>;
+use crate::async_util::{MaybeLocalBoxFuture, MaybeLocalFutureExt, MaybeSend, MaybeSync};
+use crate::error::BoxError;
+
+pub trait CredentialsProvider: MaybeSend + MaybeSync {
+    fn access_token<'a>(
+        &'a self,
+        url: &Url,
+    ) -> MaybeLocalBoxFuture<'a, Result<Option<String>, BoxError>>;
 }
 
-#[async_trait::async_trait]
-impl CredentialsProvider for String {
-    type Error = Infallible;
-    async fn access_token(&self, _url: &Url) -> Result<Option<String>, Self::Error> {
-        Ok(Some(self.clone()))
+impl<T> CredentialsProvider for &T
+where
+    T: ?Sized + CredentialsProvider,
+{
+    fn access_token<'a>(
+        &'a self,
+        url: &Url,
+    ) -> MaybeLocalBoxFuture<'a, Result<Option<String>, BoxError>> {
+        T::access_token(self, url)
     }
 }
 
-#[async_trait::async_trait]
+impl CredentialsProvider for String {
+    fn access_token<'a>(
+        &'a self,
+        _: &Url,
+    ) -> MaybeLocalBoxFuture<'a, Result<Option<String>, BoxError>> {
+        futures::future::ok(Some(self.clone())).boxed_maybe_local()
+    }
+}
+
 impl<T> CredentialsProvider for Option<T>
 where
     T: CredentialsProvider + Send + Sync,
 {
-    type Error = T::Error;
-    async fn access_token(&self, url: &Url) -> Result<Option<String>, Self::Error> {
+    fn access_token<'a>(
+        &'a self,
+        url: &Url,
+    ) -> MaybeLocalBoxFuture<'a, Result<Option<String>, BoxError>> {
         if let Some(creds) = self.as_ref() {
-            creds.access_token(url).await
+            T::access_token(creds, url)
         } else {
-            Ok(None)
+            futures::future::ok(None).boxed_maybe_local()
         }
     }
 }
