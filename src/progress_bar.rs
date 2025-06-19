@@ -1,16 +1,23 @@
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
+use std::borrow::Cow;
 use std::fmt::Write;
 
 pub struct TempProgressStyle<'a> {
-    pb: &'a ProgressBar,
+    pb: Cow<'a, ProgressBar>,
     style: ProgressStyle,
 }
 
 impl<'a> TempProgressStyle<'a> {
     pub fn new(pb: &'a ProgressBar) -> Self {
         Self {
-            pb,
             style: pb.style(),
+            pb: Cow::Borrowed(pb),
+        }
+    }
+    pub fn owned(pb: ProgressBar) -> TempProgressStyle<'static> {
+        TempProgressStyle {
+            style: pb.style(),
+            pb: Cow::Owned(pb),
         }
     }
 }

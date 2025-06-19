@@ -1,9 +1,11 @@
+use std::fmt;
+use std::sync::Arc;
+
 use graphql_client::GraphQLQuery;
-use reqwest::header::{HeaderMap, AUTHORIZATION};
 use url::Url;
 
-use crate::credentials::CredentialsProvider;
 use crate::error::{Error, Result};
+use crate::middleware::{Middleware, Next};
 
 pub(crate) fn get_data<Q: GraphQLQuery>(
     response: graphql_client::Response<Q::ResponseData>,
@@ -17,100 +19,99 @@ pub(crate) fn get_data<Q: GraphQLQuery>(
     }
 }
 
-async fn post_graphql<Q: GraphQLQuery>(
-    client: &reqwest::Client,
-    url: Url,
-    variables: Q::Variables,
-    bearer_token: Option<String>,
-) -> Result<graphql_client::Response<Q::ResponseData>> {
-    let mut headers = HeaderMap::new();
+fn graphql_request<Q: GraphQLQuery>(url: Url, variables: Q::Variables) -> Result<reqwest::Request> {
+    let mut request = reqwest::Request::new(reqwest::Method::POST, url);
+    request
+        .body_mut()
+        .replace(serde_json::to_string(&Q::build_query(variables))?.into());
+    Ok(request)
+}
 
-    if let Some(token) = bearer_token {
-        headers.insert(AUTHORIZATION, token.parse()?);
+#[derive(Clone)]
+pub struct Client {
+    inner: reqwest::Client,
+    graphql_url: Url,
+    graphql_middleware: Vec<Arc<dyn Middleware>>,
+    #[cfg(feature = "s3")]
+    pub(crate) s3_middleware: Vec<Arc<dyn Middleware>>,
+    #[cfg(feature = "ws")]
+    pub(crate) ws_middleware: Vec<Arc<dyn crate::middleware::WsMiddleware>>,
+}
+
+impl fmt::Debug for Client {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut dbg = f.debug_struct("Client");
+        dbg.field("client", &self.inner)
+            .field("graphql_url", &self.graphql_url)
+            .field("graphql_middleware", &self.graphql_middleware.len());
+        #[cfg(feature = "s3")]
+        dbg.field("s3_middleware", &self.s3_middleware.len());
+        #[cfg(feature = "ws")]
+        dbg.field("ws_middleware", &self.ws_middleware.len());
+        dbg.finish()
     }
-
-    let body = Q::build_query(variables);
-    tracing::debug!("sending request: {}", serde_json::to_string(&body)?);
-    let reqwest_response = client.post(url).headers(headers).json(&body).send().await?;
-
-    let json: serde_json::Value = reqwest_response.json().await?;
-    tracing::debug!("received response: {}", serde_json::to_string(&json)?);
-    Ok(serde_json::from_value(json)?)
 }
 
-pub async fn send<Q: GraphQLQuery>(
-    client: &reqwest::Client,
-    url: Url,
-    variables: Q::Variables,
-    bearer_token: Option<String>,
-) -> Result<Q::ResponseData> {
-    get_data::<Q>(post_graphql::<Q>(client, url, variables, bearer_token).await?)
-}
-
-#[derive(Clone, Debug)]
-pub struct Client<C> {
-    client: reqwest::Client,
-    url: Url,
-    credentials: C,
-}
-
-impl<C> Client<C> {
-    pub fn new_with_client(client: reqwest::Client, url: Url, credentials: C) -> Self {
+impl Client {
+    #[inline]
+    pub fn new(graphql_url: Url) -> Self {
         Client {
-            client,
-            url,
-            credentials,
+            inner: reqwest::Client::new(),
+            graphql_url,
+            graphql_middleware: Vec::new(),
+            #[cfg(feature = "s3")]
+            s3_middleware: Vec::new(),
+            #[cfg(feature = "ws")]
+            ws_middleware: Vec::new(),
         }
     }
 
-    pub fn new(url: Url, credentials: C) -> Self {
-        Client::new_with_client(reqwest::Client::new(), url, credentials)
+    #[inline]
+    pub fn with(&mut self, middleware: impl Middleware + 'static) -> &mut Self {
+        self.graphql_middleware.push(Arc::new(middleware));
+        self
+    }
+
+    #[inline]
+    pub fn with_arc(&mut self, middleware: Arc<dyn Middleware>) -> &mut Self {
+        self.graphql_middleware.push(middleware);
+        self
     }
 
     #[inline]
     pub fn inner(&self) -> &reqwest::Client {
-        &self.client
+        &self.inner
     }
 
     #[inline]
     pub fn url(&self) -> &Url {
-        &self.url
+        &self.graphql_url
     }
 
     #[inline]
-    pub fn credentials(&self) -> &C {
-        &self.credentials
-    }
-}
-
-impl Client<Option<String>> {
-    #[inline]
-    pub fn unauthenticated(url: Url) -> Self {
-        Self::new(url, None)
-    }
-}
-
-impl<C> Client<C>
-where
-    C: CredentialsProvider,
-{
-    pub(crate) async fn bearer_token(&self) -> Result<Option<String>> {
-        Ok(self
-            .credentials
-            .access_token(&self.url)
-            .await
-            .map_err(|err| Error::Credentials(Box::new(err)))?
-            .map(|access_token| format!("Bearer {access_token}")))
+    pub fn middleware(&self) -> &[Arc<dyn Middleware>] {
+        &self.graphql_middleware
     }
 
     #[inline]
+    pub fn middleware_mut(&mut self) -> &mut [Arc<dyn Middleware>] {
+        &mut self.graphql_middleware
+    }
+
+    #[inline]
+    fn graphql_next(&self) -> Next {
+        Next::new(&self.inner, &self.graphql_middleware)
+    }
+
     pub async fn send<Q: GraphQLQuery>(&self, variables: Q::Variables) -> Result<Q::ResponseData> {
-        send::<Q>(
-            &self.client,
-            self.url.clone(),
-            variables,
-            self.bearer_token().await?,
-        )
-        .await
+        let request = graphql_request::<Q>(self.graphql_url.clone(), variables)?;
+        let res = self
+            .graphql_next()
+            .handle(request)
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        get_data::<Q>(res)
     }
 }

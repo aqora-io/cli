@@ -215,6 +215,7 @@ pub async fn install_submission(
 
         download_pb.set_message("Downloading use case data");
         let download_fut = download_archive(
+            &client,
             use_case_data_url,
             project_data_dir(&global.project),
             &download_pb,
