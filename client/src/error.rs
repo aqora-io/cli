@@ -12,6 +12,8 @@ pub type BoxError = Box<DynError>;
 #[derive(Debug)]
 pub enum MiddlewareError {
     Request(reqwest::Error),
+    #[cfg(feature = "tokio-ws")]
+    Ws(tokio_tungstenite::tungstenite::error::Error),
     Middleware(BoxError),
 }
 
@@ -19,6 +21,8 @@ impl fmt::Display for MiddlewareError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Request(err) => err.fmt(f),
+            #[cfg(feature = "tokio-ws")]
+            Self::Ws(err) => err.fmt(f),
             Self::Middleware(err) => err.fmt(f),
         }
     }
@@ -30,35 +34,6 @@ where
 {
     fn from(error: T) -> Self {
         Self::Middleware(error.into())
-    }
-}
-
-#[cfg(feature = "ws")]
-#[derive(Debug)]
-pub enum WsMiddlewareError {
-    #[cfg(feature = "tokio-ws")]
-    Request(tokio_tungstenite::tungstenite::error::Error),
-    Middleware(BoxError),
-}
-
-#[cfg(feature = "ws")]
-impl<T> From<T> for WsMiddlewareError
-where
-    T: Into<BoxError>,
-{
-    fn from(error: T) -> Self {
-        Self::Middleware(error.into())
-    }
-}
-
-#[cfg(feature = "ws")]
-impl fmt::Display for WsMiddlewareError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            #[cfg(feature = "tokio-ws")]
-            Self::Request(err) => err.fmt(f),
-            Self::Middleware(err) => err.fmt(f),
-        }
     }
 }
 
@@ -109,18 +84,9 @@ impl From<MiddlewareError> for Error {
     fn from(error: MiddlewareError) -> Self {
         match error {
             MiddlewareError::Request(err) => Self::Request(err),
-            MiddlewareError::Middleware(err) => Self::Middleware(err),
-        }
-    }
-}
-
-#[cfg(feature = "ws")]
-impl From<WsMiddlewareError> for Error {
-    fn from(error: WsMiddlewareError) -> Self {
-        match error {
             #[cfg(feature = "tokio-ws")]
-            WsMiddlewareError::Request(err) => Self::Tungstenite(err),
-            WsMiddlewareError::Middleware(err) => Self::Middleware(err),
+            MiddlewareError::Ws(err) => Self::Tungstenite(err),
+            MiddlewareError::Middleware(err) => Self::Middleware(err),
         }
     }
 }

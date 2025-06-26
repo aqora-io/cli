@@ -1,5 +1,5 @@
 #[cfg(not(feature = "threaded"))]
-mod send_impl {
+mod async_impl {
     pub trait MaybeSend {}
     impl<T: ?Sized> MaybeSend for T {}
     pub trait MaybeSync {}
@@ -8,13 +8,13 @@ mod send_impl {
 }
 
 #[cfg(feature = "threaded")]
-mod send_impl {
+mod async_impl {
     pub use std::marker::Send as MaybeSend;
     pub use std::marker::Sync as MaybeSync;
     pub type MaybeLocalBoxFuture<'a, T> = futures::future::BoxFuture<'a, T>;
 }
 
-pub use send_impl::*;
+pub use async_impl::*;
 
 pub trait MaybeLocalFutureExt: std::future::Future {
     fn boxed_maybe_local<'a>(self) -> MaybeLocalBoxFuture<'a, Self::Output>

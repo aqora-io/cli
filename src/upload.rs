@@ -3,21 +3,27 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering as AtomicOrdering},
     Arc,
 };
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use aqora_client::multipart::BufferOptions;
 use aqora_client::{
+    checksum::{crc32fast::Crc32, S3ChecksumLayer},
     error::BoxError,
-    middleware::{Middleware, MiddlewareError, Next},
+    http::{Request, Response},
     multipart::{Multipart, DEFAULT_PART_SIZE},
-    retry::{BackoffBuilder, ExponentialBackoffBuilder, RetryMiddleware},
+    retry::{
+        BackoffBuilder, BackoffRetryLayer, ExponentialBackoffBuilder, RetryClassifier,
+        RetryStatusCodeRange,
+    },
     Client, GraphQLQuery,
 };
 use bytes::Bytes;
-use futures::stream::StreamExt;
+use futures::{future::BoxFuture, prelude::*};
 use indicatif::ProgressBar;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tower::{Layer, Service};
 use url::Url;
 
 use crate::{
@@ -138,14 +144,27 @@ impl Iterator for ByteChunks {
     }
 }
 
-pub struct ChunkProgressMiddleware {
-    chunk_size: usize,
+struct ChunkProgressLayer<R> {
     _temp_style: TempProgressStyle<'static>,
     pb: ProgressBar,
+    chunk_size: usize,
+    retry_classifier: Arc<R>,
 }
 
-impl ChunkProgressMiddleware {
-    pub fn new(total_size: usize, chunk_size: usize, pb: ProgressBar) -> Self {
+impl<S, R> Layer<S> for ChunkProgressLayer<R> {
+    type Service = ChunkProgressService<S, R>;
+    fn layer(&self, inner: S) -> Self::Service {
+        ChunkProgressService {
+            inner,
+            pb: self.pb.clone(),
+            chunk_size: self.chunk_size,
+            retry_classifier: self.retry_classifier.clone(),
+        }
+    }
+}
+
+impl<R> ChunkProgressLayer<R> {
+    fn new(retry_classifer: R, total_size: usize, chunk_size: usize, pb: ProgressBar) -> Self {
         let _temp_style = TempProgressStyle::owned(pb.clone());
         pb.reset();
         pb.set_style(progress_bar::pretty_bytes());
@@ -153,26 +172,54 @@ impl ChunkProgressMiddleware {
         pb.set_position(0);
         pb.set_length(total_size as u64);
         Self {
-            chunk_size,
             _temp_style,
             pb,
+            chunk_size,
+            retry_classifier: Arc::new(retry_classifer),
         }
     }
 }
 
-#[async_trait::async_trait]
-impl Middleware for ChunkProgressMiddleware {
-    async fn handle(
-        &self,
-        mut req: reqwest::Request,
-        next: Next<'_>,
-    ) -> Result<reqwest::Response, MiddlewareError> {
+struct ChunkProgressService<S, R> {
+    inner: S,
+    pb: ProgressBar,
+    chunk_size: usize,
+    retry_classifier: Arc<R>,
+}
+
+impl<S, R> Clone for ChunkProgressService<S, R>
+where
+    S: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            pb: self.pb.clone(),
+            chunk_size: self.chunk_size,
+            retry_classifier: self.retry_classifier.clone(),
+        }
+    }
+}
+
+impl<S, R> Service<Request> for ChunkProgressService<S, R>
+where
+    S: Service<Request, Response = Response>,
+    S::Future: Send + 'static,
+    R: RetryClassifier<Response, S::Error> + Send + Sync + 'static,
+{
+    type Response = Response;
+    type Error = S::Error;
+    type Future = BoxFuture<'static, Result<Response, S::Error>>;
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<std::result::Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+    fn call(&mut self, mut req: Request) -> Self::Future {
         let processed = Arc::new(AtomicUsize::new(0));
-        if let Some(bytes) = req.body().and_then(|body| body.as_bytes()) {
+        if let Some(bytes) = req.body().as_bytes() {
             let pb = self.pb.clone();
             let processed = processed.clone();
             let chunks = ByteChunks::new(bytes, self.chunk_size);
-            req.body_mut().replace(reqwest::Body::wrap_stream(
+            *req.body_mut() = reqwest::Body::wrap_stream(
                 futures::stream::iter(chunks)
                     .inspect(move |chunk| {
                         let len = chunk.len();
@@ -180,18 +227,23 @@ impl Middleware for ChunkProgressMiddleware {
                         processed.fetch_add(len, AtomicOrdering::Relaxed);
                     })
                     .map(Result::<_, std::convert::Infallible>::Ok),
-            ));
+            );
         }
-        match next.handle(req).await?.error_for_status() {
-            Ok(res) => Ok(res),
-            Err(err) => {
-                self.pb.dec(processed.load(AtomicOrdering::Relaxed) as u64);
-                Err(MiddlewareError::Request(err))
+        let pb = self.pb.clone();
+        let retry_classifer = self.retry_classifier.clone();
+        let fut = self.inner.call(req);
+        async move {
+            let res = fut.await;
+            if retry_classifer.should_retry(&res) {
+                pb.dec(processed.load(AtomicOrdering::Relaxed) as u64);
             }
+            res
         }
+        .boxed()
     }
 }
 
+#[derive(Clone, Debug)]
 struct InspectedBackoff<T> {
     pb: ProgressBar,
     backoff: T,
@@ -214,6 +266,7 @@ where
     }
 }
 
+#[derive(Clone, Debug)]
 struct InspectedBackoffBuilder<T> {
     pb: ProgressBar,
     builder: T,
@@ -223,8 +276,8 @@ impl<T> BackoffBuilder for InspectedBackoffBuilder<T>
 where
     T: BackoffBuilder,
 {
-    type Iter = InspectedBackoff<T::Iter>;
-    fn build(&self) -> Self::Iter {
+    type Backoff = InspectedBackoff<T::Backoff>;
+    fn build(&self) -> Self::Backoff {
         InspectedBackoff {
             pb: self.pb.clone(),
             backoff: self.builder.build(),
@@ -244,16 +297,22 @@ pub async fn upload_project_version_file(
     let mut file = File::open(path).await?;
     let len = file.metadata().await?.len() as usize;
     let mut client = client.clone();
+    let retry_classifer = RetryStatusCodeRange::for_client_and_server_errors();
     client
-        .s3_with(RetryMiddleware::new(InspectedBackoffBuilder {
-            pb: pb.clone(),
-            builder: ExponentialBackoffBuilder::default(),
-        }))
-        .s3_with(ChunkProgressMiddleware::new(
+        .s3_layer(ChunkProgressLayer::new(
+            retry_classifer.clone(),
             len,
             DEFAULT_CHUNK_SIZE,
             pb.clone(),
-        ));
+        ))
+        .s3_layer(BackoffRetryLayer::new(
+            retry_classifer,
+            InspectedBackoffBuilder {
+                pb: pb.clone(),
+                builder: ExponentialBackoffBuilder::default(),
+            },
+        ))
+        .s3_layer(S3ChecksumLayer::new(Crc32::new()));
     if len > DEFAULT_PART_SIZE {
         let mut multipart = client
             .multipart(ProjectVersionFileMultipart::new(id))

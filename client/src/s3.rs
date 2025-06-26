@@ -1,9 +1,10 @@
 use bytes::Bytes;
-use std::sync::Arc;
+use tower::{Layer, Service, ServiceExt};
 use url::Url;
 
-use crate::error::{Result, S3Error};
-use crate::middleware::{Middleware, Next};
+use crate::async_util::{MaybeSend, MaybeSync};
+use crate::error::{MiddlewareError, Result, S3Error};
+use crate::http::{HttpBoxService, HttpClient, Request, Response};
 use crate::Client;
 
 pub struct S3PutResponse {
@@ -144,31 +145,21 @@ impl From<S3Payload> for reqwest::Body {
 }
 
 impl Client {
-    #[inline]
-    pub fn s3_with(&mut self, middleware: impl Middleware + 'static) -> &mut Self {
-        self.s3_middleware.push(Arc::new(middleware));
+    pub fn s3_layer<L, E>(&mut self, layer: L) -> &mut Self
+    where
+        L: Layer<HttpBoxService> + MaybeSend + MaybeSync + 'static,
+        L::Service: Service<Request, Response = Response, Error = E> + Clone + MaybeSend + 'static,
+        <L::Service as Service<Request>>::Future: MaybeSend + 'static,
+        MiddlewareError: From<E>,
+        E: 'static,
+    {
+        self.s3_layer.stack(layer);
         self
     }
 
     #[inline]
-    pub fn s3_with_arc(&mut self, middleware: Arc<dyn Middleware>) -> &mut Self {
-        self.s3_middleware.push(middleware);
-        self
-    }
-
-    #[inline]
-    pub fn s3_middleware(&self) -> &[Arc<dyn Middleware>] {
-        &self.s3_middleware
-    }
-
-    #[inline]
-    pub fn s3_middleware_mut(&mut self) -> &mut [Arc<dyn Middleware>] {
-        &mut self.s3_middleware
-    }
-
-    #[inline]
-    fn s3_next(&self) -> Next {
-        Next::new(self.inner(), &self.s3_middleware)
+    fn s3_service(&self) -> HttpBoxService {
+        self.s3_layer.layer(HttpClient::new(self.inner().clone()))
     }
 
     pub async fn s3_put(&self, url: Url, body: impl Into<S3Payload>) -> Result<S3PutResponse> {
@@ -179,20 +170,16 @@ impl Client {
             body.content_length().into(),
         );
         request.body_mut().replace(body.into());
-        Ok(self
-            .s3_next()
-            .handle(request)
-            .await?
+        let res = self.s3_service().oneshot(request.try_into()?).await?;
+        Ok(reqwest::Response::from(res)
             .error_for_status()?
             .try_into()?)
     }
 
     pub async fn s3_get(&self, url: Url) -> Result<S3GetResponse> {
         let request = reqwest::Request::new(reqwest::Method::GET, url);
-        Ok(self
-            .s3_next()
-            .handle(request)
-            .await?
+        let res = self.s3_service().oneshot(request.try_into()?).await?;
+        Ok(reqwest::Response::from(res)
             .error_for_status()?
             .try_into()?)
     }

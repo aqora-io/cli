@@ -5,9 +5,7 @@ mod client;
 #[cfg(feature = "credentials")]
 pub mod credentials;
 pub mod error;
-#[cfg(feature = "trace")]
-mod instant;
-pub mod middleware;
+pub mod http;
 #[cfg(feature = "multipart")]
 pub mod multipart;
 #[cfg(feature = "retry")]
@@ -16,6 +14,7 @@ pub mod retry;
 pub mod s3;
 #[cfg(feature = "retry")]
 mod sleep;
+mod tower_util;
 #[cfg(feature = "trace")]
 pub mod trace;
 #[cfg(feature = "wasm")]

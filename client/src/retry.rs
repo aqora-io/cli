@@ -1,20 +1,24 @@
+use std::ops::RangeInclusive;
+use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
-use reqwest::{Request, Response};
+use bytes::Bytes;
+use tower::retry::{Policy, Retry};
+use tower::Layer;
 
 use crate::async_util::{MaybeSend, MaybeSync};
-use crate::middleware::{Middleware, MiddlewareError, Next};
-use crate::sleep::sleep;
+use crate::http::Request;
+use crate::sleep::{sleep, Sleep};
 
 pub trait Backoff: Iterator<Item = Duration> + MaybeSend + MaybeSync {}
 impl<T> Backoff for T where T: Iterator<Item = Duration> + MaybeSend + MaybeSync {}
 
 pub trait BackoffBuilder: MaybeSend + MaybeSync {
-    type Iter: Backoff;
-    fn build(&self) -> Self::Iter;
+    type Backoff: Backoff;
+    fn build(&self) -> Self::Backoff;
 }
 
+#[derive(Debug, Clone)]
 pub struct ExponentialBackoff {
     secs: f64,
     factor: f64,
@@ -47,6 +51,7 @@ impl Iterator for ExponentialBackoff {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct ExponentialBackoffBuilder {
     pub start_delay: Duration,
     pub factor: f64,
@@ -66,8 +71,8 @@ impl Default for ExponentialBackoffBuilder {
 }
 
 impl BackoffBuilder for ExponentialBackoffBuilder {
-    type Iter = ExponentialBackoff;
-    fn build(&self) -> Self::Iter {
+    type Backoff = ExponentialBackoff;
+    fn build(&self) -> Self::Backoff {
         ExponentialBackoff {
             secs: self.start_delay.as_secs_f64(),
             factor: self.factor,
@@ -78,38 +83,117 @@ impl BackoffBuilder for ExponentialBackoffBuilder {
     }
 }
 
-pub struct RetryMiddleware<T>(T);
+pub trait RetryClassifier<Res, E> {
+    fn should_retry(&self, result: &Result<Res, E>) -> bool;
+}
 
-impl<T> RetryMiddleware<T> {
-    pub fn new(backoff: T) -> Self {
-        Self(backoff)
+#[derive(Clone, Debug)]
+pub struct RetryStatusCodeRange {
+    range: RangeInclusive<u16>,
+}
+
+impl RetryStatusCodeRange {
+    pub const fn new(range: RangeInclusive<u16>) -> Self {
+        Self { range }
+    }
+
+    pub const fn for_client_and_server_errors() -> Self {
+        RetryStatusCodeRange::new(400..=599)
     }
 }
 
-#[cfg_attr(feature = "threaded", async_trait)]
-#[cfg_attr(not(feature = "threaded"), async_trait(?Send))]
-impl<T> Middleware for RetryMiddleware<T>
-where
-    T: BackoffBuilder,
-{
-    async fn handle(&self, req: Request, next: Next<'_>) -> Result<Response, MiddlewareError> {
-        let cloned = req.try_clone();
-        match next.handle(req).await {
-            Ok(res) => Ok(res),
-            Err(err) => {
-                let Some(req) = cloned else {
-                    return Err(MiddlewareError::Middleware(
-                        "Could not clone request to retry".into(),
-                    ));
-                };
-                for delay in self.0.build() {
-                    sleep(delay).await?;
-                    if let Ok(res) = next.handle(req.try_clone().unwrap()).await {
-                        return Ok(res);
-                    }
-                }
-                Err(err)
-            }
+impl<B, E> RetryClassifier<http::Response<B>, E> for RetryStatusCodeRange {
+    fn should_retry(&self, result: &Result<http::Response<B>, E>) -> bool {
+        if let Ok(res) = result {
+            self.range.contains(&res.status().as_u16())
+        } else {
+            true
         }
+    }
+}
+
+pub struct BackoffPolicy<R, B> {
+    retry_classifer: Arc<R>,
+    backoff: B,
+}
+
+impl<R, B> Clone for BackoffPolicy<R, B>
+where
+    B: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            retry_classifer: self.retry_classifer.clone(),
+            backoff: self.backoff.clone(),
+        }
+    }
+}
+
+impl<R, B> BackoffPolicy<R, B> {
+    pub fn new(retry_classifer: R, backoff: B) -> Self {
+        Self::new_arc(Arc::new(retry_classifer), backoff)
+    }
+
+    fn new_arc(retry_classifer: Arc<R>, backoff: B) -> Self {
+        Self {
+            backoff,
+            retry_classifer,
+        }
+    }
+}
+
+impl<R, B, Res, E> Policy<Request, Res, E> for BackoffPolicy<R, B>
+where
+    B: Backoff,
+    R: RetryClassifier<Res, E>,
+{
+    type Future = Sleep;
+    fn retry(&mut self, _: &mut Request, res: &mut Result<Res, E>) -> Option<Self::Future> {
+        if self.retry_classifer.should_retry(res) {
+            self.backoff.next().map(sleep)
+        } else {
+            None
+        }
+    }
+    fn clone_request(&mut self, req: &Request) -> Option<Request> {
+        if let Some(bytes) = req.body().as_bytes() {
+            let mut builder = http::request::Builder::new()
+                .method(req.method().clone())
+                .uri(req.uri().clone())
+                .version(req.version());
+            *builder.headers_mut()? = req.headers().clone();
+            *builder.extensions_mut()? = req.extensions().clone();
+            builder.body(Bytes::copy_from_slice(bytes).into()).ok()
+        } else {
+            None
+        }
+    }
+}
+
+pub struct BackoffRetryLayer<R, B> {
+    retry_classifier: Arc<R>,
+    backoff_builder: Arc<B>,
+}
+
+impl<R, B> BackoffRetryLayer<R, B> {
+    pub fn new(retry_classifier: R, backoff_builder: B) -> Self {
+        Self {
+            retry_classifier: Arc::new(retry_classifier),
+            backoff_builder: Arc::new(backoff_builder),
+        }
+    }
+}
+
+impl<R, B, S> Layer<S> for BackoffRetryLayer<R, B>
+where
+    B: BackoffBuilder,
+{
+    type Service = Retry<BackoffPolicy<R, B::Backoff>, S>;
+    fn layer(&self, inner: S) -> Self::Service {
+        let backoff = self.backoff_builder.build();
+        Retry::new(
+            BackoffPolicy::new_arc(self.retry_classifier.clone(), backoff),
+            inner,
+        )
     }
 }
