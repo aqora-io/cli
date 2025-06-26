@@ -1,156 +1,264 @@
-use std::borrow::Cow;
 use std::fmt;
 
-use async_trait::async_trait;
-use reqwest::{header::HeaderMap, Body, Request, Response};
+use reqwest::Body;
+use serde::{Deserialize, Serialize};
+use tower::Layer;
+use tower_http::trace::{
+    DefaultMakeSpan, DefaultOnBodyChunk, DefaultOnEos, DefaultOnFailure, HttpMakeClassifier,
+    OnRequest, OnResponse, Trace,
+};
 use tracing::Level;
 
-use crate::instant::Instant;
-use crate::middleware::{Middleware, MiddlewareError, Next};
+use crate::http::{NormalizeHttpService, Request};
 
-enum BodyDebug<'a> {
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GraphQLQuery {
+    query: String,
+    operation_name: Option<String>,
+    variables: Option<serde_json::Value>,
+    extensions: Option<serde_json::Value>,
+    #[serde(flatten)]
+    rest: Option<serde_json::Value>,
+}
+
+fn safe_display_json(json: &serde_json::Value) -> String {
+    if let Ok(str) = serde_json::to_string_pretty(json) {
+        str
+    } else {
+        format!("{json:?}")
+    }
+}
+
+impl fmt::Display for GraphQLQuery {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(name) = &self.operation_name {
+            writeln!(f, "[name] {name}")?;
+        }
+        write!(f, "[query] {}", self.query)?;
+        if let Some(variables) = &self.variables {
+            write!(f, "\n[variables] {}", safe_display_json(variables))?;
+        }
+        if let Some(extensions) = &self.extensions {
+            write!(f, "\n[extensions] {}", safe_display_json(extensions))?;
+        }
+        if let Some(rest) = &self.rest {
+            if rest.as_object().is_none_or(|object| !object.is_empty()) {
+                write!(f, "\n[rest] {}", safe_display_json(rest))?;
+            }
+        }
+        Ok(())
+    }
+}
+
+enum DisplayBody<'a> {
     Bytes(&'a [u8]),
     String(&'a str),
+    Json(serde_json::Value),
+    GraphQL(GraphQLQuery),
     Stream,
 }
 
-impl fmt::Debug for BodyDebug<'_> {
+impl fmt::Display for DisplayBody<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Bytes(bytes) => write!(f, "Bytes({})", bytes.len()),
             Self::String(string) => write!(f, "String({})", string),
+            Self::Json(json) => write!(f, "Json({})", safe_display_json(json)),
+            Self::GraphQL(graphql) => write!(f, "GraphQL({})", graphql),
             Self::Stream => write!(f, "Stream"),
         }
     }
 }
 
-impl<'a> From<&'a Body> for BodyDebug<'a> {
+impl<'a> From<&'a Body> for DisplayBody<'a> {
     fn from(body: &'a Body) -> Self {
         if let Some(bytes) = body.as_bytes() {
             if let Ok(string) = std::str::from_utf8(bytes) {
-                BodyDebug::String(string)
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(string) {
+                    if let Ok(graphql) = serde_json::from_value(json.clone()) {
+                        DisplayBody::GraphQL(graphql)
+                    } else {
+                        DisplayBody::Json(json)
+                    }
+                } else {
+                    DisplayBody::String(string)
+                }
             } else {
-                BodyDebug::Bytes(bytes)
+                DisplayBody::Bytes(bytes)
             }
         } else {
-            BodyDebug::Stream
+            DisplayBody::Stream
         }
     }
 }
 
-fn strip_sensitive(headers: &HeaderMap) -> Cow<HeaderMap> {
-    let mut headers = Cow::Borrowed(headers);
-    for header in [
-        "authorization",
-        "x-amz-security-token",
-        "x-access-token",
-        "x-refresh-token",
-        "cookie",
-    ] {
-        if headers.contains_key(header) {
-            headers.to_mut().remove(header);
+macro_rules! trace_dynamic {
+    ($lvl:expr, $($tt:tt)*) => {
+        match $lvl {
+            tracing::Level::TRACE => tracing::event!(tracing::Level::TRACE, $($tt)*),
+            tracing::Level::DEBUG => tracing::event!(tracing::Level::DEBUG, $($tt)*),
+            tracing::Level::INFO => tracing::event!(tracing::Level::INFO, $($tt)*),
+            tracing::Level::WARN => tracing::event!(tracing::Level::WARN, $($tt)*),
+            tracing::Level::ERROR => tracing::event!(tracing::Level::ERROR, $($tt)*),
         }
     }
-    headers
 }
 
-pub struct DebugMiddleware;
+#[derive(Clone, Debug)]
+pub struct TraceRequest {
+    level: Level,
+    debug_body: bool,
+}
 
-#[cfg_attr(feature = "threaded", async_trait)]
-#[cfg_attr(not(feature = "threaded"), async_trait(?Send))]
-impl Middleware for DebugMiddleware {
-    async fn handle(&self, req: Request, next: Next<'_>) -> Result<Response, MiddlewareError> {
-        let debug_body = req.body().map(BodyDebug::from);
-        let span = tracing::span!(
-            Level::DEBUG,
-            "request",
-            method = %req.method(),
-            url = %req.url(),
-            headers = ?strip_sensitive(req.headers()),
-            body = ?debug_body
+impl TraceRequest {
+    #[inline]
+    pub fn new() -> Self {
+        Self {
+            level: Level::DEBUG,
+            debug_body: false,
+        }
+    }
+
+    #[inline]
+    pub fn level(mut self, level: Level) -> Self {
+        self.level = level;
+        self
+    }
+
+    #[inline]
+    pub fn debug_body(mut self, debug: bool) -> Self {
+        self.debug_body = debug;
+        self
+    }
+}
+
+impl Default for TraceRequest {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl OnRequest<reqwest::Body> for TraceRequest {
+    fn on_request(&mut self, request: &Request, _: &tracing::Span) {
+        trace_dynamic!(
+            self.level,
+            "request started: {} {}{}",
+            request.method(),
+            request.uri(),
+            if self.debug_body {
+                format!(" {}", DisplayBody::from(request.body()))
+            } else {
+                String::new()
+            }
+        )
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct TraceResponse {
+    level: Level,
+}
+
+impl TraceResponse {
+    #[inline]
+    pub fn new() -> Self {
+        Self {
+            level: Level::DEBUG,
+        }
+    }
+
+    #[inline]
+    pub fn level(mut self, level: Level) -> Self {
+        self.level = level;
+        self
+    }
+}
+
+impl Default for TraceResponse {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<B> OnResponse<B> for TraceResponse {
+    fn on_response(
+        self,
+        response: &http::Response<B>,
+        latency: std::time::Duration,
+        _: &tracing::Span,
+    ) {
+        trace_dynamic!(
+            self.level,
+            status = ?response.status(),
+            latency = ?latency,
+            "response {} in {:?}",
+            response.status(),
+            latency
         );
-        let _enter = span.enter();
-        tracing::event!(
-            Level::DEBUG,
-            "started {} {} {:?}",
-            req.method(),
-            req.url(),
-            debug_body
-        );
-        let instant = Instant::now();
-        match next.handle(req).await {
-            Ok(res) => {
-                let elapsed = instant.elapsed();
-                tracing::event!(
-                    Level::DEBUG,
-                    status = ?res.status(),
-                    headers = ?strip_sensitive(res.headers()),
-                    content_len = ?res.content_length(),
-                    "finished in {:?}: {} {:?} bytes",
-                    elapsed,
-                    res.status(),
-                    res.content_length()
-                );
-                Ok(res)
-            }
-            Err(err) => {
-                tracing::event!(
-                    Level::WARN,
-                    err = ?err,
-                    "An error occured while processing request: {err}"
-                );
-                Err(err)
-            }
-        }
     }
 }
 
-#[cfg(feature = "ws")]
-mod ws {
-    use super::*;
-    use crate::middleware::{WsMiddleware, WsMiddlewareError, WsNext};
-    use crate::ws::{Websocket, WsRequest, WsResponse};
+#[derive(Clone, Debug)]
+pub struct TraceLayer {
+    level: Level,
+    debug_body: bool,
+}
 
-    #[cfg_attr(feature = "threaded", async_trait)]
-    #[cfg_attr(not(feature = "threaded"), async_trait(?Send))]
-    impl WsMiddleware for DebugMiddleware {
-        async fn handle(
-            &self,
-            req: WsRequest,
-            next: WsNext<'_>,
-        ) -> Result<(Websocket, WsResponse), WsMiddlewareError> {
-            let span = tracing::span!(
-                Level::DEBUG,
-                "request",
-                method = %req.method(),
-                url = %req.uri(),
-                headers = ?strip_sensitive(req.headers()),
-            );
-            let _enter = span.enter();
-            tracing::event!(Level::DEBUG, "started {} {}", req.method(), req.uri(),);
-            let instant = Instant::now();
-            match next.handle(req).await {
-                Ok((websocket, res)) => {
-                    let elapsed = instant.elapsed();
-                    tracing::event!(
-                        Level::DEBUG,
-                        status = ?res.status(),
-                        headers = ?strip_sensitive(res.headers()),
-                        "finished in {:?}: {}",
-                        elapsed,
-                        res.status(),
-                    );
-                    Ok((websocket, res))
-                }
-                Err(err) => {
-                    tracing::event!(
-                        Level::WARN,
-                        err = ?err,
-                        "An error occured while processing request: {err}"
-                    );
-                    Err(err)
-                }
-            }
+impl TraceLayer {
+    #[inline]
+    pub fn new() -> Self {
+        Self {
+            level: Level::DEBUG,
+            debug_body: false,
         }
+    }
+
+    #[inline]
+    pub fn level(mut self, level: Level) -> Self {
+        self.level = level;
+        self
+    }
+
+    #[inline]
+    pub fn debug_body(mut self, debug: bool) -> Self {
+        self.debug_body = debug;
+        self
+    }
+}
+
+impl Default for TraceLayer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<S> Layer<S> for TraceLayer {
+    type Service = NormalizeHttpService<
+        Trace<
+            S,
+            HttpMakeClassifier,
+            DefaultMakeSpan,
+            TraceRequest,
+            TraceResponse,
+            DefaultOnBodyChunk,
+            DefaultOnEos,
+            DefaultOnFailure,
+        >,
+    >;
+    fn layer(&self, inner: S) -> Self::Service {
+        NormalizeHttpService::new(
+            Trace::new_for_http(inner)
+                .make_span_with(DefaultMakeSpan::new().level(self.level))
+                .on_request(
+                    TraceRequest::new()
+                        .level(self.level)
+                        .debug_body(self.debug_body),
+                )
+                .on_response(TraceResponse::new().level(self.level))
+                .on_body_chunk(DefaultOnBodyChunk::new())
+                .on_eos(DefaultOnEos::new().level(self.level))
+                .on_failure(DefaultOnFailure::new().level(self.level)),
+        )
     }
 }

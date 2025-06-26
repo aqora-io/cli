@@ -1,12 +1,9 @@
-use async_trait::async_trait;
-use base64::prelude::*;
-use reqwest::{
-    header::{HeaderName, HeaderValue},
-    Request, Response,
-};
+use std::sync::Arc;
+use std::task::{Context, Poll};
 
-use crate::async_util::{MaybeSend, MaybeSync};
-use crate::middleware::{Middleware, MiddlewareError, Next};
+use base64::prelude::*;
+use reqwest::header::{HeaderName, HeaderValue};
+use tower::{Layer, Service};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ChecksumDigest {
@@ -98,27 +95,80 @@ impl ChecksumDigest {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct S3ChecksumMiddleware<T>(T);
+pub struct S3ChecksumService<T, S> {
+    checksum: Arc<T>,
+    inner: S,
+}
 
-impl<T> S3ChecksumMiddleware<T> {
-    pub fn new(checksum: T) -> Self {
-        Self(checksum)
+impl<T, S> Clone for S3ChecksumService<T, S>
+where
+    S: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            checksum: self.checksum.clone(),
+            inner: self.inner.clone(),
+        }
     }
 }
 
-#[cfg_attr(feature = "threaded", async_trait)]
-#[cfg_attr(not(feature = "threaded"), async_trait(?Send))]
-impl<T> Middleware for S3ChecksumMiddleware<T>
+impl<T, S> S3ChecksumService<T, S> {
+    fn new_arc(checksum: Arc<T>, service: S) -> Self {
+        Self {
+            checksum,
+            inner: service,
+        }
+    }
+
+    pub fn new(checksum: T, service: S) -> Self {
+        Self::new_arc(Arc::new(checksum), service)
+    }
+}
+
+impl<T, S> Service<crate::http::Request> for S3ChecksumService<T, S>
 where
-    T: Checksum + MaybeSend + MaybeSync,
+    T: Checksum,
+    S: Service<crate::http::Request>,
 {
-    async fn handle(&self, mut req: Request, next: Next<'_>) -> Result<Response, MiddlewareError> {
-        if let Some(body) = req.body().and_then(|body| body.as_bytes()) {
-            let digest = self.0.digest(body);
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = S::Future;
+    fn poll_ready(&mut self, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+    fn call(&mut self, mut req: crate::http::Request) -> Self::Future {
+        if let Some(body) = req.body().as_bytes() {
+            let digest = self.checksum.digest(body);
             req.headers_mut()
                 .insert(digest.s3_header_name(), digest.s3_header_value());
         }
-        next.handle(req).await
+        self.inner.call(req)
+    }
+}
+
+pub struct S3ChecksumLayer<T> {
+    checksum: Arc<T>,
+}
+
+impl<T> Clone for S3ChecksumLayer<T> {
+    fn clone(&self) -> Self {
+        Self {
+            checksum: self.checksum.clone(),
+        }
+    }
+}
+
+impl<T> S3ChecksumLayer<T> {
+    pub fn new(checksum: T) -> Self {
+        Self {
+            checksum: Arc::new(checksum),
+        }
+    }
+}
+
+impl<T, S> Layer<S> for S3ChecksumLayer<T> {
+    type Service = S3ChecksumService<T, S>;
+    fn layer(&self, inner: S) -> Self::Service {
+        S3ChecksumService::new_arc(self.checksum.clone(), inner)
     }
 }

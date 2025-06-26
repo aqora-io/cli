@@ -20,14 +20,6 @@ pub fn global() -> GlobalScope {
 }
 
 impl GlobalScope {
-    #[cfg(feature = "wasm-instant")]
-    pub fn performance(&self) -> Option<web_sys::Performance> {
-        match self {
-            Self::Window(window) => window.performance(),
-            Self::Worker(worker) => worker.performance(),
-        }
-    }
-
     #[cfg(feature = "wasm-time")]
     pub fn set_timeout(&self, handler: &Function, millis: i32) -> Result<i32, JsValue> {
         match self {

@@ -1,10 +1,14 @@
-use async_trait::async_trait;
-use reqwest::header::{HeaderName, AUTHORIZATION};
-use reqwest::{Request, Response};
+use std::future::Future;
+use std::sync::Arc;
+use std::task::{Context, Poll};
 
-use crate::async_util::{MaybeSend, MaybeSync};
-use crate::error::BoxError;
-use crate::middleware::{Middleware, MiddlewareError, Next};
+use async_trait::async_trait;
+use reqwest::header::{HeaderName, HeaderValue, AUTHORIZATION};
+use tower::{Layer, Service};
+
+use crate::async_util::{MaybeLocalBoxFuture, MaybeLocalFutureExt, MaybeSend, MaybeSync};
+use crate::error::{BoxError, MiddlewareError};
+// use crate::middleware::{Middleware, MiddlewareError, Next};
 
 pub struct Tokens {
     access_token: Option<String>,
@@ -80,9 +84,9 @@ impl CredentialsProvider for std::cell::RefCell<Tokens> {
 
 #[cfg(feature = "threaded")]
 #[async_trait]
-impl CredentialsProvider for tokio::sync::Mutex<Tokens> {
+impl CredentialsProvider for tokio::sync::RwLock<Tokens> {
     async fn bearer_token(&self) -> Result<Option<String>, BoxError> {
-        let this = self.lock().await;
+        let this = self.read().await;
         Ok(this
             .access_token
             .as_ref()
@@ -90,15 +94,15 @@ impl CredentialsProvider for tokio::sync::Mutex<Tokens> {
             .map(|s| s.to_owned()))
     }
     async fn revoke_access_token(&self) -> Result<(), BoxError> {
-        let _ = self.lock().await.access_token.take();
+        let _ = self.write().await.access_token.take();
         Ok(())
     }
     async fn revoke_refresh_token(&self) -> Result<(), BoxError> {
-        let _ = self.lock().await.refresh_token.take();
+        let _ = self.write().await.refresh_token.take();
         Ok(())
     }
     async fn refresh(&self, tokens: Tokens) -> Result<(), BoxError> {
-        let mut this = self.lock().await;
+        let mut this = self.write().await;
         if tokens.access_token.is_some() {
             this.access_token = tokens.access_token
         }
@@ -114,48 +118,162 @@ const X_REFRESH_TOKENS: HeaderName = HeaderName::from_static("x-refresh-tokens")
 const X_ACCESS_TOKEN: HeaderName = HeaderName::from_static("x-access-token");
 const X_REFRESH_TOKEN: HeaderName = HeaderName::from_static("x-refresh-token");
 
-#[derive(Clone, Debug)]
-pub struct CredentialsMiddleware<T>(T);
+pub struct CredentialsService<T, S> {
+    credentials: Arc<T>,
+    ready: CredentialsServiceReady,
+    inner: S,
+}
 
-impl<T> CredentialsMiddleware<T> {
-    pub fn new(credentials: T) -> Self {
-        Self(credentials)
+impl<T, S> Clone for CredentialsService<T, S>
+where
+    T: CredentialsProvider + MaybeSend + MaybeSync + 'static,
+    S: Clone,
+{
+    fn clone(&self) -> Self {
+        Self::new_arc(self.credentials.clone(), self.inner.clone())
     }
 }
 
-#[cfg_attr(feature = "threaded", async_trait)]
-#[cfg_attr(not(feature = "threaded"), async_trait(?Send))]
-impl<T> Middleware for CredentialsMiddleware<T>
+struct CredentialsServiceReady {
+    inner_ready: bool,
+    bearer_fut: MaybeLocalBoxFuture<'static, Result<Option<String>, BoxError>>,
+    bearer: Poll<Option<HeaderValue>>,
+}
+
+impl<T, S> CredentialsService<T, S>
 where
-    T: CredentialsProvider + MaybeSend + MaybeSync,
+    T: CredentialsProvider + MaybeSend + MaybeSync + 'static,
 {
-    async fn handle(&self, mut req: Request, next: Next<'_>) -> Result<Response, MiddlewareError> {
-        let provider = &self.0;
-        if let Some(token) = provider.bearer_token().await? {
-            req.headers_mut()
-                .insert(AUTHORIZATION, format!("Bearer {token}").parse()?);
+    pub fn new(credentials: T, service: S) -> Self {
+        Self::new_arc(Arc::new(credentials), service)
+    }
+    fn new_arc(credentials: Arc<T>, service: S) -> Self {
+        Self {
+            credentials: credentials.clone(),
+            ready: CredentialsServiceReady {
+                inner_ready: false,
+                bearer_fut: async move { credentials.bearer_token().await }.boxed_maybe_local(),
+                bearer: Poll::Pending,
+            },
+            inner: service,
         }
-        let res = next.handle(req).await?;
-        if res.headers().contains_key(X_REVOKE_TOKENS) {
-            provider.revoke_access_token().await?;
-            provider.revoke_refresh_token().await?;
+    }
+}
+
+impl<T, S, F, E> Service<crate::http::Request> for CredentialsService<T, S>
+where
+    T: CredentialsProvider + MaybeSend + MaybeSync + 'static,
+    S: Service<crate::http::Request, Response = crate::http::Response, Error = E, Future = F>,
+    MiddlewareError: From<E>,
+    F: Future<Output = Result<crate::http::Response, E>> + MaybeSend + 'static,
+{
+    type Response = S::Response;
+    type Error = MiddlewareError;
+    type Future = MaybeLocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), MiddlewareError>> {
+        let inner_ready = if self.ready.inner_ready {
+            true
+        } else {
+            match self.inner.poll_ready(cx) {
+                Poll::Ready(Ok(())) => {
+                    self.ready.inner_ready = true;
+                    true
+                }
+                Poll::Ready(Err(err)) => {
+                    return Poll::Ready(Err(MiddlewareError::from(err)));
+                }
+                Poll::Pending => false,
+            }
+        };
+        let bearer_ready = if self.ready.bearer.is_ready() {
+            true
+        } else {
+            match self.ready.bearer_fut.as_mut().poll(cx) {
+                Poll::Ready(Ok(token)) => {
+                    let token = match token
+                        .map(|token| format!("Bearer {token}").parse::<HeaderValue>())
+                        .transpose()
+                    {
+                        Ok(token) => token,
+                        Err(err) => {
+                            return Poll::Ready(Err(MiddlewareError::Middleware(err.into())));
+                        }
+                    };
+                    self.ready.bearer = Poll::Ready(token);
+                    true
+                }
+                Poll::Ready(Err(err)) => {
+                    return Poll::Ready(Err(MiddlewareError::Middleware(err)));
+                }
+                Poll::Pending => false,
+            }
+        };
+        if inner_ready && bearer_ready {
+            Poll::Ready(Ok(()))
+        } else {
+            Poll::Pending
         }
-        if res.headers().contains_key(X_REFRESH_TOKENS) {
-            provider.revoke_access_token().await?;
+    }
+    fn call(&mut self, mut req: crate::http::Request) -> Self::Future {
+        if let Poll::Ready(Some(token)) = &self.ready.bearer {
+            req.headers_mut().insert(AUTHORIZATION, token.clone());
         }
-        let access_token = res.headers().get(X_ACCESS_TOKEN);
-        let refresh_token = res.headers().get(X_REFRESH_TOKEN);
-        if access_token.is_some() || refresh_token.is_some() {
-            let tokens = Tokens {
-                access_token: access_token
-                    .map(|token| token.to_str().map(|s| s.to_string()))
-                    .transpose()?,
-                refresh_token: refresh_token
-                    .map(|token| token.to_str().map(|s| s.to_string()))
-                    .transpose()?,
-            };
-            provider.refresh(tokens).await?;
+        let provider = self.credentials.clone();
+        let fut = self.inner.call(req);
+        async move {
+            let res = fut.await?;
+            if res.headers().contains_key(X_REVOKE_TOKENS) {
+                provider.revoke_access_token().await?;
+                provider.revoke_refresh_token().await?;
+            }
+            if res.headers().contains_key(X_REFRESH_TOKENS) {
+                provider.revoke_access_token().await?;
+            }
+            let access_token = res.headers().get(X_ACCESS_TOKEN);
+            let refresh_token = res.headers().get(X_REFRESH_TOKEN);
+            if access_token.is_some() || refresh_token.is_some() {
+                let tokens = Tokens {
+                    access_token: access_token
+                        .map(|token| token.to_str().map(|s| s.to_string()))
+                        .transpose()?,
+                    refresh_token: refresh_token
+                        .map(|token| token.to_str().map(|s| s.to_string()))
+                        .transpose()?,
+                };
+                provider.refresh(tokens).await?;
+            }
+            Ok(res)
         }
-        Ok(res)
+        .boxed_maybe_local()
+    }
+}
+
+pub struct CredentialsLayer<T> {
+    credentials: Arc<T>,
+}
+
+impl<T> Clone for CredentialsLayer<T> {
+    fn clone(&self) -> Self {
+        Self {
+            credentials: self.credentials.clone(),
+        }
+    }
+}
+
+impl<T> CredentialsLayer<T> {
+    pub fn new(credentials: T) -> Self {
+        Self {
+            credentials: Arc::new(credentials),
+        }
+    }
+}
+
+impl<T, S> Layer<S> for CredentialsLayer<T>
+where
+    T: CredentialsProvider + MaybeSend + MaybeSync + 'static,
+{
+    type Service = CredentialsService<T, S>;
+    fn layer(&self, inner: S) -> Self::Service {
+        CredentialsService::new_arc(self.credentials.clone(), inner)
     }
 }

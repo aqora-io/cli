@@ -3,11 +3,9 @@ use crate::{
     error::{self, Error, Result},
 };
 use aqora_client::{
-    checksum::{crc32fast::Crc32, S3ChecksumMiddleware},
-    credentials::{CredentialsMiddleware, CredentialsProvider},
+    credentials::{CredentialsLayer, CredentialsProvider},
     error::BoxError,
-    middleware::{Middleware, MiddlewareError, Next},
-    trace::DebugMiddleware,
+    trace::TraceLayer,
 };
 use reqwest::header::{HeaderValue, USER_AGENT};
 use std::path::Path;
@@ -92,20 +90,6 @@ const AQORA_USER_AGENT: HeaderValue = HeaderValue::from_static(concat!(
     env!("CARGO_PKG_VERSION")
 ));
 
-pub struct AqoraUserAgentMiddleware;
-
-#[async_trait::async_trait]
-impl Middleware for AqoraUserAgentMiddleware {
-    async fn handle(
-        &self,
-        mut request: reqwest::Request,
-        next: Next<'_>,
-    ) -> Result<reqwest::Response, MiddlewareError> {
-        request.headers_mut().insert(USER_AGENT, AQORA_USER_AGENT);
-        next.handle(request).await
-    }
-}
-
 pub fn graphql_url(url: &Url) -> Result<Url> {
     Ok(url.join("/graphql")?)
 }
@@ -113,17 +97,19 @@ pub fn graphql_url(url: &Url) -> Result<Url> {
 pub fn unauthenticated_client(url: Url) -> Result<GraphQLClient> {
     let mut client = GraphQLClient::new(graphql_url(&url)?);
     client
-        .with(AqoraUserAgentMiddleware)
-        .with(DebugMiddleware)
-        .s3_with(S3ChecksumMiddleware::new(Crc32::new()))
-        .s3_with(DebugMiddleware)
-        .ws_with(DebugMiddleware);
+        .graphql_layer(TraceLayer::new().debug_body(true))
+        .graphql_layer(tower_http::set_header::SetRequestHeaderLayer::appending(
+            USER_AGENT,
+            AQORA_USER_AGENT,
+        ))
+        .s3_layer(TraceLayer::new())
+        .ws_layer(TraceLayer::new());
     Ok(client)
 }
 
 pub async fn client(config_home: impl AsRef<Path>, url: Url) -> Result<GraphQLClient> {
     let mut client = unauthenticated_client(url.clone())?;
-    client.with(CredentialsMiddleware::new(
+    client.graphql_layer(CredentialsLayer::new(
         CredentialsForUrl::load(config_home, url).await?,
     ));
     Ok(client)

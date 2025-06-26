@@ -1,11 +1,12 @@
 use std::fmt;
-use std::sync::Arc;
 
 use graphql_client::GraphQLQuery;
+use tower::{Layer, Service, ServiceExt};
 use url::Url;
 
-use crate::error::{Error, Result};
-use crate::middleware::{Middleware, Next};
+use crate::async_util::{MaybeSend, MaybeSync};
+use crate::error::{Error, MiddlewareError, Result};
+use crate::http::{HttpArcLayer, HttpBoxService, HttpClient, Request, Response};
 
 pub(crate) fn get_data<Q: GraphQLQuery>(
     response: graphql_client::Response<Q::ResponseData>,
@@ -19,36 +20,31 @@ pub(crate) fn get_data<Q: GraphQLQuery>(
     }
 }
 
-fn graphql_request<Q: GraphQLQuery>(url: Url, variables: Q::Variables) -> Result<reqwest::Request> {
+fn graphql_request<Q: GraphQLQuery>(url: Url, variables: Q::Variables) -> Result<Request> {
     let mut request = reqwest::Request::new(reqwest::Method::POST, url);
     request
         .body_mut()
         .replace(serde_json::to_string(&Q::build_query(variables))?.into());
-    Ok(request)
+    Ok(request.try_into()?)
 }
 
 #[derive(Clone)]
 pub struct Client {
     inner: reqwest::Client,
     graphql_url: Url,
-    graphql_middleware: Vec<Arc<dyn Middleware>>,
+    graphql_layer: HttpArcLayer<HttpClient>,
     #[cfg(feature = "s3")]
-    pub(crate) s3_middleware: Vec<Arc<dyn Middleware>>,
+    pub(crate) s3_layer: HttpArcLayer<HttpClient>,
     #[cfg(feature = "ws")]
-    pub(crate) ws_middleware: Vec<Arc<dyn crate::middleware::WsMiddleware>>,
+    pub(crate) ws_layer: HttpArcLayer<crate::ws::WsClient>,
 }
 
 impl fmt::Debug for Client {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut dbg = f.debug_struct("Client");
-        dbg.field("client", &self.inner)
+        f.debug_struct("Client")
+            .field("client", &self.inner)
             .field("graphql_url", &self.graphql_url)
-            .field("graphql_middleware", &self.graphql_middleware.len());
-        #[cfg(feature = "s3")]
-        dbg.field("s3_middleware", &self.s3_middleware.len());
-        #[cfg(feature = "ws")]
-        dbg.field("ws_middleware", &self.ws_middleware.len());
-        dbg.finish()
+            .finish()
     }
 }
 
@@ -58,24 +54,12 @@ impl Client {
         Client {
             inner: reqwest::Client::new(),
             graphql_url,
-            graphql_middleware: Vec::new(),
+            graphql_layer: HttpArcLayer::default(),
             #[cfg(feature = "s3")]
-            s3_middleware: Vec::new(),
+            s3_layer: HttpArcLayer::default(),
             #[cfg(feature = "ws")]
-            ws_middleware: Vec::new(),
+            ws_layer: HttpArcLayer::default(),
         }
-    }
-
-    #[inline]
-    pub fn with(&mut self, middleware: impl Middleware + 'static) -> &mut Self {
-        self.graphql_middleware.push(Arc::new(middleware));
-        self
-    }
-
-    #[inline]
-    pub fn with_arc(&mut self, middleware: Arc<dyn Middleware>) -> &mut Self {
-        self.graphql_middleware.push(middleware);
-        self
     }
 
     #[inline]
@@ -88,27 +72,30 @@ impl Client {
         &self.graphql_url
     }
 
-    #[inline]
-    pub fn middleware(&self) -> &[Arc<dyn Middleware>] {
-        &self.graphql_middleware
+    pub fn graphql_layer<L, E>(&mut self, layer: L) -> &mut Self
+    where
+        L: Layer<HttpBoxService> + MaybeSend + MaybeSync + 'static,
+        L::Service: Service<Request, Response = Response, Error = E> + Clone + MaybeSend + 'static,
+        <L::Service as Service<Request>>::Future: MaybeSend + 'static,
+        MiddlewareError: From<E>,
+        E: 'static,
+    {
+        self.graphql_layer.stack(layer);
+        self
     }
 
     #[inline]
-    pub fn middleware_mut(&mut self) -> &mut [Arc<dyn Middleware>] {
-        &mut self.graphql_middleware
-    }
-
-    #[inline]
-    fn graphql_next(&self) -> Next {
-        Next::new(&self.inner, &self.graphql_middleware)
+    fn graphql_service(&self) -> HttpBoxService {
+        self.graphql_layer
+            .layer(HttpClient::new(self.inner.clone()))
     }
 
     pub async fn send<Q: GraphQLQuery>(&self, variables: Q::Variables) -> Result<Q::ResponseData> {
-        let request = graphql_request::<Q>(self.graphql_url.clone(), variables)?;
-        let res = self
-            .graphql_next()
-            .handle(request)
-            .await?
+        let http_res = self
+            .graphql_service()
+            .oneshot(graphql_request::<Q>(self.graphql_url.clone(), variables)?)
+            .await?;
+        let res = reqwest::Response::from(http_res)
             .error_for_status()?
             .json()
             .await?;
