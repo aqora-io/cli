@@ -2,7 +2,6 @@ use std::ops::RangeInclusive;
 use std::sync::Arc;
 use std::time::Duration;
 
-use bytes::Bytes;
 use tower::retry::{Policy, Retry};
 use tower::Layer;
 
@@ -156,14 +155,14 @@ where
         }
     }
     fn clone_request(&mut self, req: &Request) -> Option<Request> {
-        if let Some(bytes) = req.body().as_bytes() {
+        if let Some(body) = req.body().try_clone() {
             let mut builder = http::request::Builder::new()
                 .method(req.method().clone())
                 .uri(req.uri().clone())
                 .version(req.version());
             *builder.headers_mut()? = req.headers().clone();
             *builder.extensions_mut()? = req.extensions().clone();
-            builder.body(Bytes::copy_from_slice(bytes).into()).ok()
+            builder.body(body).ok()
         } else {
             None
         }

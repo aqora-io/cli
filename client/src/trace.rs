@@ -1,6 +1,5 @@
 use std::fmt;
 
-use reqwest::Body;
 use serde::{Deserialize, Serialize};
 use tower::Layer;
 use tower_http::trace::{
@@ -9,7 +8,7 @@ use tower_http::trace::{
 };
 use tracing::Level;
 
-use crate::http::{NormalizeHttpService, Request};
+use crate::http::{Body, NormalizeHttpService, Request};
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -139,17 +138,24 @@ impl Default for TraceRequest {
     }
 }
 
-impl OnRequest<reqwest::Body> for TraceRequest {
+impl OnRequest<Body> for TraceRequest {
     fn on_request(&mut self, request: &Request, _: &tracing::Span) {
         trace_dynamic!(
             self.level,
-            "request started: {} {}{}",
+            "request started: method={} uri={} {}",
             request.method(),
             request.uri(),
             if self.debug_body {
-                format!(" {}", DisplayBody::from(request.body()))
+                format!("body={}", DisplayBody::from(request.body()))
             } else {
-                String::new()
+                format!(
+                    "size={}",
+                    request
+                        .body()
+                        .content_length()
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| "unknown".to_string())
+                )
             }
         )
     }

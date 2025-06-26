@@ -12,6 +12,7 @@ pub type BoxError = Box<DynError>;
 #[derive(Debug)]
 pub enum MiddlewareError {
     Request(reqwest::Error),
+    StreamsNotSupported,
     #[cfg(feature = "tokio-ws")]
     Ws(tokio_tungstenite::tungstenite::error::Error),
     Middleware(BoxError),
@@ -21,6 +22,7 @@ impl fmt::Display for MiddlewareError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Request(err) => err.fmt(f),
+            Self::StreamsNotSupported => write!(f, "Streams not supported"),
             #[cfg(feature = "tokio-ws")]
             Self::Ws(err) => err.fmt(f),
             Self::Middleware(err) => err.fmt(f),
@@ -56,6 +58,12 @@ pub enum Error {
     #[error(transparent)]
     Request(#[from] reqwest::Error),
     #[error(transparent)]
+    RequestBuilder(#[from] http::Error),
+    #[error("Bad Status: {0}")]
+    BadStatus(http::StatusCode),
+    #[error("Streams not supported")]
+    StreamNotSupported,
+    #[error(transparent)]
     Json(#[from] serde_json::Error),
     #[error("GraphQL response contained errors: {0:?}")]
     Response(Vec<graphql_client::Error>),
@@ -84,6 +92,7 @@ impl From<MiddlewareError> for Error {
     fn from(error: MiddlewareError) -> Self {
         match error {
             MiddlewareError::Request(err) => Self::Request(err),
+            MiddlewareError::StreamsNotSupported => Self::StreamNotSupported,
             #[cfg(feature = "tokio-ws")]
             MiddlewareError::Ws(err) => Self::Tungstenite(err),
             MiddlewareError::Middleware(err) => Self::Middleware(err),
