@@ -3,7 +3,7 @@ use std::task::{Context, Poll};
 use futures::{channel::mpsc, future::BoxFuture, FutureExt, SinkExt};
 use tower::Service;
 
-use crate::http::{Request, Response};
+use crate::http::{Body, Request, Response};
 
 use crate::error::MiddlewareError;
 
@@ -48,7 +48,7 @@ impl Service<Request> for WsClient {
             let (parts, body) = res.into_parts();
             Ok(http::Response::from_parts(
                 parts,
-                body.map(reqwest::Body::from).unwrap_or_default(),
+                body.map(Body::from).unwrap_or_default(),
             ))
         }
         .boxed()
