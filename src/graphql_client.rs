@@ -24,6 +24,16 @@ impl From<GraphQLError> for Error {
             GraphQLError::Request(error) => {
                 error::system(&format!("Request failed: {error:?}"), "")
             }
+            GraphQLError::RequestBuilder(error) => {
+                error::system(&format!("Couldn't build request: {error:?}"), "")
+            }
+            GraphQLError::BadStatus(status) => error::system(
+                &format!("Received an invalid response code from server: {status}"),
+                "",
+            ),
+            GraphQLError::StreamNotSupported => {
+                error::system("Streaming is not supported by this client", "")
+            }
             GraphQLError::Json(error) => {
                 error::system(&format!("Failed to parse JSON: {error:?}"), "")
             }
@@ -45,11 +55,11 @@ impl From<GraphQLError> for Error {
             }
             GraphQLError::WsClosed => error::system("Websocket closed early", ""),
             GraphQLError::NoData => error::system("Invalid response received from server", ""),
-            GraphQLError::Middleware(error) => {
-                error::system(&format!("Middleware error: {error:?}"), "")
-            }
             GraphQLError::InvalidHeaderValue(_) => {
                 error::system("Invalid header value from client", "")
+            }
+            GraphQLError::Middleware(error) => {
+                error::system(&format!("Request error: {error:?}"), "")
             }
         }
     }

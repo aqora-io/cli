@@ -82,7 +82,7 @@ pub async fn download_archive(
             inspector.inspect(bytes);
         },
     ));
-    tokio::io::copy_buf(&mut response.into_async_read(), &mut tar_file).await?;
+    tokio::io::copy_buf(&mut response.body.into_async_read(), &mut tar_file).await?;
     tar_file.flush().await?;
     drop(tar_file);
 

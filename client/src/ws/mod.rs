@@ -8,7 +8,7 @@ use tower::{Layer, Service, ServiceExt};
 use crate::async_util::{MaybeSend, MaybeSync};
 use crate::client::{get_data, Client};
 use crate::error::{Error, MiddlewareError, Result};
-use crate::http::{HttpBoxService, Request, Response};
+use crate::http::{Body, HttpBoxService, Request, Response};
 
 pub(crate) use tokio_impl::{Websocket, WsClient};
 
@@ -51,7 +51,7 @@ impl Client {
         .with_sub_protocol("graphql-transport-ws")
         .into_client_request()?
         .into_parts();
-        let request = http::Request::from_parts(parts, reqwest::Body::default());
+        let request = http::Request::from_parts(parts, Body::default());
         let (service, mut receiver) = self.ws_service();
         let _ = service.oneshot(request).await?;
         let websocket = receiver.next().await.ok_or_else(|| Error::WsClosed)?;

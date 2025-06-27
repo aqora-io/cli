@@ -11,69 +11,40 @@ pub enum ChecksumDigest {
 }
 
 pub trait Checksum {
-    type Hasher: ChecksumHasher;
-    fn create(&self) -> Self::Hasher;
-    fn digest(&self, bytes: &[u8]) -> ChecksumDigest {
-        let mut hasher = self.create();
-        hasher.update(bytes);
-        hasher.finalize()
-    }
+    fn digest(&self, bytes: &[u8]) -> ChecksumDigest;
 }
 
 impl<T> Checksum for &T
 where
     T: ?Sized + Checksum,
 {
-    type Hasher = T::Hasher;
-
-    #[inline]
-    fn create(&self) -> Self::Hasher {
-        T::create(self)
-    }
-
     #[inline]
     fn digest(&self, bytes: &[u8]) -> ChecksumDigest {
         T::digest(self, bytes)
     }
 }
 
-pub trait ChecksumHasher {
-    fn update(&mut self, bytes: &[u8]);
-    fn finalize(self) -> ChecksumDigest;
+impl<T> Checksum for Box<T>
+where
+    T: ?Sized + Checksum,
+{
+    #[inline]
+    fn digest(&self, bytes: &[u8]) -> ChecksumDigest {
+        T::digest(self, bytes)
+    }
 }
 
 #[cfg(feature = "crc32fast")]
 pub mod crc32fast {
     use super::*;
-    pub use ::crc32fast::Hasher;
-
-    impl ChecksumHasher for Hasher {
-        #[inline]
-        fn update(&mut self, bytes: &[u8]) {
-            self.update(bytes);
-        }
-        #[inline]
-        fn finalize(self) -> ChecksumDigest {
-            ChecksumDigest::Crc32(self.finalize())
-        }
-    }
-
-    #[derive(Default)]
-    pub struct Crc32;
-
-    impl Crc32 {
-        #[inline]
-        pub fn new() -> Self {
-            Self
-        }
-    }
+    pub use ::crc32fast::Hasher as Crc32;
 
     impl Checksum for Crc32 {
-        type Hasher = Hasher;
-
         #[inline]
-        fn create(&self) -> Self::Hasher {
-            Hasher::new()
+        fn digest(&self, bytes: &[u8]) -> ChecksumDigest {
+            let mut hasher = self.clone();
+            hasher.update(bytes);
+            ChecksumDigest::Crc32(hasher.finalize())
         }
     }
 }

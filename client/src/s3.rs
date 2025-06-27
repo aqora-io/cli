@@ -1,29 +1,28 @@
-use bytes::Bytes;
 use tower::{Layer, Service, ServiceExt};
 use url::Url;
 
 use crate::async_util::{MaybeSend, MaybeSync};
 use crate::error::{MiddlewareError, Result, S3Error};
-use crate::http::{HttpBoxService, HttpClient, Request, Response};
+use crate::http::{check_status, Body, HttpBoxService, HttpClient, Request, Response};
 use crate::Client;
 
 pub struct S3PutResponse {
     pub etag: String,
-    pub original: reqwest::Response,
+    pub head: http::response::Parts,
+    pub body: Body,
 }
 
-impl TryFrom<reqwest::Response> for S3PutResponse {
+impl TryFrom<Response> for S3PutResponse {
     type Error = S3Error;
-    fn try_from(response: reqwest::Response) -> Result<Self, Self::Error> {
+    fn try_from(response: Response) -> Result<Self, Self::Error> {
         let etag = response
             .headers()
             .get(reqwest::header::ETAG)
             .and_then(|etag| etag.to_str().ok())
-            .ok_or(S3Error::InvalidETag)?;
-        Ok(Self {
-            etag: etag.to_string(),
-            original: response,
-        })
+            .ok_or(S3Error::InvalidETag)?
+            .to_string();
+        let (head, body) = response.into_parts();
+        Ok(Self { etag, head, body })
     }
 }
 
@@ -31,29 +30,13 @@ pub struct S3GetResponse {
     pub content_length: Option<usize>,
     pub content_type: Option<String>,
     pub content_disposition: Option<String>,
-    pub original: reqwest::Response,
+    pub head: http::response::Parts,
+    pub body: Body,
 }
 
-impl S3GetResponse {
-    #[cfg(feature = "response-stream")]
-    pub fn into_async_read(
-        self,
-    ) -> tokio_util::io::StreamReader<
-        impl futures::stream::Stream<Item = std::io::Result<Bytes>>,
-        Bytes,
-    > {
-        use futures::stream::TryStreamExt;
-        tokio_util::io::StreamReader::new(
-            self.original
-                .bytes_stream()
-                .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err)),
-        )
-    }
-}
-
-impl TryFrom<reqwest::Response> for S3GetResponse {
+impl TryFrom<Response> for S3GetResponse {
     type Error = S3Error;
-    fn try_from(response: reqwest::Response) -> Result<Self, Self::Error> {
+    fn try_from(response: Response) -> Result<Self, Self::Error> {
         let content_length = response
             .headers()
             .get(reqwest::header::CONTENT_LENGTH)
@@ -82,65 +65,14 @@ impl TryFrom<reqwest::Response> for S3GetResponse {
             .transpose()
             .map_err(|_| S3Error::InvalidContentDisposition)?
             .map(|cd| cd.to_string());
+        let (head, body) = response.into_parts();
         Ok(Self {
             content_length,
             content_type,
             content_disposition,
-            original: response,
+            head,
+            body,
         })
-    }
-}
-
-pub enum S3Payload {
-    Bytes(Bytes),
-    #[cfg(feature = "request-stream")]
-    Streaming {
-        content_length: usize,
-        stream: futures::stream::BoxStream<'static, Result<Bytes, crate::error::BoxError>>,
-    },
-}
-
-impl S3Payload {
-    pub fn bytes(bytes: impl Into<Bytes>) -> Self {
-        Self::Bytes(bytes.into())
-    }
-    #[cfg(feature = "request-stream")]
-    pub fn streaming<S>(content_length: usize, stream: S) -> Self
-    where
-        S: futures::stream::TryStream + Send + 'static,
-        S::Error: Into<crate::error::BoxError>,
-        Bytes: From<S::Ok>,
-    {
-        use futures::{StreamExt, TryStreamExt};
-        Self::Streaming {
-            content_length,
-            stream: stream.map_ok(Bytes::from).map_err(|err| err.into()).boxed(),
-        }
-    }
-    pub fn content_length(&self) -> usize {
-        match self {
-            Self::Bytes(bytes) => bytes.len(),
-            #[cfg(feature = "request-stream")]
-            Self::Streaming { content_length, .. } => *content_length,
-        }
-    }
-}
-
-impl<T> From<T> for S3Payload
-where
-    T: Into<Bytes>,
-{
-    fn from(bytes: T) -> Self {
-        Self::bytes(bytes)
-    }
-}
-impl From<S3Payload> for reqwest::Body {
-    fn from(payload: S3Payload) -> Self {
-        match payload {
-            S3Payload::Bytes(bytes) => bytes.into(),
-            #[cfg(feature = "request-stream")]
-            S3Payload::Streaming { stream, .. } => reqwest::Body::wrap_stream(stream),
-        }
     }
 }
 
@@ -162,25 +94,29 @@ impl Client {
         self.s3_layer.layer(HttpClient::new(self.inner().clone()))
     }
 
-    pub async fn s3_put(&self, url: Url, body: impl Into<S3Payload>) -> Result<S3PutResponse> {
-        let mut request = reqwest::Request::new(reqwest::Method::PUT, url);
+    pub async fn s3_put(&self, url: Url, body: impl Into<Body>) -> Result<S3PutResponse> {
+        let mut request = http::Request::builder()
+            .method(http::Method::PUT)
+            .uri(url.to_string());
         let body = body.into();
-        request.headers_mut().insert(
-            reqwest::header::CONTENT_LENGTH,
-            body.content_length().into(),
-        );
-        request.body_mut().replace(body.into());
-        let res = self.s3_service().oneshot(request.try_into()?).await?;
-        Ok(reqwest::Response::from(res)
-            .error_for_status()?
-            .try_into()?)
+        if let Some(content_length) = body.content_length() {
+            request.headers_mut().map(|headers| {
+                headers.insert(reqwest::header::CONTENT_LENGTH, content_length.into())
+            });
+        }
+        let request = request.body(body)?;
+        let res = self.s3_service().oneshot(request).await?;
+        check_status(&res.status())?;
+        Ok(res.try_into()?)
     }
 
     pub async fn s3_get(&self, url: Url) -> Result<S3GetResponse> {
-        let request = reqwest::Request::new(reqwest::Method::GET, url);
-        let res = self.s3_service().oneshot(request.try_into()?).await?;
-        Ok(reqwest::Response::from(res)
-            .error_for_status()?
-            .try_into()?)
+        let request = http::Request::builder()
+            .method(http::Method::GET)
+            .uri(url.to_string())
+            .body(Body::default())?;
+        let res = self.s3_service().oneshot(request).await?;
+        check_status(&res.status())?;
+        Ok(res.try_into()?)
     }
 }

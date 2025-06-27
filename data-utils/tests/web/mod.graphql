@@ -1,0 +1,24 @@
+mutation LoginUserMutation($usernameOrEmail: String!, $password: String!) {
+  loginUser(input: { usernameOrEmail: $usernameOrEmail, password: $password }) {
+    node {
+      id
+    }
+  }
+}
+
+mutation CreateDatasetMutation($slug: String!) {
+  createDataset(
+    input: { slug: $slug, name: $slug, visibility: UNAUTHENTICATED }
+  ) {
+    node {
+      id
+      slug
+    }
+  }
+}
+
+query DatasetBySlugQuery($owner: String!, $slug: String!) {
+  datasetBySlug(owner: $owner, slug: $slug) {
+    id
+  }
+}
