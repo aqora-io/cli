@@ -6,7 +6,7 @@ use url::Url;
 
 use crate::async_util::{MaybeSend, MaybeSync};
 use crate::error::{Error, MiddlewareError, Result};
-use crate::http::{HttpArcLayer, HttpBoxService, HttpClient, Request, Response};
+use crate::http::{check_status, HttpArcLayer, HttpBoxService, HttpClient, Request, Response};
 
 pub(crate) fn get_data<Q: GraphQLQuery>(
     response: graphql_client::Response<Q::ResponseData>,
@@ -21,11 +21,10 @@ pub(crate) fn get_data<Q: GraphQLQuery>(
 }
 
 fn graphql_request<Q: GraphQLQuery>(url: Url, variables: Q::Variables) -> Result<Request> {
-    let mut request = reqwest::Request::new(reqwest::Method::POST, url);
-    request
-        .body_mut()
-        .replace(serde_json::to_string(&Q::build_query(variables))?.into());
-    Ok(request.try_into()?)
+    Ok(http::Request::builder()
+        .method(http::Method::POST)
+        .uri(url.to_string())
+        .body(serde_json::to_string(&Q::build_query(variables))?.into())?)
 }
 
 #[derive(Clone)]
@@ -91,14 +90,11 @@ impl Client {
     }
 
     pub async fn send<Q: GraphQLQuery>(&self, variables: Q::Variables) -> Result<Q::ResponseData> {
-        let http_res = self
+        let res = self
             .graphql_service()
             .oneshot(graphql_request::<Q>(self.graphql_url.clone(), variables)?)
             .await?;
-        let res = reqwest::Response::from(http_res)
-            .error_for_status()?
-            .json()
-            .await?;
-        get_data::<Q>(res)
+        check_status(&res.status())?;
+        get_data::<Q>(res.into_body().json().await?)
     }
 }
