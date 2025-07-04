@@ -10,7 +10,7 @@ use aqora_client::multipart::BufferOptions;
 use aqora_client::{
     checksum::{crc32fast::Crc32, S3ChecksumLayer},
     error::BoxError,
-    http::{Request, Response},
+    http::{Body, Request, Response, SizeHint},
     multipart::{Multipart, DEFAULT_PART_SIZE},
     retry::{
         BackoffBuilder, BackoffRetryLayer, ExponentialBackoffBuilder, RetryClassifier,
@@ -124,11 +124,8 @@ struct ByteChunks {
 }
 
 impl ByteChunks {
-    fn new(bytes: &[u8], chunk_size: usize) -> Self {
-        Self {
-            bytes: Bytes::copy_from_slice(bytes),
-            chunk_size,
-        }
+    fn new(bytes: Bytes, chunk_size: usize) -> Self {
+        Self { bytes, chunk_size }
     }
 }
 
@@ -218,16 +215,18 @@ where
         if let Some(bytes) = req.body().as_bytes() {
             let pb = self.pb.clone();
             let processed = processed.clone();
-            let chunks = ByteChunks::new(bytes, self.chunk_size);
-            *req.body_mut() = reqwest::Body::wrap_stream(
-                futures::stream::iter(chunks)
+            let chunks = ByteChunks::new(bytes.clone(), self.chunk_size);
+            *req.body_mut() = Body::Stream {
+                size_hint: SizeHint::with_exact(bytes.len() as u64),
+                stream: futures::stream::iter(chunks)
                     .inspect(move |chunk| {
                         let len = chunk.len();
                         pb.inc(len as u64);
                         processed.fetch_add(len, AtomicOrdering::Relaxed);
                     })
-                    .map(Result::<_, std::convert::Infallible>::Ok),
-            );
+                    .map(Result::<_, BoxError>::Ok)
+                    .boxed(),
+            };
         }
         let pb = self.pb.clone();
         let retry_classifer = self.retry_classifier.clone();
