@@ -262,7 +262,7 @@ mod test {
     #[cfg(feature = "fs")]
     #[tokio::test]
     async fn convert_basic_json() {
-        use crate::write::SinglePart;
+        use crate::write::{RecordBatchStreamParquetExt, SinglePart};
         FormatReader::new(
             tokio::fs::File::open("tests/data/files/json/basic.json")
                 .await
@@ -279,7 +279,7 @@ mod test {
                     .unwrap(),
             ),
             Default::default(),
-            None,
+            Default::default(),
         )
         .try_collect::<Vec<_>>()
         .await

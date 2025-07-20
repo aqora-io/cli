@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 use std::{fmt, io};
 
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use csv::ByteRecord;
 use csv_core::{ReadRecordResult, Reader};
 use serde::de::DeserializeOwned;
@@ -149,10 +149,10 @@ where
     type Error = csv::Error;
     fn process(
         &mut self,
-        bytes: &[u8],
+        bytes: Bytes,
         is_eof: bool,
     ) -> ByteProcessResult<Self::Item, Self::Error> {
-        if self.has_record && self.matches_terminator(bytes) {
+        if self.has_record && self.matches_terminator(&bytes) {
             match self.take_record() {
                 Ok(record) => return ByteProcessResult::Ok((0, 0, record)),
                 Err(err) => return ByteProcessResult::Err(err),
@@ -160,7 +160,7 @@ where
         }
         let mut consumed = 0;
         loop {
-            let res = self.csv_process(bytes, &mut consumed);
+            let res = self.csv_process(&bytes, &mut consumed);
             match res {
                 ReadRecordResult::InputEmpty => {
                     return ByteProcessResult::NotReady(consumed);

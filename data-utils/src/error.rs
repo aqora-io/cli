@@ -10,6 +10,8 @@ pub enum Error {
     #[error(transparent)]
     SerdeArrow(#[from] serde_arrow::Error),
     #[error(transparent)]
+    Arrow(#[from] arrow::error::ArrowError),
+    #[error(transparent)]
     Parquet(#[from] parquet::errors::ParquetError),
     #[cfg(feature = "wasm")]
     #[error(transparent)]

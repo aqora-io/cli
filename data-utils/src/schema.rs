@@ -73,6 +73,21 @@ impl From<Schema> for arrow::datatypes::Schema {
     }
 }
 
+impl From<arrow::datatypes::Schema> for Schema {
+    fn from(value: arrow::datatypes::Schema) -> Self {
+        Self {
+            fields: value.fields,
+            metadata: value.metadata.into_iter().collect(),
+        }
+    }
+}
+
+impl From<arrow::datatypes::SchemaRef> for Schema {
+    fn from(value: arrow::datatypes::SchemaRef) -> Self {
+        value.as_ref().clone().into()
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "wasm", derive(ts_rs::TS), ts(rename = "Schema", export))]
 pub struct SerdeSchema {
@@ -424,6 +439,14 @@ pub enum SerdeDataType {
         key: Box<SerdeDataType>,
         value: Box<SerdeDataType>,
     },
+    Decimal32 {
+        precision: u8,
+        scale: i8,
+    },
+    Decimal64 {
+        precision: u8,
+        scale: i8,
+    },
     Decimal128 {
         precision: u8,
         scale: i8,
@@ -518,6 +541,14 @@ impl From<&DataType> for SerdeDataType {
                 key: Box::new(key.as_ref().into()),
                 value: Box::new(value.as_ref().into()),
             },
+            DataType::Decimal32(precision, scale) => SerdeDataType::Decimal32 {
+                precision: *precision,
+                scale: *scale,
+            },
+            DataType::Decimal64(precision, scale) => SerdeDataType::Decimal64 {
+                precision: *precision,
+                scale: *scale,
+            },
             DataType::Decimal128(precision, scale) => SerdeDataType::Decimal128 {
                 precision: *precision,
                 scale: *scale,
@@ -590,6 +621,8 @@ impl From<SerdeDataType> for DataType {
             SerdeDataType::Dictionary { key, value } => {
                 DataType::Dictionary(Box::new((*key).into()), Box::new((*value).into()))
             }
+            SerdeDataType::Decimal32 { precision, scale } => DataType::Decimal32(precision, scale),
+            SerdeDataType::Decimal64 { precision, scale } => DataType::Decimal64(precision, scale),
             SerdeDataType::Decimal128 { precision, scale } => {
                 DataType::Decimal128(precision, scale)
             }
