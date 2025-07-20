@@ -450,7 +450,7 @@ pub async fn convert(args: Convert, global: GlobalArgs) -> Result<()> {
 
     let stream = stream.inspect_ok(|item| pb.set_position(item.end as u64));
 
-    let stream = read::from_stream(stream, schema.clone(), read_options).map_err(|err| {
+    let stream = read::from_value_stream(stream, schema.clone(), read_options).map_err(|err| {
         error::user(
             &format!("Error reading from input file: {err}"),
             "Please check the file and try again",

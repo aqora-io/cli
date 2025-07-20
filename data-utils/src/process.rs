@@ -1,4 +1,4 @@
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use futures::stream::Stream;
 use pin_project::pin_project;
 use tokio::io::{self, AsyncRead, ReadBuf};
@@ -21,7 +21,7 @@ pub enum ByteProcessResult<T, E> {
 pub trait ByteProcessor {
     type Item;
     type Error;
-    fn process(&mut self, bytes: &[u8], is_eof: bool)
+    fn process(&mut self, bytes: Bytes, is_eof: bool)
         -> ByteProcessResult<Self::Item, Self::Error>;
 }
 
@@ -151,10 +151,10 @@ where
                     }
                 }
             }
-            match this
-                .processor
-                .process(this.buffer.as_ref(), *this.reader_done)
-            {
+            let bytes = std::mem::take(this.buffer).freeze();
+            let proccess_result = this.processor.process(bytes.clone(), *this.reader_done);
+            *this.buffer = bytes.into();
+            match proccess_result {
                 ByteProcessResult::Ok((start_byte_offset, end_byte_offset, result)) => {
                     let result = ProcessItem {
                         start: *this.pos + start_byte_offset,

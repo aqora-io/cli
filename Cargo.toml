@@ -126,3 +126,4 @@ arrow-array = { git = "https://github.com/aqora-io/arrow-rs", branch = "dataset"
 arrow-buffer = { git = "https://github.com/aqora-io/arrow-rs", branch = "dataset" }
 arrow-data = { git = "https://github.com/aqora-io/arrow-rs", branch = "dataset" }
 arrow-schema = { git = "https://github.com/aqora-io/arrow-rs", branch = "dataset" }
+arrow-ipc = { git = "https://github.com/aqora-io/arrow-rs", branch = "dataset" }

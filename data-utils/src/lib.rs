@@ -4,10 +4,13 @@ mod async_util;
 #[cfg(feature = "csv")]
 pub mod csv;
 pub mod error;
+#[cfg(any(feature = "csv", feature = "json"))]
 pub mod format;
 #[cfg(feature = "fs")]
 pub mod fs;
 pub mod infer;
+#[cfg(feature = "ipc")]
+pub mod ipc;
 #[cfg(feature = "json")]
 pub mod json;
 mod process;
@@ -25,6 +28,7 @@ pub use parquet;
 #[cfg(feature = "csv")]
 pub use csv::CsvFormat;
 pub use error::{Error, Result};
+#[cfg(any(feature = "csv", feature = "json"))]
 pub use format::{Format, FormatReader};
 #[cfg(feature = "json")]
 pub use json::JsonFormat;

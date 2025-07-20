@@ -277,6 +277,7 @@ version = "0.15.1"
 dependencies = [
  "aqora-client",
  "arrow",
+ "arrow-ipc",
  "async-trait",
  "bytes",
  "chrono",
@@ -361,14 +362,15 @@ dependencies = [
 
 [[package]]
 name = "arrow"
-version = "55.1.0"
-source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#611f1365228a72076eead9b986717b77977cb6a8"
+version = "55.2.0"
+source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#bbf2a8fcf5c31d94ea5e6fabe7a06a23dfa3ffff"
 dependencies = [
  "arrow-arith",
  "arrow-array",
  "arrow-buffer",
  "arrow-cast",
  "arrow-data",
+ "arrow-ipc",
  "arrow-ord",
  "arrow-row",
  "arrow-schema",
@@ -378,8 +380,8 @@ dependencies = [
 
 [[package]]
 name = "arrow-arith"
-version = "55.1.0"
-source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#611f1365228a72076eead9b986717b77977cb6a8"
+version = "55.2.0"
+source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#bbf2a8fcf5c31d94ea5e6fabe7a06a23dfa3ffff"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -391,8 +393,8 @@ dependencies = [
 
 [[package]]
 name = "arrow-array"
-version = "55.1.0"
-source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#611f1365228a72076eead9b986717b77977cb6a8"
+version = "55.2.0"
+source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#bbf2a8fcf5c31d94ea5e6fabe7a06a23dfa3ffff"
 dependencies = [
  "ahash",
  "arrow-buffer",
@@ -406,8 +408,8 @@ dependencies = [
 
 [[package]]
 name = "arrow-buffer"
-version = "55.1.0"
-source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#611f1365228a72076eead9b986717b77977cb6a8"
+version = "55.2.0"
+source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#bbf2a8fcf5c31d94ea5e6fabe7a06a23dfa3ffff"
 dependencies = [
  "bytes",
  "half",
@@ -416,8 +418,8 @@ dependencies = [
 
 [[package]]
 name = "arrow-cast"
-version = "55.1.0"
-source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#611f1365228a72076eead9b986717b77977cb6a8"
+version = "55.2.0"
+source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#bbf2a8fcf5c31d94ea5e6fabe7a06a23dfa3ffff"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -435,8 +437,8 @@ dependencies = [
 
 [[package]]
 name = "arrow-data"
-version = "55.1.0"
-source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#611f1365228a72076eead9b986717b77977cb6a8"
+version = "55.2.0"
+source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#bbf2a8fcf5c31d94ea5e6fabe7a06a23dfa3ffff"
 dependencies = [
  "arrow-buffer",
  "arrow-schema",
@@ -446,20 +448,22 @@ dependencies = [
 
 [[package]]
 name = "arrow-ipc"
-version = "55.1.0"
-source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#611f1365228a72076eead9b986717b77977cb6a8"
+version = "55.2.0"
+source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#bbf2a8fcf5c31d94ea5e6fabe7a06a23dfa3ffff"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
  "arrow-data",
  "arrow-schema",
  "flatbuffers",
+ "lz4_flex",
+ "zstd",
 ]
 
 [[package]]
 name = "arrow-ord"
-version = "55.1.0"
-source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#611f1365228a72076eead9b986717b77977cb6a8"
+version = "55.2.0"
+source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#bbf2a8fcf5c31d94ea5e6fabe7a06a23dfa3ffff"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -470,8 +474,8 @@ dependencies = [
 
 [[package]]
 name = "arrow-row"
-version = "55.1.0"
-source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#611f1365228a72076eead9b986717b77977cb6a8"
+version = "55.2.0"
+source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#bbf2a8fcf5c31d94ea5e6fabe7a06a23dfa3ffff"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -482,13 +486,13 @@ dependencies = [
 
 [[package]]
 name = "arrow-schema"
-version = "55.1.0"
-source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#611f1365228a72076eead9b986717b77977cb6a8"
+version = "55.2.0"
+source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#bbf2a8fcf5c31d94ea5e6fabe7a06a23dfa3ffff"
 
 [[package]]
 name = "arrow-select"
-version = "55.1.0"
-source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#611f1365228a72076eead9b986717b77977cb6a8"
+version = "55.2.0"
+source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#bbf2a8fcf5c31d94ea5e6fabe7a06a23dfa3ffff"
 dependencies = [
  "ahash",
  "arrow-array",
@@ -500,8 +504,8 @@ dependencies = [
 
 [[package]]
 name = "arrow-string"
-version = "55.1.0"
-source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#611f1365228a72076eead9b986717b77977cb6a8"
+version = "55.2.0"
+source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#bbf2a8fcf5c31d94ea5e6fabe7a06a23dfa3ffff"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -3653,8 +3657,8 @@ dependencies = [
 
 [[package]]
 name = "parquet"
-version = "55.1.0"
-source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#611f1365228a72076eead9b986717b77977cb6a8"
+version = "55.2.0"
+source = "git+https://github.com/aqora-io/arrow-rs?branch=dataset#bbf2a8fcf5c31d94ea5e6fabe7a06a23dfa3ffff"
 dependencies = [
  "ahash",
  "arrow-array",
@@ -4826,9 +4830,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.140"
+version = "1.0.141"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20068b6e96dc6c9bd23e01df8827e6c7e1f2fddd43c21810382803c136b99373"
+checksum = "30b9eff21ebe718216c6ec64e1d9ac57087aad11efc64e32002bce4a0d4c03d3"
 dependencies = [
  "indexmap",
  "itoa",

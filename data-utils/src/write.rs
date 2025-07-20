@@ -16,7 +16,7 @@ pub use parquet::format::FileMetaData;
 
 use crate::async_util::parquet_async::*;
 use crate::error::{Error, Result};
-use crate::read::RecordBatchStream;
+use crate::read::{RecordBatchStream, RecordBatchStreamExt, WrappedRecordBatchStream};
 use crate::schema::Schema;
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -334,31 +334,44 @@ where
     }
 }
 
-impl<'s, S, T, E> RecordBatchStream<S>
-where
-    S: Stream<Item = Result<T, E>> + MaybeSend + Unpin + 's,
-    Error: From<E>,
-    T: serde::Serialize,
+pub trait RecordBatchStreamParquetExt<'s>:
+    Sized + RecordBatchStream + MaybeSend + Unpin + 's
 {
-    pub fn write_to_parquet<'w, W>(
+    fn write_to_parquet<'w, W>(
         self,
         writer: W,
         options: Options,
         buffer_options: BufferOptions,
-    ) -> ParquetStream<'s, 'w, Self, W>
+    ) -> ParquetStream<'s, 'w, WrappedRecordBatchStream<Self>, W>
+    where
+        W: AsyncPartitionWriter + MaybeSend + 'w;
+}
+
+impl<'s, S> RecordBatchStreamParquetExt<'s> for S
+where
+    S: Sized + RecordBatchStream + MaybeSend + Unpin + 's,
+{
+    fn write_to_parquet<'w, W>(
+        self,
+        writer: W,
+        options: Options,
+        buffer_options: BufferOptions,
+    ) -> ParquetStream<'s, 'w, WrappedRecordBatchStream<Self>, W>
     where
         W: AsyncPartitionWriter + MaybeSend + 'w,
     {
-        let schema = self.schema().clone();
-        ParquetStream::new(self, writer, schema, options, buffer_options)
+        let schema = self.schema();
+        ParquetStream::new(self.wrap(), writer, schema, options, buffer_options)
     }
 }
 
 #[cfg(test)]
 mod test {
+
     #[cfg(feature = "fs")]
     #[tokio::test]
     async fn test_basic_json() {
+        use super::*;
         use futures::stream::TryStreamExt;
         let tempdir = tempfile::TempDir::with_prefix("aqora-data-utils").unwrap();
         let writer = crate::fs::DirWriter::new(tempdir.path());

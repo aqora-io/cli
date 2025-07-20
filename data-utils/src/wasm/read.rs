@@ -5,14 +5,16 @@ use wasm_bindgen::prelude::*;
 
 use crate::error::Result;
 use crate::format::ValueStream;
-use crate::read::{self, RecordBatchStream};
+use crate::read::{self, ValueRecordBatchStream};
 use crate::schema::SerdeSchema;
 
 use super::format::JsFormatReader;
 use super::serde::{from_value, to_value};
 
 #[wasm_bindgen(js_name = "RecordBatchStream")]
-pub struct JsRecordBatchStream(#[wasm_bindgen(skip)] pub RecordBatchStream<ValueStream<'static>>);
+pub struct JsRecordBatchStream(
+    #[wasm_bindgen(skip)] pub ValueRecordBatchStream<ValueStream<'static>>,
+);
 
 #[wasm_bindgen(js_class = "RecordBatchStream")]
 impl JsRecordBatchStream {
@@ -22,8 +24,8 @@ impl JsRecordBatchStream {
     }
 }
 
-impl From<RecordBatchStream<ValueStream<'static>>> for JsRecordBatchStream {
-    fn from(value: RecordBatchStream<ValueStream<'static>>) -> Self {
+impl From<ValueRecordBatchStream<ValueStream<'static>>> for JsRecordBatchStream {
+    fn from(value: ValueRecordBatchStream<ValueStream<'static>>) -> Self {
         JsRecordBatchStream(value)
     }
 }
@@ -54,7 +56,7 @@ impl JsFormatReader {
         if let Some(sample_size) = options.sample_size {
             stream = stream.take(sample_size).boxed_local()
         };
-        let record_batches = read::from_stream(stream, schema, options.read_options)?;
+        let record_batches = read::from_value_stream(stream, schema, options.read_options)?;
         record_batches.try_all(|_| async move { true }).await?;
         Ok(())
     }

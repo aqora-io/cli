@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use serde::de::{DeserializeOwned, Error};
 use serde_json::de::Deserializer;
 
@@ -105,11 +106,11 @@ where
     type Error = serde_json::Error;
     fn process(
         &mut self,
-        bytes: &[u8],
+        bytes: Bytes,
         _is_eof: bool,
     ) -> ByteProcessResult<Self::Item, Self::Error> {
         use JsonProcessorState::*;
-        let mut consumer = Consumer::new(bytes);
+        let mut consumer = Consumer::new(&bytes);
         loop {
             consumer.consume_whitespace();
             match self.state {

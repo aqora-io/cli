@@ -5,7 +5,7 @@ use tokio::io::{self, AsyncRead, AsyncSeek, AsyncSeekExt};
 use crate::async_util::parquet_async::*;
 use crate::infer::{self};
 use crate::process::ProcessItem;
-use crate::read::{self, RecordBatchStream};
+use crate::read::{self, ValueRecordBatchStream};
 use crate::schema::Schema;
 use crate::value::Value;
 use crate::Result;
@@ -175,8 +175,8 @@ where
         &mut self,
         schema: Schema,
         options: read::Options,
-    ) -> Result<RecordBatchStream<ValueStream>> {
-        read::from_stream(self.stream_values().await?, schema, options)
+    ) -> Result<ValueRecordBatchStream<ValueStream>> {
+        read::from_value_stream(self.stream_values().await?, schema, options)
     }
 
     pub async fn infer_schema(
@@ -193,11 +193,11 @@ where
         infer_options: infer::Options,
         sample_size: Option<usize>,
         read_options: read::Options,
-    ) -> Result<RecordBatchStream<ValueStream>> {
+    ) -> Result<ValueRecordBatchStream<ValueStream>> {
         let mut stream = self.stream_values().await?;
         let samples = take_samples(&mut stream, sample_size).await?;
         let schema = infer::from_samples(&samples, infer_options)?;
-        read::from_stream(
+        read::from_value_stream(
             boxed_stream(
                 futures::stream::iter(samples.into_iter().map(io::Result::Ok)).chain(stream),
             ),
@@ -219,8 +219,8 @@ where
         self,
         schema: Schema,
         options: read::Options,
-    ) -> Result<RecordBatchStream<ValueStream<'static>>> {
-        read::from_stream(self.into_value_stream().await?, schema, options)
+    ) -> Result<ValueRecordBatchStream<ValueStream<'static>>> {
+        read::from_value_stream(self.into_value_stream().await?, schema, options)
     }
 
     pub async fn into_inferred_record_batch_stream(
@@ -228,11 +228,11 @@ where
         infer_options: infer::Options,
         sample_size: Option<usize>,
         read_options: read::Options,
-    ) -> Result<RecordBatchStream<ValueStream<'static>>> {
+    ) -> Result<ValueRecordBatchStream<ValueStream<'static>>> {
         let mut stream = self.into_value_stream().await?;
         let samples = take_samples(&mut stream, sample_size).await?;
         let schema = infer::from_samples(&samples, infer_options)?;
-        read::from_stream(
+        read::from_value_stream(
             boxed_stream(
                 futures::stream::iter(samples.into_iter().map(io::Result::Ok)).chain(stream),
             ),
