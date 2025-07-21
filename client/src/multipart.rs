@@ -715,9 +715,9 @@ mod test {
     #[cfg(feature = "crc32fast")]
     #[tokio::test]
     async fn test_s3_checksum() {
-        use crate::checksum::{crc32fast::Crc32, S3ChecksumMiddleware};
+        use crate::checksum::{crc32fast::Crc32, S3ChecksumLayer};
         let mut client = Client::new("http://localhost:9090".parse().unwrap());
-        client.s3_with(S3ChecksumMiddleware::new(Crc32::new()));
+        client.s3_layer(S3ChecksumLayer::new(Crc32::new()));
         let multipart = AwsMultipart::new("test", "multipart-checksum").await;
         let mut multipart_upload = MultipartUpload::new(client, multipart);
         let mut input = random(100 * MB).await;
