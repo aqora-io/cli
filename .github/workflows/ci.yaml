@@ -27,6 +27,6 @@ jobs:
       - run: pip install uv
       - run: rustc --version
       - run: cargo fmt --all --check
-      - run: cargo clippy -- -D warnings
-      - run: cargo test
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
       - run: cargo run -- --version

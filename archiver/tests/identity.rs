@@ -116,8 +116,7 @@ fn generate_data_dir(
 ) -> TempDir {
     let src_dir = TempDir::new().unwrap();
     for i in 0..num_entries {
-        let name = std::iter::repeat(unsafe { char::from_u32_unchecked('a' as u32 + i) })
-            .take(20)
+        let name = std::iter::repeat_n(unsafe { char::from_u32_unchecked('a' as u32 + i) }, 20)
             .collect::<String>();
         let entry_path = (0..entry_hierarchy_depth).fold(PathBuf::new(), |acc, _| acc.join(&name));
         let out_path = src_dir.path().join(&entry_path);
