@@ -11,7 +11,10 @@ use clap::Args;
 use futures::TryStreamExt as _;
 use graphql_client::GraphQLQuery;
 use indicatif::ProgressBar;
-use parquet::{basic::ZstdLevel, file::properties::WriterProperties};
+use parquet::{
+    basic::{BrotliLevel, Compression, GzipLevel, ZstdLevel},
+    file::properties::WriterProperties,
+};
 use serde::Serialize;
 use thiserror::Error;
 use tokio::io::AsyncSeekExt as _;
@@ -33,6 +36,129 @@ pub struct Upload {
     /// Dataset version you will be uploading. Omit this flag to draft a new version.
     #[arg(short, long)]
     version: Option<Semver>,
+    /// How many records to read from the file to infer its schema
+    #[arg(long, default_value_t = 100)]
+    sample_size: usize,
+    /// How many records should the reader gather in a batch
+    #[arg(long, default_value_t = 100)]
+    read_batch_size: usize,
+    /// Max number of partitions to upload concurrently
+    #[arg(long, default_value_t = 2)]
+    concurrent_uploads: usize,
+    /// Max size in MB for a single Parquet partition
+    #[arg(long, default_value_t = 100)]
+    max_partition_size: usize,
+    /// Max size in MB for a single uploaded chunk, a single partition is uploaded in many chunks: each chunk may be reuploaded upon integrity violation
+    #[arg(long, default_value_t = 10)]
+    max_chunk_size: usize,
+    /// How columns should be compressed, available schemes are: "none", "snappy", "lzo", "lz4",
+    /// "lz4_raw", "zstd", "zstd,{level}", "brotli", "brotli,{level}", "gzip", "gzip,{level}"
+    #[arg(long, default_value_t = UploadCompression::ZSTD)]
+    compression: UploadCompression,
+}
+
+#[derive(Debug, Clone)]
+pub struct UploadCompression(Compression);
+
+impl UploadCompression {
+    // SAFETY: ZstdLevel wraps a i32
+    const DEFAULT_ZSTD_LEVEL: ZstdLevel = unsafe { std::mem::transmute(3i32) };
+    const ZSTD: Self = Self(Compression::ZSTD(Self::DEFAULT_ZSTD_LEVEL));
+}
+
+impl From<UploadCompression> for Compression {
+    fn from(value: UploadCompression) -> Self {
+        value.0
+    }
+}
+
+impl Display for UploadCompression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Compression::UNCOMPRESSED => f.write_str("none"),
+            Compression::SNAPPY => f.write_str("snappy"),
+            Compression::GZIP(level) => {
+                if level == GzipLevel::default() {
+                    f.write_str("gzip")
+                } else {
+                    f.write_fmt(format_args!("gzip,{}", level.compression_level()))
+                }
+            }
+            Compression::LZO => f.write_str("lzo"),
+            Compression::BROTLI(level) => {
+                if level == BrotliLevel::default() {
+                    f.write_str("brotli")
+                } else {
+                    f.write_fmt(format_args!("brotli,{}", level.compression_level()))
+                }
+            }
+            Compression::LZ4 => f.write_str("lz4"),
+            Compression::ZSTD(level) => {
+                if level == Self::DEFAULT_ZSTD_LEVEL {
+                    f.write_str("zstd")
+                } else {
+                    f.write_fmt(format_args!("zstd,{}", level.compression_level()))
+                }
+            }
+            Compression::LZ4_RAW => f.write_str("lz4_raw"),
+        }
+    }
+}
+
+impl Serialize for UploadCompression {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+#[derive(Debug, Error)]
+#[error("Malformed compression scheme")]
+pub struct MalformedUploadCompressionError;
+
+impl FromStr for UploadCompression {
+    type Err = MalformedUploadCompressionError;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s
+            .split_once(",")
+            .map_or((s, Option::<&str>::None), |(x, y)| (x, Some(y)))
+        {
+            ("brotli", level) => Ok(Self(Compression::BROTLI(if let Some(level) = level {
+                BrotliLevel::try_new(level.parse().map_err(|_| MalformedUploadCompressionError)?)
+                    .map_err(|_| MalformedUploadCompressionError)?
+            } else {
+                BrotliLevel::default()
+            }))),
+
+            ("gzip", level) => Ok(Self(Compression::GZIP(if let Some(level) = level {
+                GzipLevel::try_new(level.parse().map_err(|_| MalformedUploadCompressionError)?)
+                    .map_err(|_| MalformedUploadCompressionError)?
+            } else {
+                GzipLevel::default()
+            }))),
+
+            ("lz4", _) => Ok(Self(Compression::LZ4)),
+            ("lz4_raw", _) => Ok(Self(Compression::LZ4_RAW)),
+
+            ("lzo", _) => Ok(Self(Compression::LZO)),
+
+            ("none", _) => Ok(Self(Compression::UNCOMPRESSED)),
+
+            ("snappy", _) => Ok(Self(Compression::SNAPPY)),
+
+            ("zstd", level) => Ok(Self(Compression::ZSTD(if let Some(level) = level {
+                ZstdLevel::try_new(level.parse().map_err(|_| MalformedUploadCompressionError)?)
+                    .map_err(|_| MalformedUploadCompressionError)?
+            } else {
+                Self::DEFAULT_ZSTD_LEVEL
+            }))),
+
+            _ => Err(MalformedUploadCompressionError),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -191,7 +317,7 @@ pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
                 )
             })?;
         let file_schema = file
-            .infer_schema(Default::default(), Some(100))
+            .infer_schema(Default::default(), Some(args.sample_size))
             .await
             .map_err(|error| {
                 error::user_with_internal(
@@ -216,7 +342,9 @@ pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
         .interact()?;
     if will_review_schema {
         let json_schema = serde_json::to_string_pretty(&file_schema)?;
-        let new_json_schema = dialoguer::Editor::new().edit(&json_schema)?;
+        let new_json_schema = dialoguer::Editor::new()
+            .extension(".json")
+            .edit(&json_schema)?;
         if new_json_schema.as_deref().is_some_and(str::is_empty) {
             tracing::info!("Aborting upload...");
             return Ok(());
@@ -245,7 +373,7 @@ pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
             values,
             file_schema,
             aqora_data_utils::read::Options {
-                batch_size: Some(100),
+                batch_size: Some(args.read_batch_size),
             },
         )
         .map_err(|error| {
@@ -253,6 +381,7 @@ pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
         })?;
 
         // Create upload client
+        const MB: usize = 1024 * 1024;
         let client = client
             .clone()
             .s3_layer(BackoffRetryLayer::new(
@@ -262,8 +391,8 @@ pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
             .s3_layer(S3ChecksumLayer::new(Crc32::new()))
             .to_owned();
         let writer = DatasetVersionFileUploader::new(client, dataset_version_id)
-            .with_concurrency(Some(2))
-            .with_max_partition_size(Some(30 * 1024 * 1024)); // 30MB
+            .with_concurrency(Some(args.concurrent_uploads))
+            .with_max_partition_size(Some(args.max_partition_size * MB));
 
         // Upload batches to server
         pb.suspend(|| tracing::info!("Starting to upload to server..."));
@@ -272,14 +401,12 @@ pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
                 writer,
                 aqora_data_utils::write::Options::default().with_properties(
                     WriterProperties::builder()
-                        .set_compression(parquet::basic::Compression::ZSTD(
-                            ZstdLevel::try_new(3).unwrap(),
-                        ))
+                        .set_compression(args.compression.into())
                         .build(),
                 ),
                 aqora_data_utils::write::BufferOptions {
                     batch_buffer_size: Some(2),
-                    max_memory_size: Some(10 * 1024 * 1024), // 10MB
+                    max_memory_size: Some(args.max_chunk_size * MB),
                 },
             )
             .try_fold(0u64, async |acc, (_part, meta)| {
