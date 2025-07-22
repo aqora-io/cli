@@ -1,0 +1,6 @@
+query DatasetUploadInfo($owner: String!, $localSlug: String!) {
+  datasetBySlug(owner: $owner, localSlug: $localSlug) {
+    id
+    viewerCanCreateVersion: viewerCan(action: CREATE_DATASET_VERSION)
+  }
+}

@@ -892,6 +892,7 @@ type Dataset implements Votable & ForumOwner & Node {
 	members(after: String, before: String, first: Int, last: Int, search: String): DatasetMembershipConnection!
 	analytics: DatasetAnalytics!
 	latestVersion: DatasetVersion
+	version(major: Int!, minor: Int!, patch: Int!): DatasetVersion
 	versions(after: String, before: String, first: Int, last: Int, published: Boolean): DatasetVersionConnection!
 	competitions(after: String, before: String, first: Int, last: Int, search: String): DatasetCompetitionConnection!
 	tags(after: String, before: String, first: Int, last: Int): DatasetTagConnection!
