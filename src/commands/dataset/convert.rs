@@ -219,7 +219,7 @@ pub struct Convert {
 }
 
 impl WriteOptions {
-    fn parse(&self) -> Result<aqora_data_utils::write::Options> {
+    pub(crate) fn parse(&self) -> Result<aqora_data_utils::write::Options> {
         let mut builder = parquet::file::properties::WriterProperties::builder()
             .set_writer_version(self.writer_version.into())
             .set_compression(self.compression.parse().map_err(|err| {

@@ -1,30 +1,25 @@
-use std::{fmt::Display, io::SeekFrom, str::FromStr};
+use std::{fmt::Display, path::PathBuf, str::FromStr};
 
 use aqora_client::{
     checksum::{crc32fast::Crc32, S3ChecksumLayer},
     retry::{BackoffRetryLayer, ExponentialBackoffBuilder, RetryStatusCodeRange},
 };
-use aqora_data_utils::{
-    aqora_client::DatasetVersionFileUploader, write::RecordBatchStreamParquetExt as _,
-};
+use aqora_data_utils::{aqora_client::DatasetVersionFileUploader, infer, read, write, Schema};
 use clap::Args;
-use futures::TryStreamExt as _;
+use futures::{StreamExt as _, TryStreamExt as _};
 use graphql_client::GraphQLQuery;
-use indicatif::ProgressBar;
-use parquet::{
-    basic::{BrotliLevel, Compression, GzipLevel, ZstdLevel},
-    file::properties::WriterProperties,
-};
 use serde::Serialize;
 use thiserror::Error;
-use tokio::io::AsyncSeekExt as _;
+use url::Url;
 
-use crate::{
-    error::{self, Result},
-    progress_bar,
+use crate::error::{self, Result};
+
+use super::{
+    convert::WriteOptions,
+    infer::{render_sample_debug, render_schema, FormatOptions, InferOptions, SchemaOutput},
+    utils::from_json_str_or_file,
+    GlobalArgs,
 };
-
-use super::GlobalArgs;
 
 /// Upload a file to Aqora.io
 #[derive(Args, Debug, Serialize)]
@@ -32,133 +27,29 @@ pub struct Upload {
     /// Dataset you want to upload to, must respect "{owner}/{dataset}" form.
     slug: String,
     /// Path to file you will upload to Aqora.
-    file: String,
+    src: PathBuf,
     /// Dataset version you will be uploading. Omit this flag to draft a new version.
     #[arg(short, long)]
     version: Option<Semver>,
-    /// How many records to read from the file to infer its schema
-    #[arg(long, default_value_t = 100)]
-    sample_size: usize,
-    /// How many records should the reader gather in a batch
-    #[arg(long, default_value_t = 100)]
-    read_batch_size: usize,
-    /// Max number of partitions to upload concurrently
-    #[arg(long, default_value_t = 2)]
-    concurrent_uploads: usize,
-    /// Max size in MB for a single Parquet partition
-    #[arg(long, default_value_t = 100)]
-    max_partition_size: usize,
-    /// Max size in MB for a single uploaded chunk, a single partition is uploaded in many chunks: each chunk may be reuploaded upon integrity violation
-    #[arg(long, default_value_t = 10)]
-    max_chunk_size: usize,
-    /// How columns should be compressed, available schemes are: "none", "snappy", "lzo", "lz4",
-    /// "lz4_raw", "zstd", "zstd,{level}", "brotli", "brotli,{level}", "gzip", "gzip,{level}"
-    #[arg(long, default_value_t = UploadCompression::ZSTD)]
-    compression: UploadCompression,
-}
 
-#[derive(Debug, Clone)]
-pub struct UploadCompression(Compression);
-
-impl UploadCompression {
-    // SAFETY: ZstdLevel wraps a i32
-    const DEFAULT_ZSTD_LEVEL: ZstdLevel = unsafe { std::mem::transmute(3i32) };
-    const ZSTD: Self = Self(Compression::ZSTD(Self::DEFAULT_ZSTD_LEVEL));
-}
-
-impl From<UploadCompression> for Compression {
-    fn from(value: UploadCompression) -> Self {
-        value.0
-    }
-}
-
-impl Display for UploadCompression {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.0 {
-            Compression::UNCOMPRESSED => f.write_str("none"),
-            Compression::SNAPPY => f.write_str("snappy"),
-            Compression::GZIP(level) => {
-                if level == GzipLevel::default() {
-                    f.write_str("gzip")
-                } else {
-                    f.write_fmt(format_args!("gzip,{}", level.compression_level()))
-                }
-            }
-            Compression::LZO => f.write_str("lzo"),
-            Compression::BROTLI(level) => {
-                if level == BrotliLevel::default() {
-                    f.write_str("brotli")
-                } else {
-                    f.write_fmt(format_args!("brotli,{}", level.compression_level()))
-                }
-            }
-            Compression::LZ4 => f.write_str("lz4"),
-            Compression::ZSTD(level) => {
-                if level == Self::DEFAULT_ZSTD_LEVEL {
-                    f.write_str("zstd")
-                } else {
-                    f.write_fmt(format_args!("zstd,{}", level.compression_level()))
-                }
-            }
-            Compression::LZ4_RAW => f.write_str("lz4_raw"),
-        }
-    }
-}
-
-impl Serialize for UploadCompression {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(&self.to_string())
-    }
-}
-
-#[derive(Debug, Error)]
-#[error("Malformed compression scheme")]
-pub struct MalformedUploadCompressionError;
-
-impl FromStr for UploadCompression {
-    type Err = MalformedUploadCompressionError;
-
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match s
-            .split_once(",")
-            .map_or((s, Option::<&str>::None), |(x, y)| (x, Some(y)))
-        {
-            ("brotli", level) => Ok(Self(Compression::BROTLI(if let Some(level) = level {
-                BrotliLevel::try_new(level.parse().map_err(|_| MalformedUploadCompressionError)?)
-                    .map_err(|_| MalformedUploadCompressionError)?
-            } else {
-                BrotliLevel::default()
-            }))),
-
-            ("gzip", level) => Ok(Self(Compression::GZIP(if let Some(level) = level {
-                GzipLevel::try_new(level.parse().map_err(|_| MalformedUploadCompressionError)?)
-                    .map_err(|_| MalformedUploadCompressionError)?
-            } else {
-                GzipLevel::default()
-            }))),
-
-            ("lz4", _) => Ok(Self(Compression::LZ4)),
-            ("lz4_raw", _) => Ok(Self(Compression::LZ4_RAW)),
-
-            ("lzo", _) => Ok(Self(Compression::LZO)),
-
-            ("none", _) => Ok(Self(Compression::UNCOMPRESSED)),
-
-            ("snappy", _) => Ok(Self(Compression::SNAPPY)),
-
-            ("zstd", level) => Ok(Self(Compression::ZSTD(if let Some(level) = level {
-                ZstdLevel::try_new(level.parse().map_err(|_| MalformedUploadCompressionError)?)
-                    .map_err(|_| MalformedUploadCompressionError)?
-            } else {
-                Self::DEFAULT_ZSTD_LEVEL
-            }))),
-
-            _ => Err(MalformedUploadCompressionError),
-        }
-    }
+    #[command(flatten)]
+    format: Box<FormatOptions>,
+    #[command(flatten)]
+    infer: Box<InferOptions>,
+    #[command(flatten)]
+    write: Box<WriteOptions>,
+    #[command(flatten)]
+    writer: Box<WriterOptions>,
+    #[arg(long)]
+    schema: Option<String>,
+    #[arg(long, default_value_t = 1024)]
+    record_batch_size: usize,
+    #[arg(long)]
+    batch_buffer_size: Option<usize>,
+    #[arg(long)]
+    writer_max_memory_size: Option<usize>,
+    #[arg(long, value_enum, default_value_t = SchemaOutput::Table)]
+    schema_output: SchemaOutput,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -214,6 +105,14 @@ impl FromStr for Semver {
     }
 }
 
+#[derive(Args, Debug, Serialize)]
+pub struct WriterOptions {
+    #[arg(long, default_value_t = 2)]
+    concurrent_uploads: usize,
+    #[arg(long, default_value_t = 1_000_000_000)]
+    max_part_size: usize,
+}
+
 #[derive(GraphQLQuery)]
 #[graphql(
     query_path = "src/graphql/dataset_upload_info.graphql",
@@ -239,6 +138,7 @@ pub struct DatasetVersionCreate;
 pub struct DatasetVersionInfo;
 
 pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
+    let pb = global.spinner();
     let client = global.graphql_client().await?;
 
     // Find dataset the user wants to upload
@@ -301,129 +201,128 @@ pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
             .id
     };
 
-    // Open file and infer its schema
-    let (mut file_schema, file_format) = {
-        let _pb = global.spinner().with_message(format!(
-            "Inferring dataset schema at {file}",
-            file = args.file
-        ));
-        let mut file = aqora_data_utils::fs::open(&args.file)
-            .await
-            .map_err(|error| {
-                error::user_with_internal(
-                    &format!("Cannot read file at {file}", file = args.file),
-                    "Please make sure you have read permissions",
-                    error,
-                )
-            })?;
-        let file_schema = file
-            .infer_schema(Default::default(), Some(args.sample_size))
-            .await
-            .map_err(|error| {
-                error::user_with_internal(
-                    &format!(
-                        "Cannot infer schema for the file at {file}",
-                        file = args.file
-                    ),
-                    "Please check the file is formatted correctly",
-                    error,
-                )
-            })?;
-        (file_schema, file.format().clone())
-    };
-
-    // Let the user review the inferred schema
-    let will_review_schema = global
-        .confirm()
-        .with_prompt(
-            "Schema successfully inferred from file, would you like to review it before uploading?",
-        )
-        .default(false)
-        .interact()?;
-    if will_review_schema {
-        let json_schema = serde_json::to_string_pretty(&file_schema)?;
-        let new_json_schema = dialoguer::Editor::new()
-            .extension(".json")
-            .edit(&json_schema)?;
-        if new_json_schema.as_deref().is_some_and(str::is_empty) {
-            tracing::info!("Aborting upload...");
-            return Ok(());
-        }
-        if let Some(new_json_schema) = new_json_schema {
-            file_schema = serde_json::from_str(&new_json_schema)?;
-        }
-    }
-
-    // Upload the file
-    let total_rows = {
-        // Open the file
-        let mut file = tokio::fs::File::open(&args.file).await?;
-        let file_size = file.seek(SeekFrom::End(0)).await?;
-        file.rewind().await?;
-
-        // Create progress bar
-        let pb = ProgressBar::new(file_size).with_style(progress_bar::pretty_bytes());
-
-        // Stream batches of records from file
-        let reader = aqora_data_utils::format::FormatReader::new(file, file_format);
-        let values = reader.into_value_stream().await?.inspect_ok(|item| {
-            pb.inc((item.end - item.start) as u64);
-        });
-        let stream = aqora_data_utils::read::from_value_stream(
-            values,
-            file_schema,
-            aqora_data_utils::read::Options {
-                batch_size: Some(args.read_batch_size),
-            },
-        )
-        .map_err(|error| {
-            error::user_with_internal("Cannot read the file you provided", "TODO", error)
-        })?;
-
-        // Create upload client
-        const MB: usize = 1024 * 1024;
-        let client = client
-            .clone()
-            .s3_layer(BackoffRetryLayer::new(
-                RetryStatusCodeRange::for_client_and_server_errors(),
-                ExponentialBackoffBuilder::default(),
-            ))
-            .s3_layer(S3ChecksumLayer::new(Crc32::new()))
-            .to_owned();
-        let writer = DatasetVersionFileUploader::new(client, dataset_version_id)
-            .with_concurrency(Some(args.concurrent_uploads))
-            .with_max_partition_size(Some(args.max_partition_size * MB));
-
-        // Upload batches to server
-        pb.suspend(|| tracing::info!("Starting to upload to server..."));
-        stream
-            .write_to_parquet(
-                writer,
-                aqora_data_utils::write::Options::default().with_properties(
-                    WriterProperties::builder()
-                        .set_compression(args.compression.into())
-                        .build(),
-                ),
-                aqora_data_utils::write::BufferOptions {
-                    batch_buffer_size: Some(2),
-                    max_memory_size: Some(args.max_chunk_size * MB),
-                },
+    let mut writer_client = client.clone();
+    writer_client.s3_layer(S3ChecksumLayer::new(Crc32::new()));
+    writer_client.s3_layer(BackoffRetryLayer::new(
+        RetryStatusCodeRange::for_client_and_server_errors(),
+        ExponentialBackoffBuilder::default(),
+    ));
+    let writer = DatasetVersionFileUploader::new(writer_client, dataset_version_id)
+        .with_concurrency(Some(args.writer.concurrent_uploads))
+        .with_max_partition_size(Some(args.writer.max_part_size));
+    let mut reader = args.format.open(&args.src).await?;
+    let file_len = reader
+        .reader()
+        .metadata()
+        .await
+        .map_err(|err| {
+            error::user(
+                &format!("Could not read metadata from input file: {err}"),
+                "Please check the file and try again",
             )
-            .try_fold(0u64, async |acc, (_part, meta)| {
-                Ok(acc + 0u64.saturating_add_signed(meta.num_rows))
-            })
+        })?
+        .len();
+    let write_options = args.write.parse()?;
+    let read_options = read::Options {
+        batch_size: Some(args.record_batch_size),
+    };
+    let (schema, stream) = if let Some(schema) = args.schema.as_ref() {
+        let schema: Schema = from_json_str_or_file(schema)?;
+        let stream = reader
+            .stream_values()
             .await
-            .map_err(|error| {
-                error::system_with_internal("Cannot upload the file you provided", "TODO", error)
+            .map_err(|err| {
+                error::user(
+                    &format!("Could not read from input file: {err}"),
+                    "Please check the file format and try again",
+                )
             })?
+            .boxed();
+        (schema, stream)
+    } else {
+        pb.set_message(format!("Inferring schema of {}", args.src.display()));
+        let infer_options = args.infer.parse()?;
+        let mut stream = reader.stream_values().await?;
+        let sample_size = args.infer.max_samples();
+        let mut samples = if let Some(sample_size) = sample_size {
+            Vec::with_capacity(sample_size)
+        } else {
+            Vec::new()
+        };
+        while let Some(value) = stream.next().await.transpose().map_err(|err| {
+            error::user(
+                &format!("Failed to read record: {err}"),
+                "Check the data or file and try again",
+            )
+        })? {
+            samples.push(value);
+            if sample_size.is_some_and(|s| samples.len() >= s) {
+                break;
+            }
+        }
+        let schema = if let Ok(schema) = infer::from_samples(&samples, infer_options.clone()) {
+            schema
+        } else {
+            pb.println(render_sample_debug(
+                args.schema_output,
+                &global,
+                infer::debug_samples(&samples, infer_options),
+                &samples,
+            )?);
+            return Err(error::user(
+                "Could not infer the schema from the file given",
+                "Please make sure the data is conform or set overwrites with --overwrites",
+            ));
+        };
+        let stream = futures::stream::iter(samples.into_iter().map(std::io::Result::Ok))
+            .chain(stream)
+            .boxed();
+        (schema, stream)
     };
 
-    tracing::info!(
-        "Successfully uploaded {total_rows} rows to {slug:?} from {file}",
-        slug = args.slug,
-        file = args.file
-    );
+    pb.println(format!(
+        "Using schema:\n\n{}\n\n",
+        render_schema(args.schema_output, &global, &schema)
+            .unwrap_or("Failed to render schema".to_string())
+    ));
 
+    pb.set_style(crate::progress_bar::pretty_bytes());
+    pb.set_message("Writing...");
+    pb.set_length(file_len);
+    pb.set_position(0);
+
+    let stream = stream.inspect_ok(|item| pb.set_position(item.end as u64));
+
+    let stream = read::from_value_stream(stream, schema.clone(), read_options).map_err(|err| {
+        error::user(
+            &format!("Error reading from input file: {err}"),
+            "Please check the file and try again",
+        )
+    })?;
+
+    let written_records = write::ParquetStream::new(
+        stream,
+        writer,
+        schema,
+        write_options,
+        write::BufferOptions {
+            batch_buffer_size: args.batch_buffer_size,
+            max_memory_size: args.writer_max_memory_size,
+        },
+    )
+    .try_fold(0usize, async |acc, (_part, meta)| {
+        Ok(acc + 0usize.saturating_add_signed(meta.num_rows as _))
+    })
+    .await
+    .map_err(|err| {
+        error::user(
+            &format!("An error occurred while writing to the output file: {err}"),
+            "Please check the file format and try again",
+        )
+    })?;
+
+    pb.set_style(indicatif::ProgressStyle::default_spinner());
+    pb.finish_with_message(format!("{written_records} records written",));
     Ok(())
 }
 
@@ -434,7 +333,8 @@ async fn prompt_dataset_creation(global: GlobalArgs) -> Result<()> {
         .default(false)
         .interact()?;
     if open_browser {
-        open::that("https://aqora.io/datasets/new")?;
+        let location = Url::parse(&global.url)?.join("/datasets/new")?;
+        open::that(location.as_str())?;
         Ok(())
     } else {
         Err(error::user(
