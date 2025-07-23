@@ -98,7 +98,11 @@ impl<'de> DeserializeTagged<'de> for JsBackoff {
 pub struct ExponentialBackoffOptions {
     start_delay_ms: usize,
     factor: f64,
+    #[serde(default)]
+    #[ts(optional)]
     max_delay_ms: Option<usize>,
+    #[serde(default)]
+    #[ts(optional)]
     max_retries: Option<usize>,
 }
 
