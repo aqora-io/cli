@@ -56,15 +56,15 @@ impl Body {
         }
     }
 
-    pub async fn bytes(self) -> Result<Bytes, BoxError> {
-        Ok(http_body_util::BodyExt::collect(self).await?.to_bytes())
+    pub async fn bytes(self) -> crate::error::Result<Bytes> {
+        Ok(http_body_util::BodyExt::collect(self)
+            .await
+            .map_err(crate::error::Error::Middleware)?
+            .to_bytes())
     }
 
     pub async fn json<T: serde::de::DeserializeOwned>(self) -> crate::error::Result<T> {
-        let bytes = self
-            .bytes()
-            .await
-            .map_err(crate::error::Error::Middleware)?;
+        let bytes = self.bytes().await?;
         Ok(serde_json::from_slice(&bytes)?)
     }
 
