@@ -1,0 +1,11 @@
+mutation CompleteDatasetVersionFileMutation(
+  $datasetVersionFileId: ID!
+  $eTags: [String!]!
+) {
+  completeDatasetVersionFile(
+    datasetVersionFileId: $datasetVersionFileId
+    eTags: $eTags
+  ) {
+    id
+  }
+}

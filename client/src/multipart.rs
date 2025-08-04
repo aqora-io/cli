@@ -209,7 +209,7 @@ impl fmt::Debug for PartState {
         match self {
             PartState::Creating(bytes, _) => f.debug_tuple("Creating").field(&bytes.len()).finish(),
             PartState::Uploading(bytes, _) => {
-                f.debug_tuple("Creating").field(&bytes.len()).finish()
+                f.debug_tuple("Uploading").field(&bytes.len()).finish()
             }
             PartState::Error(err) => f.debug_tuple("Error").field(err).finish(),
             PartState::Finished(res) => f.debug_tuple("Finished").field(&res.etag).finish(),
@@ -273,6 +273,9 @@ impl UploadPart {
                         *state = Finished(res);
                     }
                     Err(err) => {
+                        // We are using Arc because its safe in non-threaded as well but we could
+                        // also in the future use async_util to imply a non-threaded context
+                        #[allow(clippy::arc_with_non_send_sync)]
                         let err = UploadError::Client(Arc::new(err));
                         *state = Error(err.clone());
                         return Poll::Ready(Err(err));

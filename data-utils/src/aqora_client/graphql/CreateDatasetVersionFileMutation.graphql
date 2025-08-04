@@ -1,0 +1,9 @@
+mutation CreateDatasetVersionFileMutation(
+  $datasetVersionId: ID!
+  $partitionNum: Int!
+) {
+  createDatasetVersionFile(
+    datasetVersionId: $datasetVersionId
+    partitionNum: $partitionNum
+  )
+}

@@ -1,3 +1,4 @@
+use std::fmt;
 use std::io;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -23,6 +24,15 @@ pub enum Body {
         size_hint: http_body::SizeHint,
         stream: MaybeLocalBoxStream<'static, Result<Bytes, BoxError>>,
     },
+}
+
+impl fmt::Debug for Body {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Body::Bytes(bytes) => f.debug_tuple("Bytes").field(&bytes.len()).finish(),
+            Body::Stream { size_hint, .. } => f.debug_tuple("Stream").field(&size_hint).finish(),
+        }
+    }
 }
 
 impl Default for Body {
@@ -232,7 +242,7 @@ pub fn check_status(status: &http::StatusCode) -> Result<(), crate::error::Error
 }
 
 #[derive(Clone)]
-pub(crate) struct HttpClient {
+pub struct HttpClient {
     client: reqwest::Client,
 }
 
@@ -263,8 +273,9 @@ impl Service<Request> for HttpClient {
     }
 }
 
-pub(crate) type HttpBoxService = BoxService<Request, Response, MiddlewareError>;
-pub(crate) type HttpArcLayer<Client> = ArcLayer<Client, Request, Response, MiddlewareError>;
+pub type HttpBoxService = BoxService<Request, Response, MiddlewareError>;
+pub type HttpArcLayer<Client = HttpBoxService> =
+    ArcLayer<Client, Request, Response, MiddlewareError>;
 
 #[derive(Clone, Debug)]
 pub struct NormalizeHttpService<S> {

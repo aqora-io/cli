@@ -17,6 +17,16 @@ pub trait BackoffBuilder: MaybeSend + MaybeSync {
     fn build(&self) -> Self::Backoff;
 }
 
+impl<T> BackoffBuilder for Box<T>
+where
+    T: ?Sized + BackoffBuilder,
+{
+    type Backoff = T::Backoff;
+    fn build(&self) -> Self::Backoff {
+        T::build(self)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ExponentialBackoff {
     secs: f64,
@@ -82,8 +92,89 @@ impl BackoffBuilder for ExponentialBackoffBuilder {
     }
 }
 
+pub struct BackoffFn<F>(F);
+
+impl<F, B> BackoffBuilder for BackoffFn<F>
+where
+    F: Fn() -> B + MaybeSend + MaybeSync,
+    B: Backoff,
+{
+    type Backoff = B;
+    fn build(&self) -> Self::Backoff {
+        self.0()
+    }
+}
+
+pub trait CloneBackoff: Backoff {
+    fn clone_box(&self) -> Box<dyn CloneBackoff>;
+}
+
+impl<B> CloneBackoff for B
+where
+    B: Backoff + Clone + 'static,
+{
+    fn clone_box(&self) -> Box<dyn CloneBackoff> {
+        Box::new(self.clone())
+    }
+}
+
+pub struct BoxBackoff {
+    inner: Box<dyn CloneBackoff>,
+}
+
+impl BoxBackoff {
+    pub fn new<B>(inner: B) -> Self
+    where
+        B: Backoff + Clone + 'static,
+    {
+        Self {
+            inner: Box::new(inner),
+        }
+    }
+}
+
+impl Clone for BoxBackoff {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone_box(),
+        }
+    }
+}
+
+impl Iterator for BoxBackoff {
+    type Item = Duration;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+}
+
+pub type BoxedBackoffBuilder = Box<dyn BackoffBuilder<Backoff = BoxBackoff>>;
+
+pub trait BackoffBuilderExt {
+    fn boxed(self) -> BoxedBackoffBuilder;
+}
+
+impl<B> BackoffBuilderExt for B
+where
+    B: BackoffBuilder + 'static,
+    B::Backoff: Clone + 'static,
+{
+    fn boxed(self) -> BoxedBackoffBuilder {
+        Box::new(BackoffFn(move || BoxBackoff::new(self.build())))
+    }
+}
+
 pub trait RetryClassifier<Res, E> {
     fn should_retry(&self, result: &Result<Res, E>) -> bool;
+}
+
+impl<T, Res, E> RetryClassifier<Res, E> for Box<T>
+where
+    T: ?Sized + RetryClassifier<Res, E>,
+{
+    fn should_retry(&self, result: &Result<Res, E>) -> bool {
+        T::should_retry(self, result)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -172,6 +263,15 @@ where
 pub struct BackoffRetryLayer<R, B> {
     retry_classifier: Arc<R>,
     backoff_builder: Arc<B>,
+}
+
+impl<R, B> Clone for BackoffRetryLayer<R, B> {
+    fn clone(&self) -> Self {
+        Self {
+            retry_classifier: self.retry_classifier.clone(),
+            backoff_builder: self.backoff_builder.clone(),
+        }
+    }
 }
 
 impl<R, B> BackoffRetryLayer<R, B> {

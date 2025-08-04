@@ -1,5 +1,6 @@
 mod add;
 mod clean;
+mod dataset;
 mod global_args;
 mod info;
 mod install;
@@ -20,6 +21,7 @@ pub use global_args::GlobalArgs;
 
 use add::{add, Add};
 use clean::{clean, Clean};
+use dataset::{dataset, Dataset};
 use info::{info, Info};
 use install::{install, Install};
 use lab::{lab, Lab};
@@ -54,6 +56,10 @@ pub enum Commands {
         #[command(subcommand)]
         args: New,
     },
+    Dataset {
+        #[command(subcommand)]
+        args: Dataset,
+    },
     Login(Login),
     Python(Python),
     Shell(Shell),
@@ -80,6 +86,7 @@ impl Cli {
             match self.commands {
                 Commands::Install(args) => install(args, global).await,
                 Commands::New { args } => new(args, global).await,
+                Commands::Dataset { args } => dataset(args, global).await,
                 Commands::Login(args) => login(args, global).await,
                 Commands::Python(args) => python(args, global).await,
                 Commands::Shell(args) => shell(args, global).await,
