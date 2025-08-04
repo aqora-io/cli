@@ -32,6 +32,13 @@ Documentation = "https://github.com/aqora-io/cli"
 aqora = "aqora_cli:main"
 
 [tool.maturin]
-module-name = "aqora_cli"
+python-source = "python"
+module-name = "aqora_cli._aqora_cli"
 strip = true
 features = ["extension-module"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+    "pytest-asyncio>=0.24.0",
+]

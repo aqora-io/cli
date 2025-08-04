@@ -1,12 +1,15 @@
 use std::fmt;
 
+use bytes::Bytes;
 use graphql_client::GraphQLQuery;
 use tower::{Layer, Service, ServiceExt};
 use url::Url;
 
 use crate::async_util::{MaybeSend, MaybeSync};
 use crate::error::{Error, MiddlewareError, Result};
-use crate::http::{check_status, HttpArcLayer, HttpBoxService, HttpClient, Request, Response};
+use crate::http::{
+    check_status, Body, HttpArcLayer, HttpBoxService, HttpClient, Request, Response,
+};
 
 pub(crate) fn get_data<Q: GraphQLQuery>(
     response: graphql_client::Response<Q::ResponseData>,
@@ -96,5 +99,19 @@ impl Client {
             .await?;
         check_status(&res.status())?;
         get_data::<Q>(res.into_body().json().await?)
+    }
+
+    pub async fn send_raw(&self, body: impl Into<Body>) -> Result<Bytes> {
+        let res = self
+            .graphql_service()
+            .oneshot(
+                http::Request::builder()
+                    .method(http::Method::POST)
+                    .uri(self.url().to_string())
+                    .body(body.into())?,
+            )
+            .await?;
+        check_status(&res.status())?;
+        res.into_body().bytes().await
     }
 }
