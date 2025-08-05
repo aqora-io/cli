@@ -1,6 +1,6 @@
 use std::{borrow::Cow, ffi::OsString, sync::Arc};
 
-use aqora_client::Client;
+use aqora_client::{s3::S3Range, Client};
 use aqora_runner::pipeline::{LayerEvaluation, PipelineConfig};
 use pyo3::{
     exceptions::PyValueError,
@@ -136,6 +136,37 @@ impl PyClient {
                 } else {
                     Err(ClientError::new_err("GraphQL returned an empty response"))
                 }
+            })
+        })
+    }
+
+    #[pyo3(signature = (url, *, range=None))]
+    fn s3_get<'py>(
+        &self,
+        py: Python<'py>,
+        url: &str,
+        range: Option<(Option<usize>, Option<usize>)>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let url = url
+            .parse::<Url>()
+            .map_err(|error| PyValueError::new_err(error.to_string()))?;
+        let range = range.map_or(S3Range::FULL, |(lo, hi)| S3Range { lo, hi });
+        let inner = Arc::clone(&self.inner);
+        future_into_py(py, async move {
+            let inner = inner.read().await;
+            let response = inner
+                .client
+                .s3_get_range(url, range)
+                .await
+                .map_err(|error| ClientError::new_err(error.to_string()))?;
+            let body = response
+                .body
+                .bytes()
+                .await
+                .map_err(|error| ClientError::new_err(error.to_string()))?;
+            Python::with_gil(|py| {
+                let body = PyBytes::new(py, &body);
+                Ok(body.unbind())
             })
         })
     }

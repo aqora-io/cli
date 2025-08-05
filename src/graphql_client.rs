@@ -7,10 +7,11 @@ use aqora_client::{
     error::BoxError,
     trace::TraceLayer,
 };
+use axum::http::Uri;
 use reqwest::header::{HeaderValue, USER_AGENT};
 use std::path::Path;
 use tokio::sync::Mutex;
-use url::Url;
+use url::{Host, Url};
 
 pub mod custom_scalars {
     pub type Semver = String;
@@ -38,6 +39,8 @@ impl From<GraphQLError> for Error {
                 error::system(&format!("Failed to parse JSON: {error:?}"), "")
             }
             GraphQLError::S3(error) => error::system(&format!("S3 Error: {error:?}"), ""),
+            GraphQLError::BadS3Range => error::system("Bad S3 range requested", ""),
+            GraphQLError::BadOrigin => error::system("Bad origin requested", ""),
             GraphQLError::Response(errors) => error::user(
                 &errors
                     .into_iter()
@@ -82,6 +85,17 @@ impl CredentialsForUrl {
 
 #[async_trait::async_trait]
 impl CredentialsProvider for CredentialsForUrl {
+    fn authenticates(&self, url: &Uri) -> bool {
+        let Some(scheme) = url.scheme_str() else {
+            return false;
+        };
+        aqora_client::allow_request_url(
+            scheme,
+            url.host().and_then(|host| Host::parse(host).ok()),
+            self.url.host(),
+        )
+    }
+
     async fn bearer_token(&self) -> Result<Option<String>, BoxError> {
         let mut creds = self.credentials.lock().await;
         if let Some(credentials) = creds.take() {
@@ -119,8 +133,8 @@ pub fn unauthenticated_client(url: Url) -> Result<GraphQLClient> {
 
 pub async fn client(config_home: impl AsRef<Path>, url: Url) -> Result<GraphQLClient> {
     let mut client = unauthenticated_client(url.clone())?;
-    client.graphql_layer(CredentialsLayer::new(
-        CredentialsForUrl::load(config_home, url).await?,
-    ));
+    let creds = CredentialsLayer::new(CredentialsForUrl::load(config_home, url).await?);
+    client.graphql_layer(creds.clone());
+    client.s3_layer(creds);
     Ok(client)
 }
