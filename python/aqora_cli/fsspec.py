@@ -3,9 +3,9 @@
 from asyncio import AbstractEventLoop
 from dataclasses import dataclass, replace as dc_replace
 
-from fsspec.asyn import AbstractBufferedFile, AsyncFileSystem
+from fsspec.asyn import AsyncFileSystem
 from fsspec.callbacks import DEFAULT_CALLBACK as FSSPEC_DEFAULT_CALLBACK
-from typing_extensions import Any, Unpack, TypedDict, final, override
+from typing_extensions import Any, Unpack, TypedDict, override
 
 from ._aqora_cli import Client
 
@@ -361,11 +361,6 @@ class AqoraFileSystem(AsyncFileSystem):
         **kwargs,
     ):
         raise NotImplementedError
-
-
-@final
-class AqoraFile(AbstractBufferedFile):
-    pass
 
 
 __all__ = ["AqoraFileSystem"]
