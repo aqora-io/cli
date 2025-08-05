@@ -1,3 +1,5 @@
+use std::ops::RangeBounds;
+
 use tower::{Layer, Service, ServiceExt};
 use url::Url;
 
@@ -110,13 +112,60 @@ impl Client {
         Ok(res.try_into()?)
     }
 
+    #[inline]
     pub async fn s3_get(&self, url: Url) -> Result<S3GetResponse> {
-        let request = http::Request::builder()
+        self.s3_get_range(url, ..).await
+    }
+
+    pub async fn s3_get_range(&self, url: Url, range: impl Into<S3Range>) -> Result<S3GetResponse> {
+        self.validate_url_host(&url)?;
+        let mut request = http::Request::builder()
             .method(http::Method::GET)
-            .uri(url.to_string())
-            .body(Body::default())?;
+            .uri(url.to_string());
+        if let Some(range) = range.into().into_header()? {
+            request = request.header(http::header::RANGE, range);
+        }
+        let request = request.body(Body::default())?;
         let res = self.s3_service().oneshot(request).await?;
         check_status(&res.status())?;
         Ok(res.try_into()?)
+    }
+}
+
+pub struct S3Range {
+    pub lo: Option<usize>,
+    pub hi: Option<usize>,
+}
+
+impl<T: RangeBounds<usize>> From<T> for S3Range {
+    fn from(value: T) -> Self {
+        use std::ops::Bound::*;
+        let lo = match value.start_bound() {
+            Unbounded => None,
+            Included(lo) => Some(*lo),
+            Excluded(lo) => Some(lo + 1),
+        };
+        let hi = match value.end_bound() {
+            Unbounded => None,
+            Included(hi) => Some(*hi),
+            Excluded(hi) => Some(hi - 1),
+        };
+        Self { lo, hi }
+    }
+}
+
+impl S3Range {
+    pub const FULL: Self = Self { lo: None, hi: None };
+
+    pub fn into_header(self) -> Result<Option<http::HeaderValue>> {
+        match (self.lo, self.hi) {
+            (Some(lo), Some(hi)) if lo > hi => Err(crate::error::Error::BadS3Range),
+            (Some(lo), Some(hi)) => Ok(Some(http::HeaderValue::try_from(format!(
+                "bytes={lo}-{hi}"
+            ))?)),
+            (Some(lo), None) => Ok(Some(http::HeaderValue::try_from(format!("bytes={lo}-"))?)),
+            (None, Some(hi)) => Ok(Some(http::HeaderValue::try_from(format!("bytes=-{hi}"))?)),
+            (None, None) => Ok(None),
+        }
     }
 }

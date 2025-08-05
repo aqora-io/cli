@@ -22,7 +22,7 @@ mod wasm;
 #[cfg(feature = "tokio-ws")]
 pub mod ws;
 
-pub use client::Client;
+pub use client::{allow_request_url, Client};
 pub use error::{Error, Result};
 pub use graphql_client::GraphQLQuery;
 pub use reqwest;

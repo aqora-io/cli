@@ -1,4 +1,5 @@
 # pyright: reportAny=false
+import asyncio
 import pytest
 
 from aqora_cli import Client, ClientError
@@ -42,3 +43,30 @@ async def test_authenticated():
     """)
     assert data["viewer"]["id"]
     assert data["viewer"]["username"]
+
+
+@pytest.mark.asyncio
+async def test_s3_get():
+    c = Client()
+    await c.authenticate()
+
+    dataset = await c.send("""
+    {
+        datasetBySlug(owner: "alice", localSlug: "test2") {
+            latestVersion {
+                files {
+                    nodes {
+                        url
+                    }
+                }
+            }
+        }
+    }
+    """)
+    urls = [
+        file["url"]
+        for file in dataset["datasetBySlug"]["latestVersion"]["files"]["nodes"]
+    ]
+    files = await asyncio.gather(*(c.s3_get(url, range=(0, 0)) for url in urls))
+    assert files
+    assert all(files)
