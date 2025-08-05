@@ -28,6 +28,7 @@ venv = [
 ]
 
 fsspec = ["fsspec>=2025.3.0"]
+pyarrow = ["fsspec>=2025.3.0", "pyarrow>=17.0.0"]
 
 [project.urls]
 Repository = "https://github.com/aqora-io/cli"
@@ -44,10 +45,12 @@ features = ["extension-module"]
 
 [dependency-groups]
 dev = [
-    "fsspec>=2025.3.0",
-    "pandas>=2.0.3",
-    "polars>=1.8.2",
-    "pyarrow>=17.0.0",
-    "pytest>=8.3.5",
-    "pytest-asyncio>=0.24.0",
+  "fsspec>=2025.3.0",
+  "pandas>=2.0.3",
+  "pandas-stubs>=2.0.3.230814",
+  "polars>=1.8.2",
+  "pyarrow>=17.0.0",
+  "pyarrow-stubs>=17.19",
+  "pytest>=8.3.5",
+  "pytest-asyncio>=0.24.0",
 ]
