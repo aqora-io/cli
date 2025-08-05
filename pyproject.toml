@@ -11,7 +11,10 @@ dynamic = ["version"]
 # keywords = []
 # classifiers = []
 
-dependencies = ["uv >=0.3.2, <1.0.0"]
+dependencies = ["typing-extensions>=4.13.2", "uv >=0.3.2, <1.0.0"]
+
+[project.entry-points."fsspec.specs"]
+aqora = "aqora_cli.fsspec.AqoraFileSystem"
 
 [project.optional-dependencies]
 venv = [
@@ -23,6 +26,8 @@ venv = [
   "nbconvert >= 7.16.4, <8.0.0",
   "nbformat >= 5.10.4, <6.0.0",
 ]
+
+fsspec = ["fsspec>=2025.3.0"]
 
 [project.urls]
 Repository = "https://github.com/aqora-io/cli"
@@ -39,6 +44,10 @@ features = ["extension-module"]
 
 [dependency-groups]
 dev = [
+    "fsspec>=2025.3.0",
+    "pandas>=2.0.3",
+    "polars>=1.8.2",
+    "pyarrow>=17.0.0",
     "pytest>=8.3.5",
     "pytest-asyncio>=0.24.0",
 ]

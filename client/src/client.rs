@@ -1,9 +1,10 @@
 use std::fmt;
+use std::net::{IpAddr, Ipv4Addr};
 
 use bytes::Bytes;
 use graphql_client::GraphQLQuery;
 use tower::{Layer, Service, ServiceExt};
-use url::Url;
+use url::{Host, Url};
 
 use crate::async_util::{MaybeSend, MaybeSync};
 use crate::error::{Error, MiddlewareError, Result};
@@ -64,6 +65,14 @@ impl Client {
         }
     }
 
+    pub(crate) fn validate_url_host(&self, url: &Url) -> Result<()> {
+        if allow_request_url(url.scheme(), url.host(), self.graphql_url.host()) {
+            Ok(())
+        } else {
+            Err(Error::BadOrigin)
+        }
+    }
+
     #[inline]
     pub fn inner(&self) -> &reqwest::Client {
         &self.inner
@@ -113,5 +122,127 @@ impl Client {
             .await?;
         check_status(&res.status())?;
         res.into_body().bytes().await
+    }
+}
+
+pub fn allow_request_url<T: AsRef<str>>(
+    scheme: &str,
+    host: Option<Host<T>>,
+    expected_host: Option<Host<&str>>,
+) -> bool {
+    let Some((host, expected)) = host.zip(expected_host) else {
+        return false;
+    };
+    match (host, expected) {
+        (Host::Domain(actual), Host::Domain(expected)) => {
+            if scheme != "https" {
+                return actual.as_ref() == "localhost" && expected == "localhost";
+            }
+            let Some(index) = expected.rfind('.') else {
+                return false;
+            };
+            let index = expected[..index].rfind('.').map_or(0, |index| index + 1);
+            actual.as_ref().ends_with(&expected[index..])
+        }
+        (actual, expected) => {
+            let actual = match actual {
+                Host::Ipv4(ip) => IpAddr::V4(ip),
+                Host::Ipv6(ip) => IpAddr::V6(ip),
+                Host::Domain(domain) if domain.as_ref() == "localhost" => {
+                    IpAddr::V4(Ipv4Addr::LOCALHOST)
+                }
+                _ => return false,
+            };
+            let expected = match expected {
+                Host::Ipv4(ip) => IpAddr::V4(ip),
+                Host::Ipv6(ip) => IpAddr::V6(ip),
+                Host::Domain("localhost") => IpAddr::V4(Ipv4Addr::LOCALHOST),
+                _ => return false,
+            };
+            if !expected.is_loopback() && scheme != "https" {
+                return false;
+            }
+            if expected.is_loopback() && actual.is_loopback() {
+                return true;
+            }
+            actual == expected
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    use super::*;
+
+    #[test]
+    fn test_allow_request_url() {
+        // allowed
+        assert!(allow_request_url(
+            "https",
+            Some(Host::Domain("aqora.io")),
+            Some(Host::Domain("aqora.io")),
+        ));
+        assert!(allow_request_url(
+            "https",
+            Some(Host::Domain("cdn.aqora.io")),
+            Some(Host::Domain("aqora.io")),
+        ));
+        assert!(allow_request_url(
+            "https",
+            Some(Host::Domain("cdn.aqora.io")),
+            Some(Host::Domain("api.aqora.io")),
+        ));
+        assert!(allow_request_url(
+            "http",
+            Some(Host::Domain("localhost")),
+            Some(Host::Domain("localhost")),
+        ));
+        assert!(allow_request_url::<String>(
+            "http",
+            Some(Host::Ipv4(Ipv4Addr::LOCALHOST)),
+            Some(Host::Ipv4(Ipv4Addr::LOCALHOST)),
+        ));
+        assert!(allow_request_url::<String>(
+            "http",
+            Some(Host::Ipv6(Ipv6Addr::LOCALHOST)),
+            Some(Host::Ipv4(Ipv4Addr::LOCALHOST)),
+        ));
+        assert!(allow_request_url::<String>(
+            "http",
+            Some(Host::Ipv6(Ipv6Addr::LOCALHOST)),
+            Some(Host::Ipv6(Ipv6Addr::LOCALHOST)),
+        ));
+        assert!(allow_request_url::<String>(
+            "http",
+            Some(Host::Ipv4(Ipv4Addr::LOCALHOST)),
+            Some(Host::Ipv6(Ipv6Addr::LOCALHOST)),
+        ));
+        assert!(allow_request_url::<String>(
+            "https",
+            Some(Host::Ipv4(Ipv4Addr::new(190, 54, 23, 233))),
+            Some(Host::Ipv4(Ipv4Addr::new(190, 54, 23, 233))),
+        ));
+
+        // disallowed
+        assert!(!allow_request_url::<String>(
+            // unexpected host
+            "https",
+            Some(Host::Ipv4(Ipv4Addr::new(190, 54, 23, 233))),
+            Some(Host::Domain("aqora.io"))
+        ));
+        assert!(!allow_request_url(
+            // no tls
+            "http",
+            Some(Host::Domain("aqora.io")),
+            Some(Host::Domain("aqora.io"))
+        ));
+        assert!(!allow_request_url::<String>(
+            // no tls ipv4
+            "http",
+            Some(Host::Ipv4(Ipv4Addr::new(190, 54, 23, 233))),
+            Some(Host::Ipv4(Ipv4Addr::new(190, 54, 23, 233))),
+        ));
     }
 }
