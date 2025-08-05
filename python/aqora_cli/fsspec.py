@@ -1,3 +1,5 @@
+# pyright: reportMissingTypeStubs=false
+
 from asyncio import AbstractEventLoop
 from dataclasses import dataclass, replace as dc_replace
 
