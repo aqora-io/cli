@@ -138,11 +138,11 @@ pub fn allow_request_url<T: AsRef<str>>(
             if scheme != "https" {
                 return actual.as_ref() == "localhost" && expected == "localhost";
             }
-            let Some(index) = expected.rfind('.') else {
-                return false;
-            };
-            let index = expected[..index].rfind('.').map_or(0, |index| index + 1);
-            actual.as_ref().ends_with(&expected[index..])
+            actual
+                .as_ref()
+                .rsplit('.')
+                .zip(expected.rsplit('.').take(2))
+                .all(|(a, b)| a == b)
         }
         (actual, expected) => {
             let actual = match actual {
@@ -159,13 +159,10 @@ pub fn allow_request_url<T: AsRef<str>>(
                 Host::Domain("localhost") => IpAddr::V4(Ipv4Addr::LOCALHOST),
                 _ => return false,
             };
-            if !expected.is_loopback() && scheme != "https" {
-                return false;
+            if expected.is_loopback() {
+                return actual.is_loopback();
             }
-            if expected.is_loopback() && actual.is_loopback() {
-                return true;
-            }
-            actual == expected
+            scheme == "https" && actual == expected
         }
     }
 }
@@ -175,6 +172,12 @@ mod tests {
     use std::net::{Ipv4Addr, Ipv6Addr};
 
     use super::*;
+
+    macro_rules! assert_not {
+        ($expr:expr) => {
+            assert!(!$expr);
+        };
+    }
 
     #[test]
     fn test_allow_request_url() {
@@ -226,19 +229,55 @@ mod tests {
         ));
 
         // disallowed
-        assert!(!allow_request_url::<String>(
-            // unexpected host
+        assert_not!(allow_request_url::<String>(
+            // no host found for target
+            "https",
+            None,
+            Some(Host::Domain("aqora.io")),
+        ));
+        assert_not!(allow_request_url(
+            // no host found for target
+            "https",
+            Some(Host::Domain("aqora.io")),
+            None,
+        ));
+        assert_not!(allow_request_url(
+            // wrong host
+            "https",
+            Some(Host::Domain("example.net")),
+            Some(Host::Domain("aqora.io")),
+        ));
+        assert_not!(allow_request_url(
+            // wrong host
+            "https",
+            Some(Host::Domain("my.sub.example.net")),
+            Some(Host::Domain("aqora.io")),
+        ));
+        assert_not!(allow_request_url::<String>(
+            // wrong host
             "https",
             Some(Host::Ipv4(Ipv4Addr::new(190, 54, 23, 233))),
-            Some(Host::Domain("aqora.io"))
+            Some(Host::Domain("aqora.io")),
         ));
-        assert!(!allow_request_url(
+        assert_not!(allow_request_url(
+            // wrong host
+            "https",
+            Some(Host::Domain("aqora.io")),
+            Some(Host::Ipv4(Ipv4Addr::new(190, 54, 23, 233))),
+        ));
+        assert_not!(allow_request_url(
+            // wrong host
+            "https",
+            Some(Host::Domain("localhost")),
+            Some(Host::Ipv4(Ipv4Addr::new(190, 54, 23, 233))),
+        ));
+        assert_not!(allow_request_url(
             // no tls
             "http",
             Some(Host::Domain("aqora.io")),
-            Some(Host::Domain("aqora.io"))
+            Some(Host::Domain("aqora.io")),
         ));
-        assert!(!allow_request_url::<String>(
+        assert_not!(allow_request_url::<String>(
             // no tls ipv4
             "http",
             Some(Host::Ipv4(Ipv4Addr::new(190, 54, 23, 233))),
