@@ -4,8 +4,9 @@ from aqora_cli.pyarrow import dataset
 
 testdata = [
     ("alice/test", "v1.0.0", (100_000, 8)),
-    ("alice/test2", "v1.0.0", (1_000_000, 8)),
-    ("alice/test2", "v1.1.0", (1_000_000, 8)),
+    ("alice/test2", "v1.0.0", (10_000_000, 8)),
+    ("alice/test2", "v1.1.0", (10_000_000, 8)),
+    ("alice/test2", "v1.2.0", (10_000_000, 8)),
 ]
 
 
