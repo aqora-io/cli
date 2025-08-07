@@ -155,6 +155,7 @@ pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
         })
         .await?;
     let Some(dataset_info) = dataset_info.dataset_by_slug else {
+        drop(pb);
         return prompt_dataset_creation(global).await;
     };
     if !dataset_info.viewer_can_create_version {
