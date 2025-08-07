@@ -69,6 +69,10 @@ pub enum Error {
     Response(Vec<graphql_client::Error>),
     #[error(transparent)]
     S3(#[from] S3Error),
+    #[error("Bad S3 range requested")]
+    BadS3Range,
+    #[error("Bad Origin")]
+    BadOrigin,
     #[error(transparent)]
     InvalidHeaderValue(#[from] reqwest::header::InvalidHeaderValue),
     #[cfg(feature = "tokio-ws")]

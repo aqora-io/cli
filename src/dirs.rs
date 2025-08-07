@@ -26,6 +26,18 @@ const PROJECT_CONFIG_FILENAME: &str = "config.toml";
 const VSCODE_SETTINGS_FILENAME: &str = "settings.json";
 const CREDENTIALS_FILENAME: &str = "credentials.json";
 
+pub fn config_home() -> Result<PathBuf> {
+    Ok(dirs::data_dir()
+        .or_else(dirs::config_dir)
+        .ok_or_else(|| {
+            error::system(
+                "Could not find config directory",
+                "This is a bug, please report it",
+            )
+        })?
+        .join("aqora"))
+}
+
 pub fn credentials_path(config_home: impl AsRef<Path>) -> std::path::PathBuf {
     config_home.as_ref().join(CREDENTIALS_FILENAME)
 }

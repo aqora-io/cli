@@ -11,7 +11,10 @@ dynamic = ["version"]
 # keywords = []
 # classifiers = []
 
-dependencies = ["uv >=0.3.2, <1.0.0"]
+dependencies = ["typing-extensions>=4.13.2", "uv >=0.3.2, <1.0.0"]
+
+[project.entry-points."fsspec.specs"]
+aqora = "aqora_cli.fsspec.AqoraFileSystem"
 
 [project.optional-dependencies]
 venv = [
@@ -24,6 +27,9 @@ venv = [
   "nbformat >= 5.10.4, <6.0.0",
 ]
 
+fsspec = ["fsspec>=2025.3.0"]
+pyarrow = ["fsspec>=2025.3.0", "pyarrow>=17.0.0"]
+
 [project.urls]
 Repository = "https://github.com/aqora-io/cli"
 Documentation = "https://github.com/aqora-io/cli"
@@ -32,6 +38,19 @@ Documentation = "https://github.com/aqora-io/cli"
 aqora = "aqora_cli:main"
 
 [tool.maturin]
-module-name = "aqora_cli"
+python-source = "python"
+module-name = "aqora_cli._aqora_cli"
 strip = true
 features = ["extension-module"]
+
+[dependency-groups]
+dev = [
+  "fsspec>=2025.3.0",
+  "pandas>=2.0.3",
+  "pandas-stubs>=2.0.3.230814",
+  "polars>=1.8.2",
+  "pyarrow>=17.0.0",
+  "pyarrow-stubs>=17.19",
+  "pytest>=8.3.5",
+  "pytest-asyncio>=0.24.0",
+]

@@ -1,7 +1,7 @@
 use crate::{
     colors::ColorChoiceExt,
     dialog::{Confirm, FuzzySelect},
-    dirs::{init_venv, opt_init_venv},
+    dirs::{config_home, init_venv, opt_init_venv},
     error::{self, Result},
     graphql_client::{client, graphql_url, unauthenticated_client, GraphQLClient},
     progress_bar::default_spinner,
@@ -124,15 +124,7 @@ impl GlobalArgs {
     pub async fn config_home(&self) -> Result<PathBuf> {
         let path = match &self.config_home {
             Some(path) => path.clone(),
-            None => dirs::data_dir()
-                .or_else(dirs::config_dir)
-                .ok_or_else(|| {
-                    error::system(
-                        "Could not find config directory",
-                        "This is a bug, please report it",
-                    )
-                })?
-                .join("aqora"),
+            None => config_home()?,
         };
         if tokio::fs::read_dir(&path).await.is_err() {
             tokio::fs::create_dir_all(&path).await.map_err(|e| {

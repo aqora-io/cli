@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use async_trait::async_trait;
+use http::Uri;
 use reqwest::header::{HeaderName, HeaderValue, AUTHORIZATION};
 use tower::{Layer, Service};
 
@@ -18,6 +19,10 @@ pub struct Tokens {
 #[cfg_attr(feature = "threaded", async_trait)]
 #[cfg_attr(not(feature = "threaded"), async_trait(?Send))]
 pub trait CredentialsProvider {
+    #[allow(unused_variables)]
+    fn authenticates(&self, url: &Uri) -> bool {
+        true
+    }
     async fn bearer_token(&self) -> Result<Option<String>, BoxError>;
     async fn revoke_access_token(&self) -> Result<(), BoxError> {
         Ok(())
@@ -37,6 +42,9 @@ impl<T> CredentialsProvider for &T
 where
     T: ?Sized + CredentialsProvider + MaybeSend + MaybeSync,
 {
+    fn authenticates(&self, url: &Uri) -> bool {
+        T::authenticates(self, url)
+    }
     async fn bearer_token(&self) -> Result<Option<String>, BoxError> {
         T::bearer_token(self).await
     }
@@ -215,6 +223,11 @@ where
         }
     }
     fn call(&mut self, mut req: crate::http::Request) -> Self::Future {
+        if !self.credentials.authenticates(req.uri()) {
+            let fut = self.inner.call(req);
+            return async move { Ok(fut.await?) }.boxed_maybe_local();
+        }
+
         if let Poll::Ready(Some(token)) = &self.ready.bearer {
             req.headers_mut().insert(AUTHORIZATION, token.clone());
         }
