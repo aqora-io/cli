@@ -812,6 +812,11 @@ input CreateDatasetInput {
 	tags: [ID!]!
 }
 
+input CreateDatasetVersionInput {
+	datasetVersionId: ID
+	version: Semver
+}
+
 input CreateEventInput {
 	slug: String!
 	title: String!
@@ -893,7 +898,7 @@ type Dataset implements Votable & ForumOwner & Node {
 	analytics: DatasetAnalytics!
 	latestVersion: DatasetVersion
 	version(major: Int!, minor: Int!, patch: Int!): DatasetVersion
-	versions(after: String, before: String, first: Int, last: Int, published: Boolean): DatasetVersionConnection!
+	versions(after: String, before: String, first: Int, last: Int, filters: DatasetVersionQueryFilters): DatasetVersionConnection!
 	competitions(after: String, before: String, first: Int, last: Int, search: String): DatasetCompetitionConnection!
 	tags(after: String, before: String, first: Int, last: Int): DatasetTagConnection!
 	voted: EntityVote
@@ -1030,17 +1035,35 @@ type DatasetTagConnection {
 	"""
 	A list of edges.
 	"""
-	edges: [TagEdge!]!
+	edges: [DatasetTagConnectionEdge!]!
 	"""
 	A list of nodes.
 	"""
 	nodes: [Tag!]!
+	totalCount: Int!
+}
+
+"""
+An edge in a connection.
+"""
+type DatasetTagConnectionEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Tag!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type DatasetVersion implements Node {
 	version: Semver!
 	description: String!
+	license: String
 	publishedAt: DateTime
+	createdAt: DateTime!
+	updatedAt: DateTime!
 	id: ID!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	dataset: Dataset!
@@ -1048,6 +1071,10 @@ type DatasetVersion implements Node {
 	files(after: String, before: String, first: Int, last: Int): DatasetVersionFileConnection!
 	analytics: DatasetAnalytics!
 	authors(after: String, before: String, first: Int, last: Int, search: String): DatasetVersionAuthorConnection!
+	schema: JSON
+	rows: Int!
+	size: Int!
+	records(offset: Int! = 0, limit: Int! = 100): [JSON!]!
 }
 
 interface DatasetVersionAuthor {
@@ -1067,6 +1094,7 @@ type DatasetVersionAuthorConnection {
 	A list of nodes.
 	"""
 	nodes: [DatasetVersionAuthor!]!
+	totalCount: Int!
 }
 
 """
@@ -1101,6 +1129,18 @@ type DatasetVersionConnection {
 	A list of nodes.
 	"""
 	nodes: [DatasetVersion!]!
+	totalCount: Int!
+}
+
+enum DatasetVersionConnectionOrder {
+	CREATED_AT
+	PUBLISHED_AT
+	UPDATED_AT
+}
+
+enum DatasetVersionConnectionSortDirection {
+	ASCENDING
+	DESCENDING
 }
 
 """
@@ -1119,12 +1159,13 @@ type DatasetVersionEdge {
 
 type DatasetVersionFile implements Node {
 	partitionNum: Int!
-	size: Int
-	rows: Int
 	id: ID!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	datasetVersion: DatasetVersion!
 	url: Url!
+	size: Int!
+	rows: Int!
+	records(offset: Int! = 0, limit: Int! = 100): [JSON!]!
 }
 
 type DatasetVersionFileConnection {
@@ -1154,6 +1195,12 @@ type DatasetVersionFileEdge {
 	A cursor for use in pagination
 	"""
 	cursor: String!
+}
+
+input DatasetVersionQueryFilters {
+	published: Boolean = null
+	order: DatasetVersionConnectionOrder! = CREATED_AT
+	sortDirection: DatasetVersionConnectionSortDirection! = DESCENDING
 }
 
 """
@@ -1209,6 +1256,7 @@ enum EntityActivitiesConnectionKind {
 	SUBMISSION
 	TOPIC
 	COMMENT
+	DATASET
 }
 
 type EntityBadge implements Node {
@@ -1890,9 +1938,16 @@ type Mutation {
 	removeDatasetCompetition(datasetId: ID!, competitionId: ID!): Competition!
 	addDatasetMember(datasetId: ID!, entityId: ID!): DatasetMembershipConnectionEdge!
 	removeDatasetMember(datasetId: ID!, entityId: ID!): ID!
-	createDatasetVersion(datasetId: ID!): DatasetVersionEdge!
-	publishDatasetVersion(datasetVersionId: ID!): DatasetVersionEdge!
-	updateDatasetVersion(datasetVersionId: ID!, input: UpdateDatasetVersionInput!): DatasetVersionEdge!
+	"""
+	Creates a new dataset version:
+	inheriting and bumping SemVer with a payload,
+	or creating a fresh version if none provided.
+	"""
+	createDatasetVersion(datasetId: ID!, input: CreateDatasetVersionInput): DatasetVersion!
+	startDatasetVersionUpload(datasetVersionId: ID!): DatasetVersion!
+	finishDatasetVersionUpload(datasetVersionId: ID!): DatasetVersion!
+	publishDatasetVersion(datasetVersionId: ID!): DatasetVersion!
+	updateDatasetVersion(datasetVersionId: ID!, input: UpdateDatasetVersionInput!): DatasetVersion!
 	deleteDatasetVersion(datasetVersionId: ID!): ID!
 	"""
 	Attach a file to a dataset version. Returns an upload ID which you can use
@@ -2393,7 +2448,7 @@ type Query {
 	events(after: String, before: String, first: Int, last: Int, search: String): EventConnection!
 	eventBySlug(slug: String!): Event
 	version: Version!
-	tags(after: String, before: String, first: Int, last: Int): TagConnection!
+	tags(after: String, before: String, first: Int, last: Int, search: String): TagConnection!
 	forums(after: String, before: String, first: Int, last: Int, search: String): ForumConnection!
 	forumBySlug(slug: String!): Forum
 	blogArticles(after: String, before: String, first: Int, last: Int): BlogArticleConnection!
@@ -2854,6 +2909,7 @@ input UpdateDatasetVersionInput {
 	version: Semver
 	description: String
 	authors: [DatasetVersionAuthorInput!]
+	license: String
 }
 
 input UpdateEventInput {

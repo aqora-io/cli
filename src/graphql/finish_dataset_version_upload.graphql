@@ -1,0 +1,5 @@
+mutation FinishDatasetVersionUpload($datasetVersionId: ID!) {
+  finishDatasetVersionUpload(datasetVersionId: $datasetVersionId) {
+    id
+  }
+}

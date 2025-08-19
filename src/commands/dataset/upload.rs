@@ -28,7 +28,9 @@ pub struct Upload {
     slug: String,
     /// Path to file you will upload to Aqora.
     src: PathBuf,
-    /// Dataset version you will be uploading. Omit this flag to draft a new version.
+    /// Target dataset version.
+    /// Omit to draft a new version (0.0.0).
+    /// Non-existing versions are created, existing ones are overwritten.
     #[arg(short, long)]
     version: Option<Semver>,
 
@@ -137,6 +139,31 @@ pub struct DatasetVersionCreate;
 )]
 pub struct DatasetVersionInfo;
 
+#[derive(GraphQLQuery)]
+#[graphql(
+    query_path = "src/graphql/finish_dataset_version_upload.graphql",
+    schema_path = "schema.graphql",
+    response_derives = "Debug"
+)]
+pub struct FinishDatasetVersionUpload;
+
+async fn create_version_id(
+    global: &GlobalArgs,
+    dataset_id: String,
+    version: Option<String>,
+) -> Result<String> {
+    Ok(global
+        .graphql_client()
+        .await?
+        .send::<DatasetVersionCreate>(dataset_version_create::Variables {
+            dataset_id,
+            version,
+        })
+        .await?
+        .create_dataset_version
+        .id)
+}
+
 pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
     let pb = global.spinner();
     let client = global.graphql_client().await?;
@@ -165,41 +192,36 @@ pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
         ));
     }
 
-    // Find or create a dataset version
-    let dataset_version_id = if let Some(semver) = args.version {
-        let result = client
-            .send::<DatasetVersionInfo>(dataset_version_info::Variables {
-                dataset_id: dataset_info.id,
-                major: semver.major as _,
-                minor: semver.minor as _,
-                patch: semver.patch as _,
-            })
-            .await?;
+    let dataset_id = dataset_info.id;
 
-        if let dataset_version_info::DatasetVersionInfoNode::Dataset(node) = result.node {
-            node.version
-                .ok_or_else(|| {
-                    error::user(
-                        &format!("No such dataset version: {owner}/{local_slug}@{semver}"),
-                        "You may also omit the version argument to draft a new version",
-                    )
-                })?
-                .id
-        } else {
-            return Err(error::system(
-                "Cannot find dataset by id",
-                "This should not happen, kindly report this bug to Aqora developers please!",
-            ));
+    // Find or create a dataset version
+    let dataset_version_id = match args.version {
+        None => create_version_id(&global, dataset_id, None).await?,
+        Some(semver) => {
+            let node = client
+                .send::<DatasetVersionInfo>(dataset_version_info::Variables {
+                    dataset_id: dataset_id.clone(),
+                    major: semver.major as _,
+                    minor: semver.minor as _,
+                    patch: semver.patch as _,
+                })
+                .await?
+                .node;
+
+            let dataset_version = match node {
+                dataset_version_info::DatasetVersionInfoNode::Dataset(dataset) => dataset,
+                _ => return Err(error::system(
+                    "Cannot find dataset by id",
+                    "This should not happen, kindly report this bug to Aqora developers please!",
+                )),
+            };
+
+            if let Some(version) = dataset_version.version {
+                version.id
+            } else {
+                create_version_id(&global, dataset_id, Some(semver.to_string())).await?
+            }
         }
-    } else {
-        client
-            .send::<DatasetVersionCreate>(dataset_version_create::Variables {
-                dataset_id: dataset_info.id,
-            })
-            .await?
-            .create_dataset_version
-            .node
-            .id
     };
 
     let mut writer_client = client.clone();
@@ -208,7 +230,7 @@ pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
         RetryStatusCodeRange::for_client_and_server_errors(),
         ExponentialBackoffBuilder::default(),
     ));
-    let writer = DatasetVersionFileUploader::new(writer_client, dataset_version_id)
+    let writer = DatasetVersionFileUploader::new(writer_client, &dataset_version_id)
         .with_concurrency(Some(args.writer.concurrent_uploads))
         .with_max_partition_size(Some(args.writer.max_part_size));
     let mut reader = args.format.open(&args.src).await?;
@@ -321,6 +343,12 @@ pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
             "Please check the file format and try again",
         )
     })?;
+
+    let _ = client
+        .send::<FinishDatasetVersionUpload>(finish_dataset_version_upload::Variables {
+            dataset_version_id,
+        })
+        .await?;
 
     pb.set_style(indicatif::ProgressStyle::default_spinner());
     pb.finish_with_message(format!("{written_records} records written",));
