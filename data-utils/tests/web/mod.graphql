@@ -10,10 +10,8 @@ mutation CreateDatasetMutation($slug: String!) {
   createDataset(
     input: { slug: $slug, name: $slug, visibility: UNAUTHENTICATED }
   ) {
-    node {
-      id
-      slug
-    }
+    id
+    slug
   }
 }
 
