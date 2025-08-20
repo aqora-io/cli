@@ -141,7 +141,7 @@ pub fn allow_request_url<T: AsRef<str>>(
             actual
                 .as_ref()
                 .rsplit('.')
-                .zip(expected.rsplit('.').take(2))
+                .zip(expected.rsplit('.'))
                 .all(|(a, b)| a == b)
         }
         (actual, expected) => {
@@ -194,7 +194,7 @@ mod tests {
         ));
         assert!(allow_request_url(
             "https",
-            Some(Host::Domain("cdn.aqora.io")),
+            Some(Host::Domain("cdn.api.aqora.io")),
             Some(Host::Domain("api.aqora.io")),
         ));
         assert!(allow_request_url(
@@ -229,6 +229,12 @@ mod tests {
         ));
 
         // disallowed
+        assert_not!(allow_request_url(
+            // do not send api creds to cdn
+            "https",
+            Some(Host::Domain("cdn.aqora.io")),
+            Some(Host::Domain("api.aqora.io")),
+        ));
         assert_not!(allow_request_url::<String>(
             // no host found for target
             "https",
