@@ -1,14 +1,8 @@
-use futures::prelude::*;
 use serde::{Deserialize, Serialize};
 use tokio::io::{self, AsyncRead, AsyncSeek, AsyncSeekExt};
 
 use crate::async_util::parquet_async::*;
-use crate::infer::{self};
-use crate::process::ProcessItem;
-use crate::read::{self, ValueRecordBatchStream};
-use crate::schema::Schema;
-use crate::value::Value;
-use crate::Result;
+use crate::process::ProcessItemStream;
 
 pub trait AsyncFileReader: AsyncRead + AsyncSeek + MaybeSend + Unpin {}
 
@@ -130,9 +124,7 @@ where
     }
 }
 
-pub(crate) type ValueStream<'a> = BoxStream<'a, io::Result<ProcessItem<Value>>>;
-
-async fn stream_values<'a, R>(mut reader: R, format: &Format) -> io::Result<ValueStream<'a>>
+async fn stream_values<'a, R>(mut reader: R, format: &Format) -> io::Result<ProcessItemStream<'a>>
 where
     R: AsyncFileReader + 'a,
 {
@@ -145,65 +137,12 @@ where
     })
 }
 
-pub(crate) async fn take_samples(
-    stream: &mut ValueStream<'_>,
-    sample_size: Option<usize>,
-) -> io::Result<Vec<ProcessItem<Value>>> {
-    let mut samples = if let Some(sample_size) = sample_size {
-        Vec::with_capacity(sample_size)
-    } else {
-        Vec::new()
-    };
-    while let Some(value) = stream.next().await.transpose()? {
-        samples.push(value);
-        if sample_size.is_some_and(|s| samples.len() >= s) {
-            break;
-        }
-    }
-    Ok(samples)
-}
-
 impl<R> FormatReader<R>
 where
     R: AsyncFileReader,
 {
-    pub async fn stream_values(&mut self) -> io::Result<ValueStream> {
+    pub async fn stream_values(&mut self) -> io::Result<ProcessItemStream> {
         stream_values(&mut self.reader, &self.format).await
-    }
-
-    pub async fn stream_record_batches(
-        &mut self,
-        schema: Schema,
-        options: read::Options,
-    ) -> Result<ValueRecordBatchStream<ValueStream>> {
-        read::from_value_stream(self.stream_values().await?, schema, options)
-    }
-
-    pub async fn infer_schema(
-        &mut self,
-        options: infer::Options,
-        sample_size: Option<usize>,
-    ) -> Result<Schema> {
-        let samples = take_samples(&mut self.stream_values().await?, sample_size).await?;
-        Ok(infer::from_samples(&samples, options)?)
-    }
-
-    pub async fn infer_and_stream_record_batches(
-        &mut self,
-        infer_options: infer::Options,
-        sample_size: Option<usize>,
-        read_options: read::Options,
-    ) -> Result<ValueRecordBatchStream<ValueStream>> {
-        let mut stream = self.stream_values().await?;
-        let samples = take_samples(&mut stream, sample_size).await?;
-        let schema = infer::from_samples(&samples, infer_options)?;
-        read::from_value_stream(
-            boxed_stream(
-                futures::stream::iter(samples.into_iter().map(io::Result::Ok)).chain(stream),
-            ),
-            schema.clone(),
-            read_options,
-        )
     }
 }
 
@@ -211,33 +150,7 @@ impl<R> FormatReader<R>
 where
     R: AsyncFileReader + 'static,
 {
-    pub async fn into_value_stream(self) -> io::Result<ValueStream<'static>> {
+    pub async fn into_value_stream(self) -> io::Result<ProcessItemStream<'static>> {
         stream_values(self.reader, &self.format).await
-    }
-
-    pub async fn into_record_batch_stream(
-        self,
-        schema: Schema,
-        options: read::Options,
-    ) -> Result<ValueRecordBatchStream<ValueStream<'static>>> {
-        read::from_value_stream(self.into_value_stream().await?, schema, options)
-    }
-
-    pub async fn into_inferred_record_batch_stream(
-        self,
-        infer_options: infer::Options,
-        sample_size: Option<usize>,
-        read_options: read::Options,
-    ) -> Result<ValueRecordBatchStream<ValueStream<'static>>> {
-        let mut stream = self.into_value_stream().await?;
-        let samples = take_samples(&mut stream, sample_size).await?;
-        let schema = infer::from_samples(&samples, infer_options)?;
-        read::from_value_stream(
-            boxed_stream(
-                futures::stream::iter(samples.into_iter().map(io::Result::Ok)).chain(stream),
-            ),
-            schema.clone(),
-            read_options,
-        )
     }
 }

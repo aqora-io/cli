@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use tokio::io::{self, AsyncRead, AsyncSeek, AsyncSeekExt};
 
 use crate::async_util::parquet_async::{boxed_stream, MaybeSend};
-use crate::format::{Format, ValueStream};
-use crate::process::ProcessItem;
+use crate::format::Format;
+use crate::process::{ProcessItem, ProcessItemStream};
 use crate::value::{DateParseOptions, Value, ValueExt};
 
 pub mod reader;
@@ -103,7 +103,7 @@ impl From<JsonFormat> for Format {
     }
 }
 
-pub async fn read<'a, R>(mut reader: R, options: JsonFormat) -> io::Result<ValueStream<'a>>
+pub async fn read<'a, R>(mut reader: R, options: JsonFormat) -> io::Result<ProcessItemStream<'a>>
 where
     R: AsyncRead + AsyncSeek + MaybeSend + Unpin + 'a,
 {
@@ -239,7 +239,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{format::AsyncFileReader, FormatReader};
+    use crate::{format::AsyncFileReader, read::ValueStream, FormatReader};
 
     pub fn load_json(path: &str, format: JsonFormat) -> FormatReader<impl AsyncFileReader> {
         FormatReader::new(
@@ -253,6 +253,9 @@ mod test {
         println!(
             "basic_json: {:#?}",
             load_json("basic.json", JsonFormat::default())
+                .stream_values()
+                .await
+                .unwrap()
                 .infer_schema(Default::default(), None)
                 .await
                 .unwrap()
@@ -269,7 +272,10 @@ mod test {
                 .unwrap(),
             JsonFormat::default().into(),
         )
-        .infer_and_stream_record_batches(Default::default(), None, Default::default())
+        .stream_values()
+        .await
+        .unwrap()
+        .into_inferred_record_batch_stream(Default::default(), None, Default::default())
         .await
         .unwrap()
         .write_to_parquet(
@@ -297,6 +303,9 @@ mod test {
                     ..Default::default()
                 }
             )
+            .stream_values()
+            .await
+            .unwrap()
             .infer_schema(Default::default(), None)
             .await
             .unwrap()
@@ -314,6 +323,9 @@ mod test {
                     ..Default::default()
                 }
             )
+            .stream_values()
+            .await
+            .unwrap()
             .infer_schema(Default::default(), None)
             .await
             .unwrap()
@@ -332,6 +344,9 @@ mod test {
                     ..Default::default()
                 }
             )
+            .stream_values()
+            .await
+            .unwrap()
             .infer_schema(Default::default(), None)
             .await
             .unwrap()
@@ -349,6 +364,9 @@ mod test {
                     ..Default::default()
                 }
             )
+            .stream_values()
+            .await
+            .unwrap()
             .infer_schema(Default::default(), None)
             .await
             .unwrap()
@@ -367,6 +385,9 @@ mod test {
                     ..Default::default()
                 }
             )
+            .stream_values()
+            .await
+            .unwrap()
             .infer_schema(Default::default(), None)
             .await
             .unwrap()

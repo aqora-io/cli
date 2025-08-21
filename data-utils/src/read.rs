@@ -7,7 +7,9 @@ use pin_project::pin_project;
 use serde::{Deserialize, Serialize};
 use serde_arrow::{schema::SerdeArrowSchema, ArrayBuilder};
 
+use crate::async_util::parquet_async::*;
 use crate::error::{Error, Result};
+use crate::infer;
 use crate::schema::Schema;
 
 pub trait RecordBatchStream {
@@ -142,6 +144,8 @@ pub struct ValueRecordBatchStream<S> {
     current_batch_size: usize,
     reader_done: bool,
 }
+
+pub type ValueRecordBatchBoxStream<'a, T> = ValueRecordBatchStream<BoxStream<'a, T>>;
 
 impl<S> ValueRecordBatchStream<S> {
     fn new(stream: S, schema: Schema, builder: ArrayBuilder, options: Options) -> Self {
@@ -285,4 +289,89 @@ where
     Ok(ValueRecordBatchStream::new(
         stream, schema, builder, options,
     ))
+}
+
+pub async fn from_inferred_value_stream<'s, S, T, E>(
+    mut stream: S,
+    infer_options: infer::Options,
+    sample_size: Option<usize>,
+    read_options: Options,
+) -> Result<ValueRecordBatchStream<BoxStream<'s, Result<T, E>>>>
+where
+    S: Stream<Item = Result<T, E>> + Unpin + MaybeSend + 's,
+    Error: From<E>,
+    T: Serialize + MaybeSend + 's,
+    E: 's,
+{
+    let samples = infer::take_samples(&mut stream, sample_size).await?;
+    let schema = infer::from_samples(&samples, infer_options)?;
+    from_value_stream(
+        boxed_stream(
+            futures::stream::iter(samples.into_iter().map(Result::<T, E>::Ok)).chain(stream),
+        ),
+        schema.clone(),
+        read_options,
+    )
+}
+
+pub trait ValueStream:
+    TryStream<Ok: Serialize + MaybeSend, Error: Into<Error>> + Sized + Unpin + MaybeSend
+{
+    fn take_samples(
+        &mut self,
+        sample_size: Option<usize>,
+    ) -> BoxFuture<Result<Vec<Self::Ok>, Self::Error>> {
+        boxed_fut(async move { infer::take_samples(self, sample_size).await })
+    }
+
+    fn infer_schema(
+        &mut self,
+        options: infer::Options,
+        sample_size: Option<usize>,
+    ) -> BoxFuture<Result<Schema>> {
+        boxed_fut(async move {
+            let samples = self
+                .take_samples(sample_size)
+                .await
+                .map_err(|err| err.into())?;
+            Ok(infer::from_samples(&samples, options)?)
+        })
+    }
+
+    fn into_record_batch_stream<'s>(
+        self,
+        schema: Schema,
+        options: Options,
+    ) -> Result<ValueRecordBatchStream<BoxStream<'s, Result<Self::Ok>>>>
+    where
+        Self: 's,
+    {
+        from_value_stream(
+            boxed_stream(self.map_err(Self::Error::into).into_stream()),
+            schema,
+            options,
+        )
+    }
+
+    fn into_inferred_record_batch_stream<'s>(
+        self,
+        infer_options: infer::Options,
+        sample_size: Option<usize>,
+        read_options: Options,
+    ) -> BoxFuture<'s, Result<ValueRecordBatchBoxStream<'s, Result<Self::Ok>>>>
+    where
+        Self: 's,
+    {
+        boxed_fut(from_inferred_value_stream(
+            self.map_err(Self::Error::into).into_stream(),
+            infer_options,
+            sample_size,
+            read_options,
+        ))
+    }
+}
+
+impl<T> ValueStream for T where
+    T: TryStream<Ok: Serialize + MaybeSend, Error: Into<Error>> + Sized + Unpin + MaybeSend
+{
 }
