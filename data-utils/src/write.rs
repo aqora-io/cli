@@ -372,10 +372,15 @@ mod test {
     #[tokio::test]
     async fn test_basic_json() {
         use super::*;
+        use crate::read::ValueStream;
         use futures::stream::TryStreamExt;
+
         let tempdir = tempfile::TempDir::with_prefix("aqora-data-utils").unwrap();
         let writer = crate::fs::DirWriter::new(tempdir.path());
         let mut parquets = crate::fs::open("./tests/data/files/json/basic.json")
+            .await
+            .unwrap()
+            .into_value_stream()
             .await
             .unwrap()
             .into_inferred_record_batch_stream(

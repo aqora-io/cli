@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 use tokio::io::{self, AsyncRead, AsyncSeek, AsyncSeekExt};
 
 use crate::async_util::parquet_async::{boxed_stream, MaybeSend};
-use crate::format::{Format, ValueStream};
+use crate::format::Format;
+use crate::process::ProcessItemStream;
 use crate::serde::{ascii_char, ascii_char_opt, regex_opt};
 use crate::value::{DateParseOptions, Value, ValueExt};
 
@@ -122,7 +123,7 @@ impl From<CsvFormat> for Format {
     }
 }
 
-pub async fn read<'a, R>(mut reader: R, options: CsvFormat) -> io::Result<ValueStream<'a>>
+pub async fn read<'a, R>(mut reader: R, options: CsvFormat) -> io::Result<ProcessItemStream<'a>>
 where
     R: AsyncRead + AsyncSeek + MaybeSend + Unpin + 'a,
 {
@@ -255,7 +256,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{format::AsyncFileReader, FormatReader};
+    use crate::{format::AsyncFileReader, read::ValueStream, FormatReader};
 
     pub fn load_csv(path: &str, format: CsvFormat) -> FormatReader<impl AsyncFileReader> {
         FormatReader::new(
@@ -277,6 +278,9 @@ mod test {
                     ..Default::default()
                 }
             )
+            .stream_values()
+            .await
+            .unwrap()
             .infer_schema(Default::default(), None)
             .await
             .unwrap()
@@ -294,6 +298,9 @@ mod test {
                     ..Default::default()
                 }
             )
+            .stream_values()
+            .await
+            .unwrap()
             .infer_schema(Default::default(), None)
             .await
             .unwrap()
@@ -311,6 +318,9 @@ mod test {
                     ..Default::default()
                 }
             )
+            .stream_values()
+            .await
+            .unwrap()
             .infer_schema(Default::default(), None)
             .await
             .unwrap()
