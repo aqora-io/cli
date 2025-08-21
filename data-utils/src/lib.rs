@@ -3,6 +3,7 @@ pub mod aqora_client;
 mod async_util;
 #[cfg(feature = "csv")]
 pub mod csv;
+pub mod dir;
 pub mod error;
 #[cfg(any(feature = "csv", feature = "json"))]
 pub mod format;
@@ -33,5 +34,6 @@ pub use format::{Format, FormatReader};
 #[cfg(feature = "json")]
 pub use json::JsonFormat;
 pub use process::ProcessItem;
+pub use read::ValueStream;
 pub use schema::Schema;
 pub use value::DateParseOptions;

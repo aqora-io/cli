@@ -3,6 +3,7 @@ pub mod aqora_client;
 pub mod blob;
 #[cfg(feature = "csv")]
 pub mod csv;
+pub mod dir;
 pub mod error;
 pub mod format;
 pub mod infer;

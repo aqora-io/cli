@@ -16,6 +16,8 @@ pub enum Error {
     #[cfg(feature = "wasm")]
     #[error(transparent)]
     Js(#[from] crate::wasm::error::WasmError),
+    #[error(transparent)]
+    Glob(#[from] crate::dir::GlobError),
 }
 
 impl From<Infallible> for Error {

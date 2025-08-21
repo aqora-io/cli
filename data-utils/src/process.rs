@@ -6,6 +6,12 @@ use tokio::io::{self, AsyncRead, ReadBuf};
 use std::pin::Pin;
 use std::task::{ready, Context, Poll};
 
+use crate::async_util::parquet_async::*;
+use crate::value::Value;
+
+pub(crate) type ProcessItemStream<'a, T = Value, E = io::Error> =
+    BoxStream<'a, Result<ProcessItem<T>, E>>;
+
 #[cfg(feature = "wasm")]
 const INITIAL_CHUNK_SIZE: usize = 65_536;
 #[cfg(not(feature = "wasm"))]

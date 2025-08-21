@@ -6,7 +6,10 @@ use wasm_bindgen::prelude::*;
 use crate::error::{Error, Result};
 use crate::format::{FileKind, Format, FormatReader};
 use crate::schema::SerdeSchema;
-use crate::{infer, read};
+use crate::{
+    infer,
+    read::{self, ValueStream},
+};
 
 use super::io::AsyncBlobReader;
 use super::iter::async_iterable;
@@ -149,6 +152,8 @@ impl JsFormatReader {
         Ok(to_value(
             &self
                 .as_rust()?
+                .stream_values()
+                .await?
                 .infer_schema(options.options, options.sample_size)
                 .await?,
         )?)
@@ -175,8 +180,9 @@ impl JsFormatReader {
         let options = from_value::<Option<read::Options>>(options)?.unwrap_or_default();
         Ok(self
             .as_rust()?
-            .into_record_batch_stream(schema, options)
+            .into_value_stream()
             .await?
+            .into_record_batch_stream(schema, options)?
             .into())
     }
 
@@ -192,6 +198,8 @@ impl JsFormatReader {
             from_value::<Option<InferAndStreamRecordBatchesOptions>>(options)?.unwrap_or_default();
         Ok(self
             .as_rust()?
+            .into_value_stream()
+            .await?
             .into_inferred_record_batch_stream(
                 options.infer_options,
                 options.sample_size,

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use arrow::datatypes::FieldRef;
+use futures::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_arrow::schema::{SchemaLike, TracingOptions};
 
@@ -146,6 +147,27 @@ impl TryFrom<Options> for TracingOptions {
         }
         Ok(options)
     }
+}
+
+pub async fn take_samples<S>(
+    stream: &mut S,
+    sample_size: Option<usize>,
+) -> Result<Vec<S::Ok>, S::Error>
+where
+    S: TryStream + Unpin,
+{
+    let mut samples = if let Some(sample_size) = sample_size {
+        Vec::with_capacity(sample_size)
+    } else {
+        Vec::new()
+    };
+    while let Some(value) = stream.try_next().await? {
+        samples.push(value);
+        if sample_size.is_some_and(|s| samples.len() >= s) {
+            break;
+        }
+    }
+    Ok(samples)
 }
 
 pub fn from_samples<T>(samples: &[T], options: Options) -> Result<Schema, serde_arrow::Error>
