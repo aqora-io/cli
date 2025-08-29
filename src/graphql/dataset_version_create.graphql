@@ -1,5 +1,8 @@
-mutation DatasetVersionCreate($datasetId: ID!, $version: String) {
-  createDatasetVersion(datasetId: $datasetId, input: { version: $version }) {
+mutation DatasetVersionCreate(
+  $datasetId: ID!
+  $input: CreateDatasetVersionInput
+) {
+  createDatasetVersion(datasetId: $datasetId, input: $input) {
     id
   }
 }
