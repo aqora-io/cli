@@ -1,5 +1,5 @@
-query GetDatasetBySlug($owner: String!, $localSlug: String!) {
-  datasetBySlug(owner: $owner, localSlug: $localSlug) {
+mutation CreateDataset($owner: UsernameOrID, $input: CreateDatasetInput!) {
+  createDataset(asEntity: $owner, input: $input) {
     id
     localSlug
     owner {

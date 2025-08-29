@@ -7,7 +7,7 @@ use crate::{
     error::{self, Result},
     graphql_client::GraphQLClient,
 };
-use clap::{Args, Subcommand};
+use clap::Subcommand;
 use dataset_version_info::DatasetVersionInfoNodeOnDatasetVersion;
 use graphql_client::GraphQLQuery;
 use list::{list, List};

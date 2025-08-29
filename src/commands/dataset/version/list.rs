@@ -1,22 +1,14 @@
 use crate::{
     commands::{
-        dataset::{upload::prompt_dataset_creation, DatasetGlobalArgs},
+        dataset::{new::prompt_for_dataset_creation, DatasetGlobalArgs},
         GlobalArgs,
     },
     error::{self, Result},
-    graphql_client::{custom_scalars::*, GraphQLClient},
+    graphql_client::custom_scalars::*,
 };
-use aqora_client::{
-    checksum::{crc32fast::Crc32, S3ChecksumLayer},
-    retry::{BackoffRetryLayer, ExponentialBackoffBuilder, RetryStatusCodeRange},
-};
-use aqora_data_utils::{aqora_client::DatasetVersionFileUploader, infer, read, write, Schema};
 use clap::Args;
-use futures::{StreamExt as _, TryStreamExt as _};
 use graphql_client::GraphQLQuery;
 use serde::Serialize;
-use std::{fmt::Display, path::PathBuf, str::FromStr};
-use thiserror::Error;
 
 /// List dataset version from Aqora.io
 #[derive(Args, Debug, Serialize)]
@@ -51,13 +43,37 @@ pub async fn list(args: List, dataset_global: DatasetGlobalArgs, global: GlobalA
             local_slug: local_slug.to_string(),
             limit: Some(args.limit as _),
         })
-        .await?;
+        .await?
+        .dataset_by_slug;
 
-    let Some(dataset_versions) = dataset_versions.dataset_by_slug else {
-        return prompt_dataset_creation(global).await;
+    let dataset = match dataset_versions {
+        Some(dataset) => dataset,
+        None => {
+            let dataset = prompt_for_dataset_creation(
+                &global,
+                Some(owner.to_string()),
+                Some(local_slug.to_string()),
+            )
+            .await?;
+
+            client
+                .send::<GetDatasetVersions>(get_dataset_versions::Variables {
+                    owner: dataset.owner.username.clone(),
+                    local_slug: dataset.local_slug.clone(),
+                    limit: Some(args.limit as _),
+                })
+                .await?
+                .dataset_by_slug
+                .ok_or_else(|| {
+                    error::system(
+                        "Could not retrieve versions for the newly created dataset.",
+                        "Check the dataset on Aqora.io.",
+                    )
+                })?
+        }
     };
 
-    dataset_versions
+    dataset
         .versions
         .nodes
         .iter()

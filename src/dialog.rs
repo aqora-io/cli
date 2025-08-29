@@ -2,7 +2,7 @@ use std::boxed::Box;
 
 use dialoguer::{
     theme::{SimpleTheme, Theme},
-    Confirm as BaseConfirm, FuzzySelect as BaseFuzzySelect,
+    Confirm as BaseConfirm, FuzzySelect as BaseFuzzySelect, Input,
 };
 
 pub struct Confirm {
@@ -13,6 +13,7 @@ pub struct Confirm {
     report: bool,
     default: Option<bool>,
     show_default: bool,
+    default_text: Option<String>,
     wait_for_newline: bool,
 }
 
@@ -31,6 +32,7 @@ impl Confirm {
             prompt: "".into(),
             report: true,
             default: None,
+            default_text: None,
             show_default: true,
             wait_for_newline: false,
         }
@@ -65,6 +67,13 @@ impl Confirm {
         }
     }
 
+    pub fn default_text<S: Into<String>>(self, text: S) -> Self {
+        Self {
+            default_text: Some(text.into()),
+            ..self
+        }
+    }
+
     pub fn interact(self) -> dialoguer::Result<bool> {
         if self.no_prompt {
             if let Some(default) = self.no_prompt_value.or(self.default) {
@@ -84,6 +93,20 @@ impl Confirm {
             confirm = confirm.default(default);
         }
         confirm.interact()
+    }
+
+    pub fn interact_text(self) -> dialoguer::Result<String> {
+        let mut input = Input::with_theme(self.theme.as_ref())
+            .report(self.report)
+            .allow_empty(false)
+            .with_prompt(self.prompt)
+            .show_default(self.show_default);
+
+        if let Some(default_text) = self.default_text {
+            input = input.with_initial_text(default_text);
+        }
+
+        input.interact_text()
     }
 }
 
@@ -142,6 +165,13 @@ impl FuzzySelect {
     pub fn items(self, items: impl IntoIterator<Item = impl ToString>) -> Self {
         Self {
             items: items.into_iter().map(|item| item.to_string()).collect(),
+            ..self
+        }
+    }
+
+    pub fn with_initial_text<S: Into<String>>(self, text: S) -> Self {
+        Self {
+            initial_text: text.into(),
             ..self
         }
     }
