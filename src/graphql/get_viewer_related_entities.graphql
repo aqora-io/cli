@@ -1,0 +1,15 @@
+query GetViewerRelatedEntities($action: Action!) {
+  viewer {
+    id
+    username
+    displayName
+    entities(permission: { to: $action }) {
+      nodes {
+        __typename
+        id
+        username
+        displayName
+      }
+    }
+  }
+}

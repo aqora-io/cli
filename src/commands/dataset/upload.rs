@@ -10,7 +10,6 @@ use futures::{StreamExt as _, TryStreamExt as _};
 use graphql_client::GraphQLQuery;
 use serde::Serialize;
 use thiserror::Error;
-use url::Url;
 
 use crate::error::{self, Result};
 
@@ -131,7 +130,7 @@ pub async fn upload(
     let pb = global.spinner();
     let client = global.graphql_client().await?;
 
-    let dataset = get_dataset_by_slug(&client, dataset_global.slug).await?;
+    let dataset = get_dataset_by_slug(&global, dataset_global.slug).await?;
 
     if !dataset.viewer_can_create_version {
         return Err(error::user(
@@ -154,7 +153,7 @@ pub async fn upload(
                 semver.patch as _,
             )
             .await?;
-            match (dataset_version) {
+            match dataset_version {
                 Some(version) => version.id,
                 None => {
                     create_dataset_version(
@@ -300,22 +299,4 @@ pub async fn upload(
     pb.set_style(indicatif::ProgressStyle::default_spinner());
     pb.finish_with_message(format!("{written_records} records written",));
     Ok(())
-}
-
-pub async fn prompt_dataset_creation(global: GlobalArgs) -> Result<()> {
-    let open_browser = global
-        .confirm()
-        .with_prompt("This dataset cannot be found, would like to open a browser to create it?")
-        .default(false)
-        .interact()?;
-    if open_browser {
-        let location = Url::parse(&global.url)?.join("/datasets/new")?;
-        open::that(location.as_str())?;
-        Ok(())
-    } else {
-        Err(error::user(
-            "Dataset not found",
-            "Please double check the slug on Aqora.io",
-        ))
-    }
 }

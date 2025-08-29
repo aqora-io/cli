@@ -5,11 +5,10 @@ use crate::{
     },
     error::{self, Result},
     graphql_client::{custom_scalars::*, GraphQLClient},
-    print,
 };
 use clap::Args;
 use graphql_client::GraphQLQuery;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use super::get_dataset_version;
 
@@ -49,7 +48,7 @@ pub async fn create_dataset_version(
 
 pub async fn new(args: New, dataset_global: DatasetGlobalArgs, global: GlobalArgs) -> Result<()> {
     let client = global.graphql_client().await?;
-    let dataset = get_dataset_by_slug(&client, dataset_global.slug).await?;
+    let dataset = get_dataset_by_slug(&global, dataset_global.slug).await?;
 
     if !dataset.viewer_can_create_version {
         return Err(error::user(
@@ -97,7 +96,7 @@ pub async fn new(args: New, dataset_global: DatasetGlobalArgs, global: GlobalArg
             }
         }
         None => {
-            let dataset_version = create_dataset_version(
+            let _ = create_dataset_version(
                 &client,
                 dataset_id,
                 Some(CreateDatasetVersionInput {
