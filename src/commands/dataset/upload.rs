@@ -16,16 +16,16 @@ use crate::error::{self, Result};
 
 use super::{
     convert::WriteOptions,
+    get_dataset_by_slug,
     infer::{render_sample_debug, render_schema, FormatOptions, InferOptions, SchemaOutput},
     utils::from_json_str_or_file,
-    GlobalArgs,
+    version::{create_dataset_version, get_dataset_version, CreateDatasetVersionInput},
+    DatasetGlobalArgs, GlobalArgs,
 };
 
 /// Upload a file to Aqora.io
 #[derive(Args, Debug, Serialize)]
 pub struct Upload {
-    /// Dataset you want to upload to, must respect "{owner}/{dataset}" form.
-    slug: String,
     /// Path to file you will upload to Aqora.
     src: PathBuf,
     /// Target dataset version.
@@ -117,109 +117,56 @@ pub struct WriterOptions {
 
 #[derive(GraphQLQuery)]
 #[graphql(
-    query_path = "src/graphql/dataset_upload_info.graphql",
-    schema_path = "schema.graphql",
-    response_derives = "Debug"
-)]
-pub struct DatasetUploadInfo;
-
-#[derive(GraphQLQuery)]
-#[graphql(
-    query_path = "src/graphql/dataset_version_create.graphql",
-    schema_path = "schema.graphql",
-    response_derives = "Debug"
-)]
-pub struct DatasetVersionCreate;
-
-#[derive(GraphQLQuery)]
-#[graphql(
-    query_path = "src/graphql/dataset_version_info.graphql",
-    schema_path = "schema.graphql",
-    response_derives = "Debug"
-)]
-pub struct DatasetVersionInfo;
-
-#[derive(GraphQLQuery)]
-#[graphql(
     query_path = "src/graphql/finish_dataset_version_upload.graphql",
     schema_path = "schema.graphql",
     response_derives = "Debug"
 )]
 pub struct FinishDatasetVersionUpload;
 
-async fn create_version_id(
-    global: &GlobalArgs,
-    dataset_id: String,
-    version: Option<String>,
-) -> Result<String> {
-    Ok(global
-        .graphql_client()
-        .await?
-        .send::<DatasetVersionCreate>(dataset_version_create::Variables {
-            dataset_id,
-            version,
-        })
-        .await?
-        .create_dataset_version
-        .id)
-}
-
-pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
+pub async fn upload(
+    args: Upload,
+    dataset_global: DatasetGlobalArgs,
+    global: GlobalArgs,
+) -> Result<()> {
     let pb = global.spinner();
     let client = global.graphql_client().await?;
 
-    // Find dataset the user wants to upload
-    let Some((owner, local_slug)) = args.slug.split_once('/') else {
-        return Err(error::user(
-            "Malformed slug",
-            "Expected a slug like: {owner}/{dataset}",
-        ));
-    };
-    let dataset_info = client
-        .send::<DatasetUploadInfo>(dataset_upload_info::Variables {
-            owner: owner.to_string(),
-            local_slug: local_slug.to_string(),
-        })
-        .await?;
-    let Some(dataset_info) = dataset_info.dataset_by_slug else {
-        drop(pb);
-        return prompt_dataset_creation(global).await;
-    };
-    if !dataset_info.viewer_can_create_version {
+    let dataset = get_dataset_by_slug(&client, dataset_global.slug).await?;
+
+    if !dataset.viewer_can_create_version {
         return Err(error::user(
             "You cannot upload a version for this dataset",
             "Did you type the right slug?",
         ));
     }
 
-    let dataset_id = dataset_info.id;
+    let dataset_id = dataset.id;
 
     // Find or create a dataset version
     let dataset_version_id = match args.version {
-        None => create_version_id(&global, dataset_id, None).await?,
+        None => create_dataset_version(&client, dataset_id, None).await?,
         Some(semver) => {
-            let node = client
-                .send::<DatasetVersionInfo>(dataset_version_info::Variables {
-                    dataset_id: dataset_id.clone(),
-                    major: semver.major as _,
-                    minor: semver.minor as _,
-                    patch: semver.patch as _,
-                })
-                .await?
-                .node;
-
-            let dataset_version = match node {
-                dataset_version_info::DatasetVersionInfoNode::Dataset(dataset) => dataset,
-                _ => return Err(error::system(
-                    "Cannot find dataset by id",
-                    "This should not happen, kindly report this bug to Aqora developers please!",
-                )),
-            };
-
-            if let Some(version) = dataset_version.version {
-                version.id
-            } else {
-                create_version_id(&global, dataset_id, Some(semver.to_string())).await?
+            let dataset_version = get_dataset_version(
+                &client,
+                dataset_id.clone(),
+                semver.major as _,
+                semver.minor as _,
+                semver.patch as _,
+            )
+            .await?;
+            match (dataset_version) {
+                Some(version) => version.id,
+                None => {
+                    create_dataset_version(
+                        &client,
+                        dataset_id,
+                        Some(CreateDatasetVersionInput {
+                            dataset_version_id: None,
+                            version: Some(semver.to_string()),
+                        }),
+                    )
+                    .await?
+                }
             }
         }
     };

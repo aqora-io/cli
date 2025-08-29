@@ -14,7 +14,6 @@ use aqora_data_utils::{aqora_client::DatasetVersionFileUploader, infer, read, wr
 use clap::Args;
 use futures::{StreamExt as _, TryStreamExt as _};
 use graphql_client::GraphQLQuery;
-use semver;
 use serde::Serialize;
 use std::{fmt::Display, path::PathBuf, str::FromStr};
 use thiserror::Error;

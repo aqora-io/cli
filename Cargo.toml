@@ -111,6 +111,7 @@ bytes = "1.10"
 content_disposition = "0.4.0"
 tower = "0.5.2"
 tower-http = { version = "0.6.6", features = ["set-header", "trace"] }
+semver = { version = "1.0.26", features = ["serde"] }
 
 [build-dependencies]
 toml_edit = "0.22"
