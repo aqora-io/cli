@@ -7,6 +7,7 @@ use crate::{
     graphql_client::custom_scalars::*,
 };
 use clap::Args;
+use comfy_table::Table;
 use graphql_client::GraphQLQuery;
 use serde::Serialize;
 
@@ -25,6 +26,34 @@ pub struct List {
     response_derives = "Debug"
 )]
 pub struct GetDatasetVersions;
+
+fn versions_to_table(
+    global: &GlobalArgs,
+    versions: impl IntoIterator<
+        Item = get_dataset_versions::GetDatasetVersionsDatasetBySlugVersionsNodes,
+    >,
+) -> Table {
+    let mut table = global.table();
+    table.set_header(vec!["Version", "Published At", "Updated At", "Size"]);
+
+    let rows = versions.into_iter().map(|version| {
+        let published_at = version
+            .published_at
+            .as_ref()
+            .map(|ts| ts.format("%d/%m/%Y %H:%M").to_string())
+            .unwrap_or_else(|| "— not published —".to_string());
+
+        vec![
+            version.version.clone(),
+            published_at,
+            version.updated_at.format("%d/%m/%Y %H:%M").to_string(),
+            format!("{}B", version.size),
+        ]
+    });
+
+    table.add_rows(rows);
+    table
+}
 
 pub async fn list(args: List, dataset_global: DatasetGlobalArgs, global: GlobalArgs) -> Result<()> {
     let client = global.graphql_client().await?;
@@ -73,11 +102,13 @@ pub async fn list(args: List, dataset_global: DatasetGlobalArgs, global: GlobalA
         }
     };
 
-    dataset
-        .versions
-        .nodes
-        .iter()
-        .for_each(|version| println!("{}", version.version));
+    if dataset.versions.nodes.is_empty() {
+        println!("This dataset doesn't have any versions yet.");
+        return Ok(());
+    }
+
+    let table = versions_to_table(&global, dataset.versions.nodes);
+    println!("{table}");
 
     Ok(())
 }

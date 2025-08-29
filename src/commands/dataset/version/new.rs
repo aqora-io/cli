@@ -82,7 +82,19 @@ pub async fn new(args: New, dataset_global: DatasetGlobalArgs, global: GlobalArg
                     .await?;
                 }
                 None => {
-                    // TODO: ASK
+                    if !global
+                        .confirm()
+                        .with_prompt(
+                            "The specified parent version does not exist. Do you want to continue and create a new version from scratch?",
+                        )
+                        .default(false)
+                        .interact()?
+                    {
+                        return Err(error::user(
+                            "Dataset version not found",
+                            "Verify the version on Aqora.io.",
+                        ));
+                    }
                     let _ = create_dataset_version(
                         &client,
                         dataset_id,
