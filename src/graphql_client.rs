@@ -16,6 +16,7 @@ use url::{Host, Url};
 pub mod custom_scalars {
     pub type Semver = String;
     pub type UsernameOrID = String;
+    pub type DateTime = chrono::DateTime<chrono::Utc>;
 }
 
 pub use aqora_client::{Client as GraphQLClient, Error as GraphQLError};

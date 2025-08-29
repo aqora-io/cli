@@ -24,6 +24,7 @@ use super::{
 
 /// Upload a file to Aqora.io
 #[derive(Args, Debug, Serialize)]
+#[group(skip)]
 pub struct Upload {
     /// Path to file you will upload to Aqora.
     src: PathBuf,
