@@ -1,0 +1,9 @@
+query GetDatasetVersions($owner: String!, $localSlug: String!, $limit: Int) {
+  datasetBySlug(owner: $owner, localSlug: $localSlug) {
+    versions(first: $limit) {
+      nodes {
+        version
+      }
+    }
+  }
+}

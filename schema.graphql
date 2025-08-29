@@ -277,6 +277,22 @@ enum Badge {
 	Schrödinger’s Trader – 2nd Place - Second Prize
 	"""
 	QUANTUM_SIGNALS_LOB_2025_SECOND
+	"""
+	QML Summer School 2025
+	"""
+	QML_SUMMER_SCHOOL_2025
+	"""
+	Winner of the EPRI 2025 Challenge
+	"""
+	EPRI2025_FIRST
+	"""
+	Runner-Up of the EPRI 2025 Challenge
+	"""
+	EPRI2025_SECOND
+	"""
+	Finalist of the EPRI 2025 Challenge
+	"""
+	EPRI2025_THIRD
 	UNKNOWN
 }
 
@@ -1250,6 +1266,7 @@ interface Entity {
 	projectVersionApprovals(projectVersionId: UUID, after: String, before: String, first: Int, last: Int): ProjectVersionApprovalConnection!
 	points: Int!
 	rank: Int!
+	datasets(after: String, before: String, first: Int, last: Int, filters: DatasetQueryFilters): DatasetConnection!
 }
 
 enum EntityActivitiesConnectionKind {
