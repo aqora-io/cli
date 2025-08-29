@@ -355,7 +355,7 @@ pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
     Ok(())
 }
 
-async fn prompt_dataset_creation(global: GlobalArgs) -> Result<()> {
+pub async fn prompt_dataset_creation(global: GlobalArgs) -> Result<()> {
     let open_browser = global
         .confirm()
         .with_prompt("This dataset cannot be found, would like to open a browser to create it?")
