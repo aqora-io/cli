@@ -117,7 +117,7 @@ impl DirReaderOptions {
                 .collect::<FuturesUnordered<_>>()
                 .map_ok(move |(item, size)| {
                     let start = bytes;
-                    bytes += size;
+                    bytes += size as u64;
                     ProcessItem {
                         start,
                         end: bytes,

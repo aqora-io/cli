@@ -12,7 +12,7 @@ default = ["all-formats", "all-codecs", "fs", "aqora-client-threaded"]
 default-wasm = [
   "wasm",
   "all-formats",
-  "zstd",
+  "all-codecs",
   "aqora-client",
   "aqora-client-credentials",
   "aqora-client-retry",

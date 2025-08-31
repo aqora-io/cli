@@ -14,8 +14,8 @@ use wasm_bindgen::prelude::*;
 
 use super::client::JsResponse;
 use crate::wasm::{
+    cast::JsCastExt,
     serde::{preserve, DeserializeTagged},
-    util::JsCastExt,
 };
 
 #[derive(TS, Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
