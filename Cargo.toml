@@ -105,7 +105,7 @@ qrcode = { version = "0.14.1", default-features = false }
 regex = "1.11.1"
 comfy-table = "7.1.4"
 ron = { version = "0.10", features = ["indexmap"] }
-parquet = { version = "55" }
+parquet = { version = "56" }
 async-trait = "0.1"
 bytes = "1.10"
 content_disposition = "0.4.0"

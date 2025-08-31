@@ -42,7 +42,7 @@ impl GlobPath {
     }
 
     #[inline]
-    pub fn matches(&self, path: impl AsRef<Path>) -> Result<Option<Matches>, GlobError> {
+    pub fn matches(&self, path: impl AsRef<Path>) -> Result<Option<Matches<'_>>, GlobError> {
         if let Some(mat) = self.glob.matches(path.as_ref().strip_prefix(&self.root)?)? {
             Ok(Some(mat))
         } else {

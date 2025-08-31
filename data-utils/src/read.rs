@@ -320,7 +320,7 @@ pub trait ValueStream:
     fn take_samples(
         &mut self,
         sample_size: Option<usize>,
-    ) -> BoxFuture<Result<Vec<Self::Ok>, Self::Error>> {
+    ) -> BoxFuture<'_, Result<Vec<Self::Ok>, Self::Error>> {
         boxed_fut(async move { infer::take_samples(self, sample_size).await })
     }
 
@@ -328,7 +328,7 @@ pub trait ValueStream:
         &mut self,
         options: infer::Options,
         sample_size: Option<usize>,
-    ) -> BoxFuture<Result<Schema>> {
+    ) -> BoxFuture<'_, Result<Schema>> {
         boxed_fut(async move {
             let samples = self
                 .take_samples(sample_size)

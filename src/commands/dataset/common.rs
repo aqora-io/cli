@@ -23,14 +23,6 @@ impl DatasetCommonArgs {
 
 #[derive(GraphQLQuery)]
 #[graphql(
-    query_path = "src/graphql/get_viewer_related_entities.graphql",
-    schema_path = "schema.graphql",
-    response_derives = "Debug"
-)]
-pub struct GetViewerRelatedEntities;
-
-#[derive(GraphQLQuery)]
-#[graphql(
     query_path = "src/graphql/get_dataset_by_slug.graphql",
     schema_path = "schema.graphql",
     response_derives = "Debug"
