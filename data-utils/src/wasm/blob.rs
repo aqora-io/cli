@@ -12,12 +12,8 @@ use super::io::AsyncBlobReader;
 
 impl FormatReader<AsyncBlobReader> {
     pub async fn infer_blob(blob: Blob, max_records: Option<usize>) -> io::Result<Self> {
-        let file_kind = FileKind::from_mime(blob.type_()).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                "Extension does not match known formats",
-            )
-        })?;
+        let file_kind = FileKind::from_mime(blob.type_())
+            .ok_or_else(|| io::Error::other("Extension does not match known formats"))?;
         FormatReader::infer_format(AsyncBlobReader::new(blob), file_kind, max_records).await
     }
 }

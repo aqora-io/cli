@@ -38,9 +38,9 @@ pub async fn run_command(
     if result.success() {
         Ok(())
     } else {
-        Err(tokio::io::Error::new(
-            tokio::io::ErrorKind::Other,
-            format!("Command failed with status: {}", result.code().unwrap()),
-        ))
+        Err(tokio::io::Error::other(format!(
+            "Command failed with status: {}",
+            result.code().unwrap()
+        )))
     }
 }

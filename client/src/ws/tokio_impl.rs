@@ -40,7 +40,7 @@ impl Service<Request> for WsClient {
             let req = http::Request::from_parts(parts, ());
             let (websocket, res) = tokio_tungstenite::connect_async(req)
                 .await
-                .map_err(MiddlewareError::Ws)?;
+                .map_err(|err| MiddlewareError::Ws(Box::new(err)))?;
             sender
                 .send(websocket)
                 .await
