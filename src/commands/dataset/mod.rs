@@ -1,25 +1,22 @@
+mod common;
 mod convert;
 mod infer;
 mod new;
 mod upload;
 mod utils;
 mod version;
-use super::GlobalArgs;
-use crate::error::{self, Result};
-use clap::{Args, Subcommand};
-use convert::{convert, Convert};
-use graphql_client::GraphQLQuery;
-use infer::{infer, Infer};
-use new::{new, prompt_for_dataset_creation, New};
+
+use clap::Subcommand;
 use serde::Serialize;
+
+use crate::commands::GlobalArgs;
+use crate::error::Result;
+
+use convert::{convert, Convert};
+use infer::{infer, Infer};
+use new::{new, New};
 use upload::{upload, Upload};
 use version::{version, Version};
-
-#[derive(Args, Debug, Serialize, Clone)]
-pub struct DatasetGlobalArgs {
-    /// Dataset you want to upload to, must respect "{owner}/{dataset}" form.
-    slug: String,
-}
 
 #[derive(Subcommand, Debug, Serialize)]
 pub enum Dataset {
@@ -28,81 +25,11 @@ pub enum Dataset {
     #[command(hide = true)]
     Convert(Convert),
     New(New),
-    Upload {
-        #[command(flatten)]
-        dataset_global: DatasetGlobalArgs,
-        #[command(flatten)]
-        args: Upload,
-    },
+    Upload(Upload),
     Version {
-        #[command(flatten)]
-        dataset_global: DatasetGlobalArgs,
         #[command(subcommand)]
         args: Version,
     },
-}
-
-#[derive(GraphQLQuery)]
-#[graphql(
-    query_path = "src/graphql/get_viewer_related_entities.graphql",
-    schema_path = "schema.graphql",
-    response_derives = "Debug"
-)]
-pub struct GetViewerRelatedEntities;
-
-#[derive(GraphQLQuery)]
-#[graphql(
-    query_path = "src/graphql/get_dataset_by_slug.graphql",
-    schema_path = "schema.graphql",
-    response_derives = "Debug"
-)]
-pub struct GetDatasetBySlug;
-
-pub struct GetDatasetSlugResponse {
-    pub id: String,
-    pub viewer_can_create_version: bool,
-}
-
-pub async fn get_dataset_by_slug(
-    global: &GlobalArgs,
-    slug: String,
-) -> Result<GetDatasetSlugResponse> {
-    let client = global.graphql_client().await?;
-
-    // Find dataset the user wants to upload
-    let Some((owner, local_slug)) = slug.split_once('/') else {
-        return Err(error::user(
-            "Malformed slug",
-            "Expected a slug like: {owner}/{dataset}",
-        ));
-    };
-
-    let dataset = client
-        .send::<GetDatasetBySlug>(get_dataset_by_slug::Variables {
-            owner: owner.to_string(),
-            local_slug: local_slug.to_string(),
-        })
-        .await?
-        .dataset_by_slug;
-
-    let Some(dataset) = dataset else {
-        let new_dataset = prompt_for_dataset_creation(
-            global,
-            Some(owner.to_string()),
-            Some(local_slug.to_string()),
-        )
-        .await?;
-
-        return Ok(GetDatasetSlugResponse {
-            id: new_dataset.id,
-            viewer_can_create_version: new_dataset.viewer_can_create_version,
-        });
-    };
-
-    Ok(GetDatasetSlugResponse {
-        id: dataset.id,
-        viewer_can_create_version: dataset.viewer_can_create_version,
-    })
 }
 
 pub async fn dataset(args: Dataset, global: GlobalArgs) -> Result<()> {
@@ -110,13 +37,7 @@ pub async fn dataset(args: Dataset, global: GlobalArgs) -> Result<()> {
         Dataset::Infer(args) => infer(args, global).await,
         Dataset::Convert(args) => convert(args, global).await,
         Dataset::New(args) => new(args, global).await,
-        Dataset::Upload {
-            dataset_global,
-            args,
-        } => upload(args, dataset_global, global).await,
-        Dataset::Version {
-            dataset_global,
-            args,
-        } => version(args, dataset_global, global).await,
+        Dataset::Upload(args) => upload(args, global).await,
+        Dataset::Version { args } => version(args, global).await,
     }
 }

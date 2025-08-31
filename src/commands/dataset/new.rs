@@ -130,7 +130,7 @@ pub async fn prompt_for_dataset_creation(
 
     let mut dataset_name = global.confirm().with_prompt("Enter a name for the dataset");
     if let Some(slug) = local_slug {
-        dataset_name = dataset_name.default_text(slug);
+        dataset_name = dataset_name.with_initial_text(slug);
     }
     let dataset_name = dataset_name.interact_text()?;
 
