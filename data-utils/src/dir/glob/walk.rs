@@ -12,7 +12,7 @@ pub struct GlobPathWalk {
 }
 
 impl GlobPathWalk {
-    fn process(&mut self, path: PathBuf) -> Result<Option<(PathBuf, Matches)>, GlobError> {
+    fn process(&mut self, path: PathBuf) -> Result<Option<(PathBuf, Matches<'_>)>, GlobError> {
         if !self.visited.insert(path.canonicalize()?) {
             return Ok(None);
         }

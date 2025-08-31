@@ -141,7 +141,7 @@ impl<R> FormatReader<R>
 where
     R: AsyncFileReader,
 {
-    pub async fn stream_values(&mut self) -> io::Result<ProcessItemStream> {
+    pub async fn stream_values(&mut self) -> io::Result<ProcessItemStream<'_>> {
         stream_values(&mut self.reader, &self.format).await
     }
 }

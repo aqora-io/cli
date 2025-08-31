@@ -58,14 +58,6 @@ impl Credentials {
     }
 }
 
-#[derive(GraphQLQuery)]
-#[graphql(
-    query_path = "src/graphql/oauth2_token.graphql",
-    schema_path = "schema.graphql",
-    response_derives = "Debug"
-)]
-pub struct Oauth2TokenMutation;
-
 #[derive(Deserialize, Serialize, Debug, Eq, PartialEq, Clone)]
 pub struct CredentialsFile {
     pub credentials: HashMap<Url, Credentials>,

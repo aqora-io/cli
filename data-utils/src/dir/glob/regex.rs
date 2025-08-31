@@ -173,7 +173,7 @@ impl Glob {
         Ok(regex.is_match(&path_str))
     }
 
-    pub fn matches(&self, path: impl AsRef<Path>) -> Result<Option<Matches>, GlobError> {
+    pub fn matches(&self, path: impl AsRef<Path>) -> Result<Option<Matches<'_>>, GlobError> {
         let (_, path_str) = normalized_path_str(path)?;
         let Some(regex) = self.path_re.last() else {
             return Ok(None);
