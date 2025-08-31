@@ -14,7 +14,7 @@ pub enum MiddlewareError {
     Request(reqwest::Error),
     StreamsNotSupported,
     #[cfg(feature = "tokio-ws")]
-    Ws(tokio_tungstenite::tungstenite::error::Error),
+    Ws(Box<tokio_tungstenite::tungstenite::error::Error>),
     Middleware(BoxError),
 }
 
@@ -77,7 +77,7 @@ pub enum Error {
     InvalidHeaderValue(#[from] reqwest::header::InvalidHeaderValue),
     #[cfg(feature = "tokio-ws")]
     #[error(transparent)]
-    Tungstenite(#[from] tokio_tungstenite::tungstenite::error::Error),
+    Tungstenite(#[from] Box<tokio_tungstenite::tungstenite::error::Error>),
     #[cfg(feature = "ws")]
     #[error(transparent)]
     GraphQLWs(#[from] graphql_ws_client::Error),
@@ -91,6 +91,13 @@ pub enum Error {
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
+
+#[cfg(feature = "tokio-ws")]
+impl From<tokio_tungstenite::tungstenite::error::Error> for Error {
+    fn from(value: tokio_tungstenite::tungstenite::error::Error) -> Self {
+        Self::Tungstenite(Box::new(value))
+    }
+}
 
 impl From<MiddlewareError> for Error {
     fn from(error: MiddlewareError) -> Self {

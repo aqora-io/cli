@@ -1,13 +1,22 @@
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::fs::FileTimes;
-use std::{
-    ffi::OsString,
-    path::{Path, PathBuf},
-};
+use std::io;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard};
+
 use tempfile::NamedTempFile;
 
+type RevertFileMap = HashMap<PathBuf, RevertFile>;
+
 lazy_static::lazy_static! {
-    pub static ref REVERT_FILES: std::sync::Mutex<HashMap<PathBuf, RevertFile>> = std::sync::Mutex::new(HashMap::new());
+    static ref REVERT_FILES: Mutex<RevertFileMap> = std::sync::Mutex::new(HashMap::new());
+}
+
+fn acquire_files() -> io::Result<MutexGuard<'static, RevertFileMap>> {
+    REVERT_FILES
+        .lock()
+        .map_err(|_| io::Error::other("Could not lock REVERT_FILES"))
 }
 
 pub struct RevertFile {
@@ -31,7 +40,7 @@ fn get_filetimes(path: impl AsRef<Path>) -> FileTimes {
 }
 
 impl RevertFile {
-    pub fn save(path: impl Into<PathBuf>) -> std::io::Result<RevertFileHandle> {
+    pub fn save(path: impl Into<PathBuf>) -> io::Result<RevertFileHandle> {
         let path = path.into();
         let mut tmp_prefix = OsString::from(".");
         tmp_prefix.push(path.file_name().unwrap_or_else(|| "tmp".as_ref()));
@@ -41,9 +50,7 @@ impl RevertFile {
         )?;
         let file_times = get_filetimes(&path);
         std::fs::copy(&path, backed_up.path())?;
-        let mut files = REVERT_FILES.lock().map_err(|_| {
-            std::io::Error::new(std::io::ErrorKind::Other, "Could not lock REVERT_FILES")
-        })?;
+        let mut files = acquire_files()?;
         files.insert(
             path.clone(),
             Self {
@@ -59,7 +66,7 @@ impl RevertFile {
         })
     }
 
-    fn do_revert(&mut self) -> std::io::Result<()> {
+    fn do_revert(&mut self) -> io::Result<()> {
         std::fs::copy(self.backed_up.path(), &self.path)?;
         if let Ok(file) = std::fs::File::open(&self.path) {
             let _ = file.set_times(self.file_times);
@@ -72,7 +79,7 @@ impl RevertFile {
         self.reverted = true;
     }
 
-    pub fn revert(mut self) -> std::io::Result<()> {
+    pub fn revert(mut self) -> io::Result<()> {
         self.do_revert()?;
         Ok(())
     }
@@ -101,32 +108,30 @@ pub struct RevertFileHandle {
 }
 
 impl RevertFileHandle {
-    fn remove_file(&self) -> std::io::Result<RevertFile> {
-        let mut files = REVERT_FILES.lock().map_err(|_| {
-            std::io::Error::new(std::io::ErrorKind::Other, "Could not lock REVERT_FILES")
-        })?;
+    fn remove_file(&self) -> io::Result<RevertFile> {
+        let mut files = acquire_files()?;
         let file = files.remove(&self.path).ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::NotFound,
+            io::Error::new(
+                io::ErrorKind::NotFound,
                 format!("File {} not found", self.path.display()),
             )
         })?;
         Ok(file)
     }
 
-    fn do_revert(&mut self) -> std::io::Result<()> {
+    fn do_revert(&mut self) -> io::Result<()> {
         self.remove_file()?.revert()?;
         self.reverted = true;
         Ok(())
     }
 
-    pub fn commit(mut self) -> std::io::Result<()> {
+    pub fn commit(mut self) -> io::Result<()> {
         self.remove_file()?.commit();
         self.reverted = true;
         Ok(())
     }
 
-    pub fn revert(mut self) -> std::io::Result<()> {
+    pub fn revert(mut self) -> io::Result<()> {
         self.do_revert()?;
         Ok(())
     }
@@ -149,10 +154,8 @@ impl Drop for RevertFileHandle {
     }
 }
 
-pub fn revert_all() -> std::io::Result<()> {
-    let mut files = REVERT_FILES.lock().map_err(|_| {
-        std::io::Error::new(std::io::ErrorKind::Other, "Could not lock REVERT_FILES")
-    })?;
+pub fn revert_all() -> io::Result<()> {
+    let mut files = acquire_files()?;
     let mut files = std::mem::take(&mut *files);
     for (_, file) in files.drain() {
         file.revert()?;

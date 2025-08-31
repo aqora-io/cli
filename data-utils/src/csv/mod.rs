@@ -212,7 +212,7 @@ where
                 futures::future::ready({
                     let this_size = values.item.len();
                     if this_size < 2 || last_size.unwrap_or(this_size) != this_size {
-                        Err(io::Error::new(io::ErrorKind::Other, "Size mismatch"))
+                        Err(io::Error::other("Size mismatch"))
                     } else {
                         Ok(Some(this_size))
                     }
@@ -225,8 +225,8 @@ where
             break;
         }
     }
-    let mut format = best_format_guess
-        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Could not find a format"))?;
+    let mut format =
+        best_format_guess.ok_or_else(|| io::Error::other("Could not find a format"))?;
     let mut stream =
         CsvReadStream::<_, Vec<Value>>::new(&mut reader, CsvProcessor::new(format.chars));
     let first = stream

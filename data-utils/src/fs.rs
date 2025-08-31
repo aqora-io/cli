@@ -16,12 +16,7 @@ impl FormatReader<File> {
         let file_kind = path
             .extension()
             .and_then(FileKind::from_ext)
-            .ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    "Extension does not match known formats",
-                )
-            })?;
+            .ok_or_else(|| io::Error::other("Extension does not match known formats"))?;
         let file = File::open(path).await?;
         FormatReader::infer_format(file, file_kind, max_records).await
     }

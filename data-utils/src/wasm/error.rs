@@ -32,7 +32,7 @@ impl From<WasmError> for JsValue {
 
 impl From<WasmError> for std::io::Error {
     fn from(value: WasmError) -> Self {
-        std::io::Error::new(std::io::ErrorKind::Other, value.to_string())
+        std::io::Error::other(value.to_string())
     }
 }
 

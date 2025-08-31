@@ -141,7 +141,7 @@ where
 {
     Waiting {
         empty: bool,
-        writers: Option<(W, AsyncArrowWriter<W::Writer>)>,
+        writers: Box<Option<(W, AsyncArrowWriter<W::Writer>)>>,
     },
     Busy {
         empty: bool,
@@ -290,7 +290,7 @@ where
                     Poll::Ready(Ok((writer, part_writer))) => {
                         *this.write_state = WriteState::Waiting {
                             empty: *empty,
-                            writers: Some((writer, part_writer)),
+                            writers: Box::new(Some((writer, part_writer))),
                         };
                         false
                     }

@@ -161,7 +161,7 @@ pub struct WriteOptions {
     #[arg(long)]
     offset_index_disabled: bool,
     #[arg(long)]
-    metdata: Option<String>,
+    metadata: Option<String>,
     #[arg(long)]
     sorting_columns: Option<String>,
     #[arg(long)]
@@ -249,7 +249,7 @@ impl WriteOptions {
         if let Some(created_by) = self.created_by.as_ref() {
             builder = builder.set_created_by(created_by.into());
         }
-        if let Some(metadata) = self.metdata.as_ref() {
+        if let Some(metadata) = self.metadata.as_ref() {
             let metadata: HashMap<String, String> = from_json_str_or_file(metadata)?;
             builder = builder.set_key_value_metadata(Some(
                 metadata

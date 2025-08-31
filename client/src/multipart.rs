@@ -183,14 +183,14 @@ pub enum UploadError {
 #[cfg(feature = "threaded")]
 impl From<UploadError> for io::Error {
     fn from(value: UploadError) -> Self {
-        io::Error::new(io::ErrorKind::Other, value)
+        io::Error::other(value)
     }
 }
 
 #[cfg(not(feature = "threaded"))]
 impl From<UploadError> for io::Error {
     fn from(value: UploadError) -> Self {
-        io::Error::new(io::ErrorKind::Other, value.to_string())
+        io::Error::other(value.to_string())
     }
 }
 

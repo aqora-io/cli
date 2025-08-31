@@ -89,7 +89,16 @@ impl Body {
         tokio_util::io::StreamReader::new(match self {
             Body::Bytes(bytes) => futures::stream::iter(vec![Ok(bytes)]).boxed_maybe_local(),
             Body::Stream { stream, .. } => stream
-                .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))
+                .map_err(|err| {
+                    #[cfg(feature = "threaded")]
+                    {
+                        io::Error::other(err)
+                    }
+                    #[cfg(not(feature = "threaded"))]
+                    {
+                        io::Error::other(err.to_string())
+                    }
+                })
                 .boxed_maybe_local(),
         })
     }
