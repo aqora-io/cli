@@ -4,7 +4,9 @@ use wasm_bindgen::prelude::*;
 pub use serde_wasm_bindgen::Error;
 
 pub const DEFAULT_SERIALIZER: serde_wasm_bindgen::Serializer =
-    serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true);
+    serde_wasm_bindgen::Serializer::new()
+        .serialize_maps_as_objects(true)
+        .serialize_large_number_types_as_bigints(true);
 
 pub fn to_value<T: serde::Serialize + ?Sized>(value: &T) -> Result<JsValue, Error> {
     value.serialize(&DEFAULT_SERIALIZER)

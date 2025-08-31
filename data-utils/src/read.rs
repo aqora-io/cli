@@ -19,7 +19,7 @@ pub trait RecordBatchStream {
 
 impl<T> RecordBatchStream for parquet::arrow::async_reader::ParquetRecordBatchStream<T>
 where
-    T: parquet::arrow::async_reader::AsyncFileReader + Unpin + Send + 'static,
+    T: parquet::arrow::async_reader::AsyncFileReader + Unpin + MaybeSend + 'static,
 {
     fn schema(&self) -> Schema {
         self.schema().clone().into()

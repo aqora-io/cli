@@ -10,8 +10,8 @@ use tokio_util::compat::{FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
 use wasm_bindgen::prelude::*;
 use web_sys::{Blob, FileReaderSync};
 
+use super::cast::JsCastExt;
 use super::error::WasmError;
-use super::util::JsCastExt;
 
 #[wasm_bindgen(js_name = "isByobReaderSupported")]
 pub fn is_byob_reader_supported() -> bool {

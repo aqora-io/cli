@@ -79,9 +79,9 @@ impl JsRecordBatchStream {
     where
         W: AsyncPartitionWriter,
     {
-        let mut options = from_value::<Option<JsWriteOptions>>(options)?.unwrap_or_default();
+        let options = from_value::<Option<RecordBatchWriteOptions>>(options)?.unwrap_or_default();
         let schema = self.0.schema().clone();
-        let stream = if let Some(progress) = options.progress.take() {
+        let stream = if let Some(progress) = options.progress {
             self.0
                 .map_inner(move |item| {
                     let item = item?;
@@ -113,6 +113,7 @@ impl JsRecordBatchStream {
         } else {
             self.0.boxed_local()
         };
+        let options = options.options;
         let buffer_options = BufferOptions {
             batch_buffer_size: options.batch_buffer_size,
             max_memory_size: options.max_memory_size,
@@ -127,7 +128,8 @@ impl JsRecordBatchStream {
     pub async fn write_parquet(
         self,
         writer: &mut JsPartWriter,
-        #[wasm_bindgen(unchecked_param_type = "undefined | WriteOptions | null")] options: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "undefined | RecordBatchWriteOptions | null")]
+        options: JsValue,
     ) -> Result<()> {
         self.parquet_stream(writer, options).await
     }
@@ -137,14 +139,24 @@ impl JsRecordBatchStream {
     pub async fn upload_parquet(
         self,
         uploader: &mut super::aqora_client::JsDatasetVersionFileUploader,
-        #[wasm_bindgen(unchecked_param_type = "undefined | WriteOptions | null")] options: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "undefined | RecordBatchWriteOptions | null")]
+        options: JsValue,
     ) -> Result<()> {
         self.parquet_stream(uploader, options).await
     }
 }
 
 #[derive(TS, Serialize, Deserialize, Default)]
-#[ts(rename = "WriteOptions", export)]
+#[ts(export)]
+pub struct RecordBatchWriteOptions {
+    #[serde(default, with = "super::serde::preserve::option")]
+    #[ts(optional, type = "(start: bigint, end: bigint, record: any) => void")]
+    pub progress: Option<js_sys::Function>,
+    #[serde(flatten)]
+    pub options: JsWriteOptions,
+}
+
+#[derive(TS, Serialize, Deserialize, Default, Eq, PartialEq)]
 pub struct JsWriteOptions {
     #[serde(default)]
     #[ts(optional)]
@@ -152,9 +164,6 @@ pub struct JsWriteOptions {
     #[serde(default)]
     #[ts(optional)]
     pub max_memory_size: Option<usize>,
-    #[serde(default, with = "super::serde::preserve::option")]
-    #[ts(optional, type = "(start: number, end: number, record: any) => void")]
-    pub progress: Option<js_sys::Function>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub skip_arrow_metadata: Option<bool>,
@@ -163,6 +172,12 @@ pub struct JsWriteOptions {
     pub schema_root: Option<String>,
     #[serde(flatten)]
     pub writer_properties: JsWriterProperties,
+}
+
+impl JsWriteOptions {
+    pub fn is_default(&self) -> bool {
+        self == &Self::default()
+    }
 }
 
 impl TryFrom<JsWriteOptions> for parquet::arrow::arrow_writer::ArrowWriterOptions {
@@ -179,7 +194,7 @@ impl TryFrom<JsWriteOptions> for parquet::arrow::arrow_writer::ArrowWriterOption
     }
 }
 
-#[derive(TS, Serialize, Deserialize)]
+#[derive(TS, Serialize, Deserialize, Eq, PartialEq)]
 #[ts(rename = "BloomFilterPosition", export)]
 #[serde(rename_all = "snake_case")]
 pub enum JsBloomFilterPosition {
@@ -196,7 +211,7 @@ impl From<JsBloomFilterPosition> for parquet::file::properties::BloomFilterPosit
     }
 }
 
-#[derive(TS, Serialize, Deserialize)]
+#[derive(TS, Serialize, Deserialize, Eq, PartialEq)]
 #[ts(rename = "WriterVersion", export)]
 pub enum JsWriterVersion {
     #[serde(rename = "PARQUET_1_0")]
@@ -214,7 +229,7 @@ impl From<JsWriterVersion> for parquet::file::properties::WriterVersion {
     }
 }
 
-#[derive(TS, Serialize, Deserialize)]
+#[derive(TS, Serialize, Deserialize, Eq, PartialEq)]
 #[ts(rename = "Encoding", export)]
 #[serde(rename_all = "snake_case")]
 pub enum JsEncoding {
@@ -243,7 +258,7 @@ impl From<JsEncoding> for parquet::basic::Encoding {
     }
 }
 
-#[derive(TS, Serialize, Deserialize)]
+#[derive(TS, Serialize, Deserialize, Eq, PartialEq)]
 #[ts(rename = "Compression", export)]
 #[serde(tag = "codec", rename_all = "snake_case")]
 pub enum JsCompression {
@@ -310,7 +325,7 @@ impl TryFrom<JsCompression> for parquet::basic::Compression {
     }
 }
 
-#[derive(TS, Serialize, Deserialize)]
+#[derive(TS, Serialize, Deserialize, Eq, PartialEq)]
 #[ts(rename = "EnabledStatistics", export)]
 #[serde(rename_all = "snake_case")]
 pub enum JsEnabledStatistics {
@@ -329,7 +344,7 @@ impl From<JsEnabledStatistics> for parquet::file::properties::EnabledStatistics 
     }
 }
 
-#[derive(TS, Serialize, Deserialize)]
+#[derive(TS, Serialize, Deserialize, Eq, PartialEq)]
 #[ts(rename = "SortingColumn", export)]
 pub struct JsSortingColumn {
     column_idx: i32,
@@ -347,7 +362,7 @@ impl From<JsSortingColumn> for parquet::format::SortingColumn {
     }
 }
 
-#[derive(TS, Serialize, Deserialize)]
+#[derive(TS, Serialize, Deserialize, Eq, PartialEq)]
 #[ts(rename = "KeyValue", export)]
 pub struct JsKeyValue {
     key: String,
@@ -365,7 +380,7 @@ impl From<JsKeyValue> for parquet::format::KeyValue {
     }
 }
 
-#[derive(TS, Serialize, Deserialize, Default)]
+#[derive(TS, Serialize, Deserialize, Default, Eq, PartialEq)]
 #[ts(rename = "ColumnProperties", export)]
 pub struct JsColumnProperties {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -382,7 +397,7 @@ pub struct JsColumnProperties {
     pub statistics_enabled: Option<JsEnabledStatistics>,
 }
 
-#[derive(TS, Serialize, Deserialize, Default)]
+#[derive(TS, Serialize, Deserialize, Default, Eq, PartialEq)]
 #[ts(rename = "WriterProperties", export)]
 pub struct JsWriterProperties {
     #[serde(default, skip_serializing_if = "Option::is_none")]

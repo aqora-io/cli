@@ -1,6 +1,7 @@
 #[cfg(feature = "aqora-client")]
 pub mod aqora_client;
 pub mod blob;
+pub mod cast;
 #[cfg(feature = "csv")]
 pub mod csv;
 pub mod dir;
@@ -9,8 +10,9 @@ pub mod format;
 pub mod infer;
 pub mod io;
 pub mod iter;
+pub mod parquet;
 pub mod read;
 pub mod regex;
 pub mod serde;
-pub mod util;
+pub mod utils;
 pub mod write;
