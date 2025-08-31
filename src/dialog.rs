@@ -13,7 +13,7 @@ pub struct Confirm {
     report: bool,
     default: Option<bool>,
     show_default: bool,
-    default_text: Option<String>,
+    initial_text: Option<String>,
     wait_for_newline: bool,
 }
 
@@ -32,7 +32,7 @@ impl Confirm {
             prompt: "".into(),
             report: true,
             default: None,
-            default_text: None,
+            initial_text: None,
             show_default: true,
             wait_for_newline: false,
         }
@@ -67,9 +67,9 @@ impl Confirm {
         }
     }
 
-    pub fn default_text<S: Into<String>>(self, text: S) -> Self {
+    pub fn with_initial_text<S: Into<String>>(self, text: S) -> Self {
         Self {
-            default_text: Some(text.into()),
+            initial_text: Some(text.into()),
             ..self
         }
     }
@@ -102,8 +102,8 @@ impl Confirm {
             .with_prompt(self.prompt)
             .show_default(self.show_default);
 
-        if let Some(default_text) = self.default_text {
-            input = input.with_initial_text(default_text);
+        if let Some(initial_text) = self.initial_text {
+            input = input.with_initial_text(initial_text);
         }
 
         input.interact_text()

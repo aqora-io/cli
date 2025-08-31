@@ -16,10 +16,10 @@ use regex::Regex;
 use serde::Serialize;
 use tokio::io::AsyncSeekExt;
 
+use crate::commands::GlobalArgs;
 use crate::error::{self, Result};
 
 use super::utils::{fields_into_table, from_json_str_or_file};
-use super::GlobalArgs;
 
 #[derive(Debug, Serialize, ValueEnum, Clone, Copy)]
 pub enum SchemaOutput {

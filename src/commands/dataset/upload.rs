@@ -11,21 +11,26 @@ use graphql_client::GraphQLQuery;
 use serde::Serialize;
 use thiserror::Error;
 
+use crate::commands::GlobalArgs;
 use crate::error::{self, Result};
 
 use super::{
+    common::{get_dataset_by_slug, DatasetCommonArgs},
     convert::WriteOptions,
-    get_dataset_by_slug,
     infer::{render_sample_debug, render_schema, FormatOptions, InferOptions, SchemaOutput},
     utils::from_json_str_or_file,
-    version::{create_dataset_version, get_dataset_version, CreateDatasetVersionInput},
-    DatasetGlobalArgs, GlobalArgs,
+    version::{
+        common::get_dataset_version,
+        new::{create_dataset_version, CreateDatasetVersionInput},
+    },
 };
 
 /// Upload a file to Aqora.io
 #[derive(Args, Debug, Serialize)]
 #[group(skip)]
 pub struct Upload {
+    #[command(flatten)]
+    common: DatasetCommonArgs,
     /// Path to file you will upload to Aqora.
     src: PathBuf,
     /// Target dataset version.
@@ -123,15 +128,11 @@ pub struct WriterOptions {
 )]
 pub struct FinishDatasetVersionUpload;
 
-pub async fn upload(
-    args: Upload,
-    dataset_global: DatasetGlobalArgs,
-    global: GlobalArgs,
-) -> Result<()> {
+pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
     let pb = global.spinner();
     let client = global.graphql_client().await?;
 
-    let dataset = get_dataset_by_slug(&global, dataset_global.slug).await?;
+    let dataset = get_dataset_by_slug(&global, args.common.slug).await?;
 
     if !dataset.viewer_can_create_version {
         return Err(error::user(

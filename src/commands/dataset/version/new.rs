@@ -1,6 +1,6 @@
 use crate::{
     commands::{
-        dataset::{get_dataset_by_slug, DatasetGlobalArgs},
+        dataset::common::{get_dataset_by_slug, DatasetCommonArgs},
         GlobalArgs,
     },
     error::{self, Result},
@@ -10,11 +10,13 @@ use clap::Args;
 use graphql_client::GraphQLQuery;
 use serde::Serialize;
 
-use super::get_dataset_version;
+use super::common::get_dataset_version;
 
 /// Create a new dataset version
 #[derive(Args, Debug, Serialize)]
 pub struct New {
+    #[command(flatten)]
+    common: DatasetCommonArgs,
     /// A base dataset to create the new version from
     /// all metadata and file from parent version would be into
     /// this new version
@@ -46,9 +48,9 @@ pub async fn create_dataset_version(
         .id)
 }
 
-pub async fn new(args: New, dataset_global: DatasetGlobalArgs, global: GlobalArgs) -> Result<()> {
+pub async fn new(args: New, global: GlobalArgs) -> Result<()> {
     let client = global.graphql_client().await?;
-    let dataset = get_dataset_by_slug(&global, dataset_global.slug).await?;
+    let dataset = get_dataset_by_slug(&global, args.common.slug).await?;
 
     if !dataset.viewer_can_create_version {
         return Err(error::user(
