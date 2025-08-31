@@ -1,7 +1,7 @@
 use thiserror::Error;
 use wasm_bindgen::prelude::*;
 
-use super::util::JsCastExt;
+use super::cast::JsCastExt;
 use crate::error::Error;
 
 #[cfg_attr(

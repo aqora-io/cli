@@ -18,6 +18,7 @@ mod process;
 pub mod read;
 pub mod schema;
 mod serde;
+pub mod utils;
 pub mod value;
 #[cfg(feature = "wasm")]
 pub mod wasm;

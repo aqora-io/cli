@@ -16,8 +16,8 @@ use super::serde::{from_value, to_value};
 #[ts(export)]
 pub struct DebugInferSchemaError {
     record_num: usize,
-    byte_start: usize,
-    byte_end: usize,
+    byte_start: u64,
+    byte_end: u64,
     #[ts(type = "object")]
     record: serde_json::Value,
     message: String,
@@ -29,7 +29,7 @@ pub struct DebugInferSchemaResult {
     schema: Option<SerdeSchema>,
     error: Option<DebugInferSchemaError>,
     samples_read: usize,
-    bytes_read: usize,
+    bytes_read: u64,
 }
 
 async fn debug_infer_schema<E>(

@@ -12,9 +12,9 @@ use ts_rs::TS;
 use wasm_bindgen::prelude::*;
 
 use crate::wasm::{
+    cast::JsCastExt,
     error::WasmError,
     serde::{from_value, preserve, DeserializeTagged},
-    util::JsCastExt,
 };
 
 use super::multipart::{DatasetVersionFileUploadOptions, JsDatasetVersionFileUploader};

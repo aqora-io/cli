@@ -12,13 +12,13 @@ use crate::read::{self, ValueStream};
 use crate::schema::SerdeSchema;
 use crate::value::Value;
 
+use super::cast::JsCastExt;
 use super::error::WasmError;
 use super::format::{InferAndStreamRecordBatchesOptions, InferSchemaOptions};
 use super::io::AsyncBlobReader;
 use super::iter::async_iterable;
 use super::read::JsRecordBatchStream;
 use super::serde::{from_value, to_value};
-use super::util::JsCastExt;
 
 #[wasm_bindgen(js_name = DirReader)]
 #[derive(Clone)]

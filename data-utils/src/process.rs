@@ -40,7 +40,7 @@ pub struct ProcessReadStream<R, P> {
     chunk_size: usize,
     buffer: BytesMut,
     reader_done: bool,
-    pos: usize,
+    pos: u64,
 }
 
 impl<R, P> ProcessReadStream<R, P> {
@@ -63,8 +63,8 @@ impl<R, P> ProcessReadStream<R, P> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessItem<T> {
-    pub start: usize,
-    pub end: usize,
+    pub start: u64,
+    pub end: u64,
     pub item: T,
 }
 
@@ -163,15 +163,15 @@ where
             match proccess_result {
                 ByteProcessResult::Ok((start_byte_offset, end_byte_offset, result)) => {
                     let result = ProcessItem {
-                        start: *this.pos + start_byte_offset,
-                        end: *this.pos + end_byte_offset,
+                        start: *this.pos + start_byte_offset as u64,
+                        end: *this.pos + end_byte_offset as u64,
                         item: result,
                     };
                     if end_byte_offset > *this.chunk_size {
                         *this.chunk_size = end_byte_offset;
                     }
                     *this.should_read = false;
-                    *this.pos += end_byte_offset;
+                    *this.pos += end_byte_offset as u64;
                     this.buffer.advance(end_byte_offset);
                     return Poll::Ready(Some(Ok(result)));
                 }
@@ -181,7 +181,7 @@ where
                         return Poll::Ready(None);
                     }
                     *this.should_read = true;
-                    *this.pos += byte_offset;
+                    *this.pos += byte_offset as u64;
                     this.buffer.advance(byte_offset);
                 }
                 ByteProcessResult::NotReady(byte_offset) => {
@@ -193,7 +193,7 @@ where
                         ))));
                     }
                     *this.should_read = true;
-                    *this.pos += byte_offset;
+                    *this.pos += byte_offset as u64;
                     this.buffer.advance(byte_offset);
                 }
                 ByteProcessResult::Err(err) => {

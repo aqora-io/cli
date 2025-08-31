@@ -56,6 +56,7 @@ pub enum Commands {
         #[command(subcommand)]
         args: New,
     },
+    #[clap(hide = true)]
     Dataset {
         #[command(subcommand)]
         args: Dataset,
