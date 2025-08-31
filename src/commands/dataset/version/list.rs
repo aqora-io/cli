@@ -1,6 +1,6 @@
 use crate::{
     commands::{
-        dataset::{new::prompt_for_dataset_creation, DatasetGlobalArgs},
+        dataset::{common::DatasetCommonArgs, new::prompt_for_dataset_creation},
         GlobalArgs,
     },
     error::{self, Result},
@@ -14,6 +14,8 @@ use serde::Serialize;
 /// List dataset version from Aqora.io
 #[derive(Args, Debug, Serialize)]
 pub struct List {
+    #[command(flatten)]
+    common: DatasetCommonArgs,
     /// The maximum number of version returned
     #[arg(short, long, default_value_t = 10)]
     limit: usize,
@@ -55,16 +57,11 @@ fn versions_to_table(
     table
 }
 
-pub async fn list(args: List, dataset_global: DatasetGlobalArgs, global: GlobalArgs) -> Result<()> {
+pub async fn list(args: List, global: GlobalArgs) -> Result<()> {
     let client = global.graphql_client().await?;
 
     // Find dataset the user wants to upload
-    let Some((owner, local_slug)) = dataset_global.slug.split_once('/') else {
-        return Err(error::user(
-            "Malformed slug",
-            "Expected a slug like: {owner}/{dataset}",
-        ));
-    };
+    let (owner, local_slug) = args.common.slug_pair()?;
 
     let dataset_versions = client
         .send::<GetDatasetVersions>(get_dataset_versions::Variables {

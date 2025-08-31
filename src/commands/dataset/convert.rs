@@ -7,11 +7,11 @@ use futures::prelude::*;
 use indicatif::ProgressBar;
 use serde::{Deserialize, Serialize};
 
+use crate::commands::GlobalArgs;
 use crate::error::{self, Result};
 
 use super::infer::{render_sample_debug, render_schema, FormatOptions, InferOptions, SchemaOutput};
 use super::utils::from_json_str_or_file;
-use super::GlobalArgs;
 
 #[derive(Debug, Serialize, ValueEnum, Clone, Copy)]
 pub enum WriterVersion {
