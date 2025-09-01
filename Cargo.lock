@@ -4833,8 +4833,7 @@ dependencies = [
 [[package]]
 name = "serde_arrow"
 version = "0.13.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55af245b3a27a1fed12634542d4e193b98b40aa69a7956c23cd9f8902c408463"
+source = "git+https://github.com/aqora-io/serde_arrow?branch=feat-serialize-str-as-bytes#95a85f4f3add2e19a354baa391c6510410c51167"
 dependencies = [
  "arrow-array",
  "arrow-schema",

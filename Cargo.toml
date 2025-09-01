@@ -129,3 +129,4 @@ arrow-buffer = { git = "https://github.com/aqora-io/arrow-rs", branch = "dataset
 arrow-data = { git = "https://github.com/aqora-io/arrow-rs", branch = "dataset" }
 arrow-schema = { git = "https://github.com/aqora-io/arrow-rs", branch = "dataset" }
 arrow-ipc = { git = "https://github.com/aqora-io/arrow-rs", branch = "dataset" }
+serde_arrow = { git = "https://github.com/aqora-io/serde_arrow", branch = "feat-serialize-str-as-bytes" }
