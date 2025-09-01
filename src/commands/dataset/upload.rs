@@ -262,7 +262,10 @@ pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
     pb.set_length(file_len);
     pb.set_position(0);
 
-    let stream = stream.inspect_ok(|item| pb.set_position(item.end as u64));
+    let stream = stream.inspect_ok(|item| {
+        tracing::debug!("Read record {:?}", item.item);
+        pb.set_position(item.end as u64);
+    });
 
     let stream = read::from_value_stream(stream, schema.clone(), read_options).map_err(|err| {
         error::user(

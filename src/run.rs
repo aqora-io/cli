@@ -13,7 +13,7 @@ static TOKIO: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
 pub(crate) fn tokio_runtime() -> &'static tokio::runtime::Runtime {
     TOKIO.get_or_init(|| {
-        tokio::runtime::Builder::new_multi_thread()
+        tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap()

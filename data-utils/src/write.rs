@@ -322,6 +322,8 @@ where
             }
             let close_finished = this.closing_futs.is_empty();
 
+            tracing::debug!("Read finished: {read_finished}, read pending: {read_pending}, write finished: {write_finished}, write pending: {write_pending}, close finished: {close_finished}");
+
             if read_finished && !read_pending && write_finished && !write_pending && close_finished
             {
                 return Poll::Ready(None);
