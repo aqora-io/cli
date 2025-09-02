@@ -236,10 +236,6 @@ where
                 false
             };
             let read_finished = this.read_fut.is_none();
-            let read_full = this
-                .buffer_options
-                .batch_buffer_size
-                .is_some_and(|size| this.batch_buffer.len() >= size);
 
             let write_pending = match this.write_state {
                 WriteState::Waiting { empty, writers } => {
@@ -321,6 +317,11 @@ where
                 }
             }
             let close_finished = this.closing_futs.is_empty();
+
+            let read_full = this
+                .buffer_options
+                .batch_buffer_size
+                .is_some_and(|size| this.batch_buffer.len() >= size);
 
             if read_finished && !read_pending && write_finished && !write_pending && close_finished
             {

@@ -128,6 +128,11 @@ impl DirReaderOptions {
     }
 
     #[cfg(feature = "fs")]
+    pub fn paths(&self) -> impl Iterator<Item = Result<PathBuf, GlobError>> {
+        self.glob.clone().walk().map(|item| Ok(item?.0))
+    }
+
+    #[cfg(feature = "fs")]
     pub fn stream_values_from_fs(&self) -> ProcessItemStream<'static, Value, Error> {
         use tokio::{
             fs::File,

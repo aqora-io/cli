@@ -4,9 +4,9 @@ use aqora_client::{
     checksum::{crc32fast::Crc32, S3ChecksumLayer},
     retry::{BackoffRetryLayer, ExponentialBackoffBuilder, RetryStatusCodeRange},
 };
-use aqora_data_utils::{aqora_client::DatasetVersionFileUploader, infer, read, write, Schema};
+use aqora_data_utils::{aqora_client::DatasetVersionFileUploader, read, write};
 use clap::Args;
-use futures::{StreamExt as _, TryStreamExt as _};
+use futures::TryStreamExt as _;
 use graphql_client::GraphQLQuery;
 use serde::Serialize;
 use thiserror::Error;
@@ -16,9 +16,8 @@ use crate::error::{self, Result};
 
 use super::{
     common::{get_dataset_by_slug, DatasetCommonArgs},
-    convert::WriteOptions,
-    infer::{render_sample_debug, render_schema, FormatOptions, InferOptions, SchemaOutput},
-    utils::from_json_str_or_file,
+    convert::{BufferOptions, WriteOptions},
+    infer::{open, FormatOptions, InferOptions, OpenOptions, SchemaOutput},
     version::{
         common::get_dataset_version,
         new::{create_dataset_version, CreateDatasetVersionInput},
@@ -46,15 +45,13 @@ pub struct Upload {
     #[command(flatten)]
     write: Box<WriteOptions>,
     #[command(flatten)]
+    buffer: Box<BufferOptions>,
+    #[command(flatten)]
     writer: Box<WriterOptions>,
     #[arg(long)]
     schema: Option<String>,
     #[arg(long, default_value_t = 1024)]
     record_batch_size: usize,
-    #[arg(long)]
-    batch_buffer_size: Option<usize>,
-    #[arg(long)]
-    writer_max_memory_size: Option<usize>,
     #[arg(long, value_enum, default_value_t = SchemaOutput::Table)]
     schema_output: SchemaOutput,
 }
@@ -114,7 +111,7 @@ impl FromStr for Semver {
 
 #[derive(Args, Debug, Serialize)]
 pub struct WriterOptions {
-    #[arg(long, default_value_t = 2)]
+    #[arg(long, default_value_t = 8)]
     concurrent_uploads: usize,
     #[arg(long, default_value_t = 1_000_000_000)]
     max_part_size: usize,
@@ -133,15 +130,35 @@ pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
     let client = global.graphql_client().await?;
 
     let dataset = get_dataset_by_slug(&global, args.common.slug).await?;
-
     if !dataset.viewer_can_create_version {
         return Err(error::user(
             "You cannot upload a version for this dataset",
             "Did you type the right slug?",
         ));
     }
-
     let dataset_id = dataset.id;
+
+    let write_options = args.write.parse()?;
+
+    let (schema, stream) = open(
+        &args.src,
+        OpenOptions {
+            format: *args.format,
+            infer: *args.infer,
+            read: read::Options {
+                batch_size: Some(args.record_batch_size),
+            },
+            progress: Some(pb.clone()),
+            schema: None,
+        },
+        &global,
+        args.schema_output,
+    )
+    .await?;
+
+    pb.println("\n");
+    pb.set_message("Uploading...");
+    pb.set_style(crate::progress_bar::pretty_bytes());
 
     // Find or create a dataset version
     let dataset_version_id = match args.version {
@@ -181,116 +198,19 @@ pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
     let writer = DatasetVersionFileUploader::new(writer_client, &dataset_version_id)
         .with_concurrency(Some(args.writer.concurrent_uploads))
         .with_max_partition_size(Some(args.writer.max_part_size));
-    let mut reader = args.format.open(&args.src).await?;
-    let file_len = reader
-        .reader()
-        .metadata()
-        .await
-        .map_err(|err| {
-            error::user(
-                &format!("Could not read metadata from input file: {err}"),
-                "Please check the file and try again",
-            )
-        })?
-        .len();
-    let write_options = args.write.parse()?;
-    let read_options = read::Options {
-        batch_size: Some(args.record_batch_size),
-    };
-    let (schema, stream) = if let Some(schema) = args.schema.as_ref() {
-        let schema: Schema = from_json_str_or_file(schema)?;
-        let stream = reader
-            .stream_values()
+
+    let written_records =
+        write::ParquetStream::new(stream, writer, schema, write_options, args.buffer.parse())
+            .try_fold(0usize, async |acc, (_part, meta)| {
+                Ok(acc + 0usize.saturating_add_signed(meta.num_rows as _))
+            })
             .await
             .map_err(|err| {
                 error::user(
-                    &format!("Could not read from input file: {err}"),
+                    &format!("An error occurred while writing to the output file: {err}"),
                     "Please check the file format and try again",
                 )
-            })?
-            .boxed();
-        (schema, stream)
-    } else {
-        pb.set_message(format!("Inferring schema of {}", args.src.display()));
-        let infer_options = args.infer.parse()?;
-        let mut stream = reader.stream_values().await?;
-        let sample_size = args.infer.max_samples();
-        let mut samples = if let Some(sample_size) = sample_size {
-            Vec::with_capacity(sample_size)
-        } else {
-            Vec::new()
-        };
-        while let Some(value) = stream.next().await.transpose().map_err(|err| {
-            error::user(
-                &format!("Failed to read record: {err}"),
-                "Check the data or file and try again",
-            )
-        })? {
-            samples.push(value);
-            if sample_size.is_some_and(|s| samples.len() >= s) {
-                break;
-            }
-        }
-        let schema = if let Ok(schema) = infer::from_samples(&samples, infer_options.clone()) {
-            schema
-        } else {
-            pb.println(render_sample_debug(
-                args.schema_output,
-                &global,
-                infer::debug_samples(&samples, infer_options),
-                &samples,
-            )?);
-            return Err(error::user(
-                "Could not infer the schema from the file given",
-                "Please make sure the data is conform or set overwrites with --overwrites",
-            ));
-        };
-        let stream = futures::stream::iter(samples.into_iter().map(std::io::Result::Ok))
-            .chain(stream)
-            .boxed();
-        (schema, stream)
-    };
-
-    pb.println(format!(
-        "Using schema:\n\n{}\n\n",
-        render_schema(args.schema_output, &global, &schema)
-            .unwrap_or("Failed to render schema".to_string())
-    ));
-
-    pb.set_style(crate::progress_bar::pretty_bytes());
-    pb.set_message("Writing...");
-    pb.set_length(file_len);
-    pb.set_position(0);
-
-    let stream = stream.inspect_ok(|item| pb.set_position(item.end));
-
-    let stream = read::from_value_stream(stream, schema.clone(), read_options).map_err(|err| {
-        error::user(
-            &format!("Error reading from input file: {err}"),
-            "Please check the file and try again",
-        )
-    })?;
-
-    let written_records = write::ParquetStream::new(
-        stream,
-        writer,
-        schema,
-        write_options,
-        write::BufferOptions {
-            batch_buffer_size: args.batch_buffer_size,
-            max_memory_size: args.writer_max_memory_size,
-        },
-    )
-    .try_fold(0usize, async |acc, (_part, meta)| {
-        Ok(acc + 0usize.saturating_add_signed(meta.num_rows as _))
-    })
-    .await
-    .map_err(|err| {
-        error::user(
-            &format!("An error occurred while writing to the output file: {err}"),
-            "Please check the file format and try again",
-        )
-    })?;
+            })?;
 
     let _ = client
         .send::<FinishDatasetVersionUpload>(finish_dataset_version_upload::Variables {

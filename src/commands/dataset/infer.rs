@@ -1,17 +1,25 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use aqora_data_utils::infer::SampleDebug;
 use aqora_data_utils::{
+    arrow::record_batch::RecordBatch,
     csv::{infer_format as infer_csv_format, CsvFormat},
-    infer::{self},
+    dir::DirReaderOptions,
+    infer::{self, SampleDebug},
     json::{infer_format as infer_json_format, JsonFileOptions, JsonFormat, JsonItemOptions},
+    read::{self, AsyncFileReaderExt, RecordBatchStreamExt, ValueStream},
     schema::Schema,
+    utils::is_parquet,
     value::Value,
     DateParseOptions, Format, FormatReader, ProcessItem,
 };
 use clap::{Args, ValueEnum};
-use futures::{StreamExt, TryStreamExt};
+use futures::{
+    prelude::*,
+    stream::{BoxStream, FuturesUnordered},
+};
+use indicatif::ProgressBar;
 use regex::Regex;
 use serde::Serialize;
 use tokio::io::AsyncSeekExt;
@@ -152,14 +160,11 @@ impl InferOptions {
 }
 
 impl FormatOptions {
-    pub async fn open(&self, path: impl AsRef<Path>) -> Result<FormatReader<tokio::fs::File>> {
-        let path = path.as_ref();
-        let mut file = tokio::fs::File::open(path).await.map_err(|e| {
-            error::user(
-                &format!("Could not open file: {}", path.display()),
-                &format!("Error: {}", e),
-            )
-        })?;
+    pub async fn open(
+        &self,
+        path: &Path,
+        mut file: tokio::fs::File,
+    ) -> Result<FormatReader<tokio::fs::File>> {
         let file_type = if let Some(file_type) = self.file_type {
             file_type
         } else {
@@ -368,39 +373,243 @@ pub fn render_sample_debug(
     Ok(out)
 }
 
+pub struct OpenOptions {
+    pub format: FormatOptions,
+    pub infer: InferOptions,
+    pub read: read::Options,
+    pub schema: Option<String>,
+    pub progress: Option<ProgressBar>,
+}
+
+type BoxRecordBatchStream = BoxStream<'static, aqora_data_utils::Result<RecordBatch>>;
+
+enum OpenReturn {
+    Ok(Schema, BoxRecordBatchStream),
+    Debug(SampleDebug, Vec<ProcessItem<Value>>),
+}
+
+async fn do_open(path: impl AsRef<Path>, options: OpenOptions) -> Result<OpenReturn> {
+    let path = path.as_ref();
+    let meta = tokio::fs::metadata(path).await.ok();
+    let schema: Option<Schema> = options
+        .schema
+        .as_deref()
+        .map(from_json_str_or_file)
+        .transpose()?;
+    let mut stream = if meta.as_ref().is_some_and(|meta| meta.is_file()) {
+        let meta = meta.unwrap();
+        let mut file = tokio::fs::File::open(path).await.map_err(|e| {
+            error::user(
+                &format!("Could not open file: {}", path.display()),
+                &format!("Error: {}", e),
+            )
+        })?;
+        if let Some(progress) = &options.progress {
+            progress.set_length(meta.len());
+        }
+        let is_parquet = is_parquet(&mut file).await.map_err(|err| {
+            error::user(
+                &format!("Could not read file: {err}"),
+                "Check the file and try again",
+            )
+        })?;
+        file.rewind().await?;
+        if is_parquet {
+            let metadata = parquet::arrow::arrow_reader::ArrowReaderMetadata::load_async(
+                &mut file,
+                Default::default(),
+            )
+            .await
+            .map_err(|err| {
+                error::user(
+                    &format!("Could not read parquet metadata: {err}"),
+                    "Check the file and try again",
+                )
+            })?;
+            let file_schema = Schema::from(Arc::clone(metadata.schema()));
+            if schema.is_some_and(|schema| schema != file_schema) {
+                return Err(error::user(
+                    "Schema provided does not match parquet schema",
+                    "Please provide a matching schema or no schema",
+                ));
+            }
+            let progress = options.progress.clone();
+            let stream =
+                parquet::arrow::async_reader::ParquetRecordBatchStreamBuilder::new_with_metadata(
+                    file.inspect(move |range| {
+                        if let Some(progress) = &progress {
+                            progress.set_position(range.end);
+                        }
+                    }),
+                    metadata,
+                )
+                .build()
+                .map_err(|err| {
+                    error::user(
+                        &format!("Failed to build parquet stream: {err}"),
+                        "Check file and try again",
+                    )
+                })?
+                .map_err(aqora_data_utils::error::Error::from);
+            return Ok(OpenReturn::Ok(file_schema, stream.boxed()));
+        }
+        options
+            .format
+            .open(path, file)
+            .await?
+            .into_value_stream()
+            .await
+            .map_err(|err| {
+                error::user(
+                    &format!("Could not read from input file: {err}"),
+                    "Please check the file and try again",
+                )
+            })?
+            .map_err(aqora_data_utils::error::Error::from)
+            .boxed()
+    } else {
+        let mut glob_path = path.to_path_buf();
+        if meta.is_some_and(|meta| meta.is_dir()) {
+            glob_path.push("**");
+        }
+        let glob_str = glob_path.as_os_str().to_str().ok_or_else(|| {
+            error::user(
+                "Could not read glob",
+                "Please make sure the glob is valid UTF-8",
+            )
+        })?;
+        let dir_options = DirReaderOptions::new(glob_str).map_err(|err| {
+            error::user(
+                &format!("Failed to parse glob: {err}"),
+                "Please make sure the glob is valid",
+            )
+        })?;
+        let paths = dir_options
+            .paths()
+            .map(|path| {
+                let glob_path = glob_path.clone();
+                async move {
+                    let path = path.map_err(|err| {
+                        error::user(
+                            &format!("Could not walk glob {}: {}", glob_path.display(), err),
+                            "Check the glob and try again",
+                        )
+                    })?;
+                    tokio::fs::metadata(&path)
+                        .await
+                        .map_err(|err| {
+                            error::user(
+                                &format!("Error reading metadata of {}: {}", path.display(), err),
+                                "Check file and try again",
+                            )
+                        })
+                        .map(|meta| (path, meta))
+                }
+            })
+            .collect::<FuturesUnordered<_>>()
+            .try_collect::<Vec<_>>()
+            .await?;
+        if paths.is_empty() {
+            return Err(error::user(
+                "Glob doesn't match any files",
+                "Check the glob and try again",
+            ));
+        }
+        if let Some(progress) = &options.progress {
+            progress.set_length(paths.iter().map(|(_, meta)| meta.len()).sum::<u64>());
+        }
+        dir_options.stream_values_from_fs()
+    };
+    if let Some(progress) = options.progress.clone() {
+        stream = stream
+            .inspect_ok(move |item| progress.set_position(item.end))
+            .boxed();
+    }
+    let schema = if let Some(schema) = schema {
+        schema
+    } else {
+        let infer_options = options.infer.parse()?;
+        let samples = stream
+            .take_samples(options.infer.max_samples())
+            .await
+            .map_err(|err| {
+                error::user(
+                    &format!("Error reading from input file: {err}"),
+                    "Please check the file and try again",
+                )
+            })?;
+        let schema = if let Ok(schema) = infer::from_samples(&samples, infer_options.clone()) {
+            schema
+        } else {
+            return Ok(OpenReturn::Debug(
+                infer::debug_samples(&samples, infer_options),
+                samples,
+            ));
+        };
+        stream = futures::stream::iter(samples.into_iter().map(aqora_data_utils::Result::Ok))
+            .chain(stream)
+            .boxed();
+        schema
+    };
+    let record_batches = stream
+        .into_record_batch_stream(schema.clone(), options.read)
+        .map_err(|err| {
+            error::user(
+                &format!("Error reading from input file: {err}"),
+                "Please check the file and try again",
+            )
+        })?;
+    Ok(OpenReturn::Ok(schema, record_batches.wrap().boxed()))
+}
+
+pub async fn open(
+    path: impl AsRef<Path>,
+    options: OpenOptions,
+    global: &GlobalArgs,
+    output: SchemaOutput,
+) -> Result<(Schema, BoxRecordBatchStream)> {
+    let progress = options.progress.clone();
+    let (rendered, res) = match do_open(path, options).await? {
+        OpenReturn::Ok(schema, stream) => {
+            let rendered = render_schema(output, global, &schema)?;
+            (rendered, Ok((schema, stream)))
+        }
+        OpenReturn::Debug(sample_debug, samples) => {
+            let rendered = render_sample_debug(output, global, sample_debug, &samples)?;
+            (
+                rendered,
+                Err(error::user(
+                    "Could not infer the schema from the file given",
+                    "Please make sure the data is conform or set overwrites with --overwrites",
+                )),
+            )
+        }
+    };
+    if let Some(progress) = progress {
+        progress.println(rendered);
+    } else {
+        println!("{rendered}");
+    }
+    res
+}
+
 pub async fn infer(args: Infer, global: GlobalArgs) -> Result<()> {
     let pb = global
         .spinner()
         .with_message(format!("Reading {}", args.file.display()));
-    let infer_options = args.infer.parse()?;
-    let mut reader = args.format.open(&args.file).await?;
-    let mut stream = reader
-        .stream_values()
-        .await
-        .map_err(|e| error::user("Could not read values from file", &format!("Error: {}", e)))?
-        .boxed_local();
-    if let Some(max_samples) = args.infer.max_samples() {
-        stream = stream.take(max_samples).boxed_local();
-    }
-    let values = stream
-        .try_collect::<Vec<_>>()
-        .await
-        .map_err(|e| error::user("Could not read values from file", &format!("Error: {}", e)))?;
-    if let Ok(schema) = infer::from_samples(&values, infer_options.clone()) {
-        pb.finish();
-        pb.finish_and_clear();
-        println!("{}", render_schema(args.output, &global, &schema)?)
-    } else {
-        pb.println(render_sample_debug(
-            args.output,
-            &global,
-            infer::debug_samples(&values, infer_options),
-            &values,
-        )?);
-        return Err(error::user(
-            "Could not infer the schema from the file given",
-            "Please make sure the data is conform or set overwrites with --overwrites",
-        ));
-    }
+    let _ = open(
+        &args.file,
+        OpenOptions {
+            format: *args.format,
+            infer: *args.infer,
+            read: Default::default(),
+            progress: Some(pb.clone()),
+            schema: None,
+        },
+        &global,
+        args.output,
+    )
+    .await?;
+    pb.finish_and_clear();
     Ok(())
 }
