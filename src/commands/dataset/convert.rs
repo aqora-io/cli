@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use aqora_data_utils::{fs::DirWriter, infer, parquet, read, write, Schema};
+use aqora_data_utils::{fs::DirWriter, parquet, read, write};
 use clap::{Args, ValueEnum};
 use futures::prelude::*;
 use indicatif::ProgressBar;
@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::commands::GlobalArgs;
 use crate::error::{self, Result};
 
-use super::infer::{render_sample_debug, render_schema, FormatOptions, InferOptions, SchemaOutput};
+use super::infer::{open, FormatOptions, InferOptions, OpenOptions, SchemaOutput};
 use super::utils::from_json_str_or_file;
 
 #[derive(Debug, Serialize, ValueEnum, Clone, Copy)]
@@ -140,7 +140,7 @@ pub struct WriteOptions {
     skip_arrow_metadata: bool,
     #[arg(value_enum, long, default_value_t = WriterVersion::Parquet1_0)]
     writer_version: WriterVersion,
-    #[arg(value_enum, long, default_value = "uncompressed")]
+    #[arg(value_enum, long, default_value = "zstd(1)")]
     compression: String,
     #[arg(value_enum, long)]
     encoding: Option<Encoding>,
@@ -195,6 +195,31 @@ pub struct WriterOptions {
 }
 
 #[derive(Args, Debug, Serialize)]
+pub struct BufferOptions {
+    #[arg(long, default_value_t = 100)]
+    batch_buffer_size: usize,
+    #[arg(long, default_value_t = 1_000_000_000)]
+    writer_max_memory_size: usize,
+}
+
+impl BufferOptions {
+    pub fn parse(&self) -> write::BufferOptions {
+        write::BufferOptions {
+            batch_buffer_size: if self.batch_buffer_size > 0 {
+                Some(self.batch_buffer_size)
+            } else {
+                None
+            },
+            max_memory_size: if self.writer_max_memory_size > 0 {
+                Some(self.writer_max_memory_size)
+            } else {
+                None
+            },
+        }
+    }
+}
+
+#[derive(Args, Debug, Serialize)]
 pub struct Convert {
     #[command(flatten)]
     format: Box<FormatOptions>,
@@ -204,14 +229,12 @@ pub struct Convert {
     write: Box<WriteOptions>,
     #[command(flatten)]
     writer: Box<WriterOptions>,
+    #[command(flatten)]
+    buffer: Box<BufferOptions>,
     #[arg(long)]
     schema: Option<String>,
     #[arg(long, default_value_t = 1024)]
     record_batch_size: usize,
-    #[arg(long)]
-    batch_buffer_size: Option<usize>,
-    #[arg(long)]
-    writer_max_memory_size: Option<usize>,
     #[arg(long, value_enum, default_value_t = SchemaOutput::Table)]
     schema_output: SchemaOutput,
     src: PathBuf,
@@ -365,116 +388,42 @@ impl WrappedDirWriter {
 }
 
 pub async fn convert(args: Convert, global: GlobalArgs) -> Result<()> {
-    let pb = global.spinner();
-    let writer = WrappedDirWriter::new(&args.src, args.dest.as_ref(), *args.writer, pb.clone());
-    let mut reader = args.format.open(&args.src).await?;
-    let file_len = reader
-        .reader()
-        .metadata()
-        .await
-        .map_err(|err| {
-            error::user(
-                &format!("Could not read metadata from input file: {err}"),
-                "Please check the file and try again",
-            )
-        })?
-        .len();
+    let pb = global
+        .spinner()
+        .with_message(format!("Reading {}", args.src.display()));
+
     let write_options = args.write.parse()?;
-    let read_options = read::Options {
-        batch_size: Some(args.record_batch_size),
-    };
-    let (schema, stream) = if let Some(schema) = args.schema.as_ref() {
-        let schema: Schema = from_json_str_or_file(schema)?;
-        let stream = reader
-            .stream_values()
+    let (schema, stream) = open(
+        &args.src,
+        OpenOptions {
+            format: *args.format,
+            infer: *args.infer,
+            read: read::Options {
+                batch_size: Some(args.record_batch_size),
+            },
+            progress: Some(pb.clone()),
+            schema: None,
+        },
+        &global,
+        args.schema_output,
+    )
+    .await?;
+
+    pb.println("\n");
+    pb.set_message("Writing...");
+    pb.set_style(crate::progress_bar::pretty_bytes());
+
+    let writer = WrappedDirWriter::new(&args.src, args.dest.as_ref(), *args.writer, pb.clone());
+    let metadata =
+        write::ParquetStream::new(stream, writer, schema, write_options, args.buffer.parse())
+            .try_collect::<Vec<_>>()
             .await
             .map_err(|err| {
                 error::user(
-                    &format!("Could not read from input file: {err}"),
+                    &format!("An error occurred while writing to the output file: {err}"),
                     "Please check the file format and try again",
                 )
-            })?
-            .boxed();
-        (schema, stream)
-    } else {
-        pb.set_message(format!("Inferring schema of {}", args.src.display()));
-        let infer_options = args.infer.parse()?;
-        let mut stream = reader.stream_values().await?;
-        let sample_size = args.infer.max_samples();
-        let mut samples = if let Some(sample_size) = sample_size {
-            Vec::with_capacity(sample_size)
-        } else {
-            Vec::new()
-        };
-        while let Some(value) = stream.next().await.transpose().map_err(|err| {
-            error::user(
-                &format!("Failed to read record: {err}"),
-                "Check the data or file and try again",
-            )
-        })? {
-            samples.push(value);
-            if sample_size.is_some_and(|s| samples.len() >= s) {
-                break;
-            }
-        }
-        let schema = if let Ok(schema) = infer::from_samples(&samples, infer_options.clone()) {
-            schema
-        } else {
-            pb.println(render_sample_debug(
-                args.schema_output,
-                &global,
-                infer::debug_samples(&samples, infer_options),
-                &samples,
-            )?);
-            return Err(error::user(
-                "Could not infer the schema from the file given",
-                "Please make sure the data is conform or set overwrites with --overwrites",
-            ));
-        };
-        let stream = futures::stream::iter(samples.into_iter().map(std::io::Result::Ok))
-            .chain(stream)
-            .boxed();
-        (schema, stream)
-    };
-
-    pb.println(format!(
-        "Using schema:\n\n{}\n\n",
-        render_schema(args.schema_output, &global, &schema)
-            .unwrap_or("Failed to render schema".to_string())
-    ));
-
-    pb.set_style(crate::progress_bar::pretty_bytes());
-    pb.set_message("Writing...");
-    pb.set_length(file_len);
-    pb.set_position(0);
-
-    let stream = stream.inspect_ok(|item| pb.set_position(item.end));
-
-    let stream = read::from_value_stream(stream, schema.clone(), read_options).map_err(|err| {
-        error::user(
-            &format!("Error reading from input file: {err}"),
-            "Please check the file and try again",
-        )
-    })?;
-
-    let metadata = write::ParquetStream::new(
-        stream,
-        writer,
-        schema,
-        write_options,
-        write::BufferOptions {
-            batch_buffer_size: args.batch_buffer_size,
-            max_memory_size: args.writer_max_memory_size,
-        },
-    )
-    .try_collect::<Vec<_>>()
-    .await
-    .map_err(|err| {
-        error::user(
-            &format!("An error occurred while writing to the output file: {err}"),
-            "Please check the file format and try again",
-        )
-    })?;
+            })?;
 
     pb.set_style(indicatif::ProgressStyle::default_spinner());
     pb.finish_with_message(format!(

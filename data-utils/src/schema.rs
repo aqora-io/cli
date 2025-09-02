@@ -30,6 +30,13 @@ impl Schema {
     }
 }
 
+impl PartialEq for Schema {
+    fn eq(&self, other: &Self) -> bool {
+        SerdeSchema::from(self) == SerdeSchema::from(other)
+    }
+}
+impl Eq for Schema {}
+
 impl<'de> Deserialize<'de> for Schema {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

@@ -1,8 +1,12 @@
+use std::ops::Range;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{ready, Context, Poll};
 
 use arrow::record_batch::RecordBatch;
+use bytes::Bytes;
 use futures::prelude::*;
+use parquet::arrow::async_reader::AsyncFileReader;
 use pin_project::pin_project;
 use serde::{Deserialize, Serialize};
 use serde_arrow::{schema::SerdeArrowSchema, ArrayBuilder};
@@ -375,3 +379,47 @@ impl<T> ValueStream for T where
     T: TryStream<Ok: Serialize + MaybeSend, Error: Into<Error>> + Sized + Unpin + MaybeSend
 {
 }
+
+pub struct InspectAsyncFileReader<T, F> {
+    inner: T,
+    func: F,
+}
+
+impl<T, F> AsyncFileReader for InspectAsyncFileReader<T, F>
+where
+    T: AsyncFileReader,
+    F: FnMut(Range<u64>) + MaybeSend,
+{
+    fn get_bytes(&mut self, range: Range<u64>) -> BoxFuture<'_, parquet::errors::Result<Bytes>> {
+        (self.func)(range.clone());
+        self.inner.get_bytes(range)
+    }
+    fn get_metadata<'a>(
+        &'a mut self,
+        options: Option<&'a parquet::arrow::arrow_reader::ArrowReaderOptions>,
+    ) -> BoxFuture<'a, parquet::errors::Result<Arc<parquet::file::metadata::ParquetMetaData>>> {
+        self.inner.get_metadata(options)
+    }
+
+    fn get_byte_ranges(
+        &mut self,
+        ranges: Vec<Range<u64>>,
+    ) -> BoxFuture<'_, parquet::errors::Result<Vec<Bytes>>> {
+        for range in ranges.iter() {
+            (self.func)(range.clone());
+        }
+        self.inner.get_byte_ranges(ranges)
+    }
+}
+
+pub trait AsyncFileReaderExt: AsyncFileReader {
+    fn inspect<F>(self, func: F) -> InspectAsyncFileReader<Self, F>
+    where
+        Self: Sized,
+        F: FnMut(Range<u64>),
+    {
+        InspectAsyncFileReader { inner: self, func }
+    }
+}
+
+impl<T> AsyncFileReaderExt for T where T: AsyncFileReader {}

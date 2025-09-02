@@ -12,6 +12,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::async_util::parquet_async::*;
 use crate::error::Result;
+use crate::read::AsyncFileReaderExt;
 use crate::schema::Schema;
 use crate::write::{AsyncPartitionWriter, BufferOptions, RecordBatchStreamParquetExt};
 
@@ -116,10 +117,11 @@ impl ParquetReader {
         let metadata = self.metadata().await?;
         let stream =
             parquet::arrow::async_reader::ParquetRecordBatchStreamBuilder::new_with_metadata(
-                ProgressAsyncFileReader {
-                    inner: self.async_reader(),
-                    progress: options.progress,
-                },
+                self.async_reader().inspect(move |range| {
+                    if let Some(progress) = options.progress.as_ref() {
+                        let _ = progress.call2(progress, &range.start.into(), &range.end.into());
+                    }
+                }),
                 metadata,
             )
             .build()?;
