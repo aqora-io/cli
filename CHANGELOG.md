@@ -2,6 +2,43 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.16.0 - 2025-09-02
+#### Bug Fixes
+- prettify output - (5b5e4ec) - Angel-Dijoux
+- only send credentials to descendants of a domain, not to every descendant of corresponding TLD - (66b62ca) - Antoine Chauvin
+- update gql contract - (a6ffbef) - Angel-Dijoux
+- hide progress when prompting for dataset creation - (740ecd8) - Antoine Chauvin
+- improve `allow_request_url` & its tests - (60d9660) - Antoine Chauvin
+- make `dataset upload` look more like `dataset convert` - (056c4a7) - Antoine Chauvin
+- use a custom body for wasm targets - (9de8496) - Julian Popescu
+#### Features
+- allow raw parquet upload - (d39a428) - Julian Popescu
+- create dataset - (1426721) - Angel-Dijoux
+- create a dataset version - (defa00e) - Angel-Dijoux
+- list dataset versions - (e6543b3) - Angel-Dijoux
+- dir reader - (7b7ea21) - Julian Popescu
+- implement easier way to read datasets with polars - (5cd381f) - Antoine Chauvin
+- fsspec implementation - (a717227) - Antoine Chauvin
+- graphql python client - (7a91f5c) - Antoine Chauvin
+- provide some extent of configuration when uploading datasets - (2572ec1) - Antoine Chauvin
+- upload dataset - (de6fbcb) - Antoine Chauvin
+- add ipc support and abstract RecordBatchStream - (2eb5118) - Julian Popescu
+- implement a part uploader with aqora-client - (caf2bab) - Julian Popescu
+- data utils - (3cd9e6f) - Julian Popescu
+#### Miscellaneous Chores
+- update version patch for npm release - (3a8dd2f) - Julian Popescu
+- fix clippy errors - (87e4497) - Julian Popescu
+- update arrow/parquet deps - (7a0e5b3) - Julian Popescu
+#### Refactoring
+- cleanup dataset command module files - (327e632) - Julian Popescu
+- fsspec & pyarrow - (64c846a) - Antoine Chauvin
+- use tower instead of homegrown middleware - (15736e7) - Julian Popescu
+- AsyncWrite for multipart uploads - (74f5529) - Julian Popescu
+#### Tests
+- fix compilation issues - (a993e65) - Antoine Chauvin
+
+- - -
+
 ## v0.15.1 - 2025-06-07
 #### Bug Fixes
 - multipart upload - (ea159f3) - Antoine Chauvin
