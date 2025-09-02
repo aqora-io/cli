@@ -36,22 +36,15 @@ pub struct GetDatasetSlugResponse {
 
 pub async fn get_dataset_by_slug(
     global: &GlobalArgs,
-    slug: String,
+    owner: impl AsRef<str>,
+    local_slug: impl AsRef<str>,
 ) -> Result<GetDatasetSlugResponse> {
     let client = global.graphql_client().await?;
 
-    // Find dataset the user wants to upload
-    let Some((owner, local_slug)) = slug.split_once('/') else {
-        return Err(error::user(
-            "Malformed slug",
-            "Expected a slug like: {owner}/{dataset}",
-        ));
-    };
-
     let dataset = client
         .send::<GetDatasetBySlug>(get_dataset_by_slug::Variables {
-            owner: owner.to_string(),
-            local_slug: local_slug.to_string(),
+            owner: owner.as_ref().into(),
+            local_slug: local_slug.as_ref().into(),
         })
         .await?
         .dataset_by_slug;
@@ -59,8 +52,8 @@ pub async fn get_dataset_by_slug(
     let Some(dataset) = dataset else {
         let new_dataset = prompt_for_dataset_creation(
             global,
-            Some(owner.to_string()),
-            Some(local_slug.to_string()),
+            Some(owner.as_ref().into()),
+            Some(local_slug.as_ref().into()),
         )
         .await?;
 

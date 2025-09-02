@@ -1,6 +1,6 @@
 use crate::{
     error::{self, Result},
-    graphql_client::GraphQLClient,
+    graphql_client::{custom_scalars::*, GraphQLClient},
 };
 use graphql_client::GraphQLQuery;
 
@@ -11,6 +11,14 @@ use graphql_client::GraphQLQuery;
     response_derives = "Debug"
 )]
 pub struct DatasetVersionInfo;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+    query_path = "src/graphql/get_dataset_versions.graphql",
+    schema_path = "schema.graphql",
+    response_derives = "Debug"
+)]
+pub struct GetDatasetVersions;
 
 pub async fn get_dataset_version(
     client: &GraphQLClient,
@@ -38,4 +46,14 @@ pub async fn get_dataset_version(
         }
     };
     Ok(dataset_version.version)
+}
+
+pub async fn get_dataset_versions(
+    client: &GraphQLClient,
+    variables: get_dataset_versions::Variables,
+) -> Result<Option<get_dataset_versions::GetDatasetVersionsDatasetBySlug>> {
+    Ok(client
+        .send::<GetDatasetVersions>(variables)
+        .await?
+        .dataset_by_slug)
 }

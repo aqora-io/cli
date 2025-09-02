@@ -19,7 +19,7 @@ use super::{
     convert::{BufferOptions, WriteOptions},
     infer::{open, FormatOptions, InferOptions, OpenOptions, SchemaOutput},
     version::{
-        common::get_dataset_version,
+        common::{get_dataset_version, get_dataset_versions},
         new::{create_dataset_version, CreateDatasetVersionInput},
     },
 };
@@ -125,11 +125,57 @@ pub struct WriterOptions {
 )]
 pub struct FinishDatasetVersionUpload;
 
+pub async fn prompt_draft_versions(
+    global: &GlobalArgs,
+    owner: impl AsRef<str>,
+    local_slug: impl AsRef<str>,
+) -> Result<String> {
+    let client = global.graphql_client().await?;
+
+    let versions = get_dataset_versions(
+        &client,
+        get_dataset_versions::Variables {
+            owner: owner.as_ref().into(),
+            local_slug: local_slug.as_ref().into(),
+            limit: None,
+            filters: Some(get_dataset_versions::DatasetVersionQueryFilters {
+                order: get_dataset_versions::DatasetVersionConnectionOrder::UPDATED_AT,
+                sort_direction:
+                    get_dataset_versions::DatasetVersionConnectionSortDirection::ASCENDING,
+                published: Some(false),
+            }),
+        },
+    )
+    .await?
+    .ok_or_else(|| {
+        error::user(
+            "You cannot upload a version for this dataset",
+            "Did you type the right slug?",
+        )
+    })?;
+
+    let items = versions
+        .versions
+        .nodes
+        .iter()
+        .map(|version| version.version.to_string());
+
+    global
+        .fuzzy_select()
+        .items(items)
+        .with_prompt("Select a version to upload to:")
+        .interact_opt()?
+        .map(|index| versions.versions.nodes[index].id.clone())
+        .ok_or_else(|| error::user("Dataset version not found", "Please specify a version"))
+}
+
 pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
     let pb = global.spinner();
     let client = global.graphql_client().await?;
 
-    let dataset = get_dataset_by_slug(&global, args.common.slug).await?;
+    let (owner, local_slug) = args.common.slug_pair()?;
+    let dataset = get_dataset_by_slug(&global, owner, local_slug).await?;
+
     if !dataset.viewer_can_create_version {
         return Err(error::user(
             "You cannot upload a version for this dataset",
@@ -162,7 +208,7 @@ pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
 
     // Find or create a dataset version
     let dataset_version_id = match args.version {
-        None => create_dataset_version(&client, dataset_id, None).await?,
+        None => prompt_draft_versions(&global, owner, local_slug).await?,
         Some(semver) => {
             let dataset_version = get_dataset_version(
                 &client,
