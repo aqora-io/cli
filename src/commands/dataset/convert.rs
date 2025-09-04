@@ -198,7 +198,7 @@ pub struct WriterOptions {
 pub struct BufferOptions {
     #[arg(long, default_value_t = 100)]
     batch_buffer_size: usize,
-    #[arg(long, default_value_t = 1_000_000_000)]
+    #[arg(long, default_value_t = 10 * 1024 * 1024)]
     writer_max_memory_size: usize,
 }
 

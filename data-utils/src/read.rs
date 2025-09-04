@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::task::{ready, Context, Poll};
 
 use arrow::record_batch::RecordBatch;
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use futures::prelude::*;
 use parquet::arrow::async_reader::AsyncFileReader;
 use pin_project::pin_project;
@@ -380,6 +380,117 @@ impl<T> ValueStream for T where
 {
 }
 
+type MergeMapping<Idx> = Vec<(usize, Range<Idx>)>;
+
+/// Merges overlapping ranges and returns:
+/// 1. The merged, non-overlapping ranges
+/// 2. A mapping of how the original ranges fit into the merged ranges,
+///    expressed as (index into merged, relative subrange)
+fn merge_ranges<Idx>(mut ranges: Vec<Range<Idx>>) -> (Vec<Range<Idx>>, Vec<MergeMapping<Idx>>)
+where
+    Idx: Ord + Clone + std::ops::Sub<Output = Idx>,
+{
+    let originals = ranges.clone();
+
+    ranges.sort_by(|a, b| a.start.cmp(&b.start));
+
+    let mut merged: Vec<Range<Idx>> = Vec::new();
+
+    for range in ranges {
+        if let Some(last) = merged.last_mut() {
+            if range.start <= last.end {
+                // Extend last merged range
+                if range.end > last.end {
+                    last.end = range.end.clone();
+                }
+            } else {
+                merged.push(range.clone());
+            }
+        } else {
+            merged.push(range.clone());
+        }
+    }
+
+    // Build mapping: for each original range, project it into merged ranges
+    let mut mapping: Vec<Vec<(usize, Range<Idx>)>> = Vec::new();
+
+    for orig in originals {
+        let mut subranges = Vec::new();
+        for (i, merged_range) in merged.iter().enumerate() {
+            if orig.end <= merged_range.start {
+                break; // no more overlap possible
+            }
+            if orig.start >= merged_range.end {
+                continue; // not yet overlapping
+            }
+            // Intersection in absolute terms
+            let start_abs = orig.start.clone().max(merged_range.start.clone());
+            let end_abs = orig.end.clone().min(merged_range.end.clone());
+
+            if start_abs < end_abs {
+                // Convert to relative range inside merged_range
+                let start_rel = start_abs.clone() - merged_range.start.clone();
+                let end_rel = end_abs.clone() - merged_range.start.clone();
+                subranges.push((i, start_rel..end_rel));
+            }
+        }
+        mapping.push(subranges);
+    }
+
+    (merged, mapping)
+}
+
+pub struct MergeRangesAsyncFileReader<T> {
+    inner: T,
+}
+
+impl<T> AsyncFileReader for MergeRangesAsyncFileReader<T>
+where
+    T: AsyncFileReader,
+{
+    fn get_bytes(&mut self, range: Range<u64>) -> BoxFuture<'_, parquet::errors::Result<Bytes>> {
+        self.inner.get_bytes(range)
+    }
+    fn get_metadata<'a>(
+        &'a mut self,
+        options: Option<&'a parquet::arrow::arrow_reader::ArrowReaderOptions>,
+    ) -> BoxFuture<'a, parquet::errors::Result<Arc<parquet::file::metadata::ParquetMetaData>>> {
+        self.inner.get_metadata(options)
+    }
+    fn get_byte_ranges(
+        &mut self,
+        ranges: Vec<Range<u64>>,
+    ) -> BoxFuture<'_, parquet::errors::Result<Vec<Bytes>>> {
+        boxed_fut(async move {
+            let (merged, mapping) = merge_ranges(ranges);
+            let merged_bytes = self.inner.get_byte_ranges(merged).await?;
+
+            // Rebuild original slices
+            let mut result = Vec::new();
+            for submaps in mapping {
+                let bytes = if submaps.len() == 1 {
+                    let (i, rel) = submaps.into_iter().next().unwrap();
+                    merged_bytes[i].slice(rel.start as usize..rel.end as usize)
+                } else {
+                    let mut bytes = BytesMut::with_capacity(
+                        submaps
+                            .iter()
+                            .map(|(_, r)| (r.end - r.start) as usize)
+                            .sum(),
+                    );
+                    bytes.extend(submaps.into_iter().map(|(i, rel)| {
+                        merged_bytes[i].slice(rel.start as usize..rel.end as usize)
+                    }));
+                    bytes.freeze()
+                };
+                result.push(bytes);
+            }
+
+            Ok(result)
+        })
+    }
+}
+
 pub struct InspectAsyncFileReader<T, F> {
     inner: T,
     func: F,
@@ -400,7 +511,6 @@ where
     ) -> BoxFuture<'a, parquet::errors::Result<Arc<parquet::file::metadata::ParquetMetaData>>> {
         self.inner.get_metadata(options)
     }
-
     fn get_byte_ranges(
         &mut self,
         ranges: Vec<Range<u64>>,
@@ -419,6 +529,13 @@ pub trait AsyncFileReaderExt: AsyncFileReader {
         F: FnMut(Range<u64>),
     {
         InspectAsyncFileReader { inner: self, func }
+    }
+
+    fn merge_ranges(self) -> MergeRangesAsyncFileReader<Self>
+    where
+        Self: Sized,
+    {
+        MergeRangesAsyncFileReader { inner: self }
     }
 }
 

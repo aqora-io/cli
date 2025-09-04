@@ -440,7 +440,8 @@ async fn do_open(path: impl AsRef<Path>, options: OpenOptions) -> Result<OpenRet
                         if let Some(progress) = &progress {
                             progress.set_position(range.end);
                         }
-                    }),
+                    })
+                    .merge_ranges(),
                     metadata,
                 )
                 .build()
