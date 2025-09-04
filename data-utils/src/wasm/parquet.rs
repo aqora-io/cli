@@ -117,11 +117,14 @@ impl ParquetReader {
         let metadata = self.metadata().await?;
         let stream =
             parquet::arrow::async_reader::ParquetRecordBatchStreamBuilder::new_with_metadata(
-                self.async_reader().inspect(move |range| {
-                    if let Some(progress) = options.progress.as_ref() {
-                        let _ = progress.call2(progress, &range.start.into(), &range.end.into());
-                    }
-                }),
+                self.async_reader()
+                    .inspect(move |range| {
+                        if let Some(progress) = options.progress.as_ref() {
+                            let _ =
+                                progress.call2(progress, &range.start.into(), &range.end.into());
+                        }
+                    })
+                    .merge_ranges(),
                 metadata,
             )
             .build()?;
