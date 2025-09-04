@@ -8,6 +8,7 @@ use aqora_data_utils::{aqora_client::DatasetVersionFileUploader, read, write};
 use clap::Args;
 use futures::TryStreamExt as _;
 use graphql_client::GraphQLQuery;
+use indicatif::ProgressBar;
 use serde::Serialize;
 use thiserror::Error;
 
@@ -126,6 +127,7 @@ pub struct WriterOptions {
 pub struct FinishDatasetVersionUpload;
 
 pub async fn prompt_draft_versions(
+    pb: &ProgressBar,
     global: &GlobalArgs,
     owner: impl AsRef<str>,
     local_slug: impl AsRef<str>,
@@ -160,13 +162,15 @@ pub async fn prompt_draft_versions(
         .iter()
         .map(|version| version.version.to_string());
 
-    global
-        .fuzzy_select()
-        .items(items)
-        .with_prompt("Select a version to upload to:")
-        .interact_opt()?
-        .map(|index| versions.versions.nodes[index].id.clone())
-        .ok_or_else(|| error::user("Dataset version not found", "Please specify a version"))
+    pb.suspend(|| {
+        global
+            .fuzzy_select()
+            .items(items)
+            .with_prompt("Select a version to upload to:")
+            .interact_opt()?
+            .map(|index| versions.versions.nodes[index].id.clone())
+            .ok_or_else(|| error::user("Dataset version not found", "Please specify a version"))
+    })
 }
 
 pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
@@ -184,31 +188,9 @@ pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
     }
     let dataset_id = dataset.id;
 
-    let write_options = args.write.parse()?;
-
-    let (schema, stream) = open(
-        &args.src,
-        OpenOptions {
-            format: *args.format,
-            infer: *args.infer,
-            read: read::Options {
-                batch_size: Some(args.record_batch_size),
-            },
-            progress: Some(pb.clone()),
-            schema: None,
-        },
-        &global,
-        args.schema_output,
-    )
-    .await?;
-
-    pb.println("\n");
-    pb.set_message("Uploading...");
-    pb.set_style(crate::progress_bar::pretty_bytes());
-
     // Find or create a dataset version
     let dataset_version_id = match args.version {
-        None => prompt_draft_versions(&global, owner, local_slug).await?,
+        None => prompt_draft_versions(&pb, &global, owner, local_slug).await?,
         Some(semver) => {
             let dataset_version = get_dataset_version(
                 &client,
@@ -234,6 +216,28 @@ pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
             }
         }
     };
+
+    let write_options = args.write.parse()?;
+
+    let (schema, stream) = open(
+        &args.src,
+        OpenOptions {
+            format: *args.format,
+            infer: *args.infer,
+            read: read::Options {
+                batch_size: Some(args.record_batch_size),
+            },
+            progress: Some(pb.clone()),
+            schema: None,
+        },
+        &global,
+        args.schema_output,
+    )
+    .await?;
+
+    pb.println("\n");
+    pb.set_message("Uploading...");
+    pb.set_style(crate::progress_bar::pretty_bytes());
 
     let mut writer_client = client.clone();
     writer_client.s3_layer(S3ChecksumLayer::new(Crc32::new()));
