@@ -135,7 +135,7 @@ impl Seek for SeekableBlob {
         } else {
             self.sliced_blob = Some(
                 self.blob
-                    .slice_with_i32(offset as i32)
+                    .slice_with_f64(offset as f64)
                     .map_err(WasmError::from)?,
             );
         }
@@ -147,7 +147,7 @@ impl Seek for SeekableBlob {
 pub struct AsyncBlobReader {
     blob: SeekableBlob,
     reader: BoxAsyncRead,
-    bytes_read: usize,
+    bytes_read: u64,
 }
 
 impl AsyncBlobReader {
@@ -160,7 +160,7 @@ impl AsyncBlobReader {
     }
 
     pub fn offset(&self) -> u64 {
-        self.blob.offset() + self.bytes_read as u64
+        self.blob.offset() + self.bytes_read
     }
 
     pub fn into_inner(self) -> Blob {
@@ -191,7 +191,7 @@ impl AsyncRead for AsyncBlobReader {
         let already_filled = buf.filled().len();
         match Pin::new(&mut self.reader).poll_read(cx, buf) {
             Poll::Ready(Ok(())) => {
-                self.bytes_read += buf.filled().len() - already_filled;
+                self.bytes_read += (buf.filled().len() - already_filled) as u64;
                 Poll::Ready(Ok(()))
             }
             Poll::Pending => Poll::Pending,
@@ -203,7 +203,7 @@ impl AsyncRead for AsyncBlobReader {
 pub struct BlobReader {
     blob: SeekableBlob,
     reader: Option<FileReaderSync>,
-    bytes_read: usize,
+    bytes_read: u64,
 }
 
 impl BlobReader {
@@ -216,7 +216,7 @@ impl BlobReader {
     }
 
     pub fn offset(&self) -> u64 {
-        self.blob.offset() + self.bytes_read as u64
+        self.blob.offset() + self.bytes_read
     }
 }
 
@@ -232,9 +232,18 @@ impl Seek for BlobReader {
 impl Read for BlobReader {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let blob = self.blob.blob();
-        let size = std::cmp::min(blob.size() as usize - self.bytes_read, buf.len());
+        let Some(remaining) = (blob.size() as u64).checked_sub(self.bytes_read) else {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "Unexpected EOF",
+            ));
+        };
+        let size: usize = std::cmp::min(remaining.try_into().unwrap_or(usize::MAX), buf.len());
         let sliced_blob = blob
-            .slice_with_i32_and_i32(self.bytes_read as i32, (self.bytes_read + size) as i32)
+            .slice_with_f64_and_f64(
+                self.bytes_read as f64,
+                (self.bytes_read + size as u64) as f64,
+            )
             .map_err(WasmError::from)?;
         let reader = if let Some(reader) = self.reader.as_ref() {
             reader
@@ -246,7 +255,7 @@ impl Read for BlobReader {
             .read_as_array_buffer(&sliced_blob)
             .map_err(WasmError::from)?;
         Uint8Array::new(&buffer).copy_to(&mut buf[..size]);
-        self.bytes_read += size;
+        self.bytes_read += size as u64;
         Ok(size)
     }
 }
