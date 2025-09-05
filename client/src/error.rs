@@ -51,6 +51,10 @@ pub enum S3Error {
     InvalidContentDisposition,
     #[error("Invalid Content-Disposition")]
     MissingBody,
+    #[error("Missing header {0}")]
+    MissingHeader(&'static str),
+    #[error("Invalid header {0}")]
+    InvalidHeader(&'static str),
 }
 
 #[derive(Error, Debug)]
