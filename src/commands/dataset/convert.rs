@@ -140,7 +140,7 @@ pub struct WriteOptions {
     skip_arrow_metadata: bool,
     #[arg(value_enum, long, default_value_t = WriterVersion::Parquet1_0)]
     writer_version: WriterVersion,
-    #[arg(value_enum, long, default_value = "zstd(1)")]
+    #[arg(value_enum, long, default_value = "zstd(8)")]
     compression: String,
     #[arg(value_enum, long)]
     encoding: Option<Encoding>,
@@ -198,8 +198,10 @@ pub struct WriterOptions {
 pub struct BufferOptions {
     #[arg(long, default_value_t = 100)]
     batch_buffer_size: usize,
-    #[arg(long, default_value_t = 10 * 1024 * 1024)]
-    writer_max_memory_size: usize,
+    #[arg(long, default_value_t = 100 * 1024 * 1024)]
+    row_group_size: usize,
+    #[arg(long)]
+    no_small_first_row_group: bool,
 }
 
 impl BufferOptions {
@@ -210,11 +212,12 @@ impl BufferOptions {
             } else {
                 None
             },
-            max_memory_size: if self.writer_max_memory_size > 0 {
-                Some(self.writer_max_memory_size)
+            row_group_size: if self.row_group_size > 0 {
+                Some(self.row_group_size)
             } else {
                 None
             },
+            small_first_row_group: !self.no_small_first_row_group,
         }
     }
 }
