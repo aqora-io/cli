@@ -4,9 +4,11 @@ use crate::{
     graphql_client::GraphQLClient,
     progress_bar::{self, TempProgressStyle},
 };
+use futures::{prelude::*, TryStreamExt};
 use indicatif::ProgressBar;
 use std::path::Path;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncSeekExt, AsyncWriteExt};
+use tokio_util::io::ReaderStream;
 use url::Url;
 
 struct DownloadInspector<'a> {
@@ -92,5 +94,118 @@ pub async fn download_archive(
             "Please make sure you have permission to create files in this directory",
         )
     })?;
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct MultipartOptions {
+    pub chunk_size: usize,
+    pub concurrency: usize,
+}
+
+impl MultipartOptions {
+    pub fn new(chunk_size: usize, concurrency: usize) -> Self {
+        Self {
+            chunk_size,
+            concurrency,
+        }
+    }
+}
+
+struct ChunkIter {
+    current: u64,
+    end: u64,
+    step: u64,
+}
+
+impl ChunkIter {
+    fn new(end: u64, step: u64) -> Self {
+        Self {
+            current: 0,
+            end,
+            step,
+        }
+    }
+}
+
+impl Iterator for ChunkIter {
+    type Item = std::ops::Range<u64>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current >= self.end {
+            return None;
+        }
+        let start = self.current;
+        let next_end = (start + self.step).min(self.end);
+        self.current = next_end;
+        Some(start..next_end)
+    }
+}
+
+pub async fn multipart_download(
+    client: &GraphQLClient,
+    size: u64,
+    url: Url,
+    options: &MultipartOptions,
+    path: impl AsRef<Path>,
+    pb: &ProgressBar,
+) -> Result<()> {
+    let output_path = path.as_ref();
+    let file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(output_path)
+        .await?;
+    file.set_len(size).await?;
+
+    let inspector = DownloadInspector::new(pb, Some(size as _));
+
+    stream::iter(ChunkIter::new(size, options.chunk_size as _))
+        .map(|range| {
+            let client = &client;
+            let inspector = &inspector;
+            let url = url.to_owned();
+            let file_path = output_path.to_owned();
+
+            async move {
+                let body = client
+                    .s3_get_range(url, range.start as usize..range.end as usize)
+                    .await?
+                    .body;
+
+                let data = ReaderStream::new(body.into_async_read())
+                    .map_err(|e| crate::error::system("S3 body stream", &e.to_string()))
+                    .try_fold(
+                        Vec::with_capacity((range.end - range.start) as usize),
+                        |mut acc, chunk| {
+                            inspector.inspect(&chunk);
+                            acc.extend_from_slice(&chunk);
+                            async move { Ok::<_, crate::error::Error>(acc) }
+                        },
+                    )
+                    .await?;
+
+                let mut file = tokio::fs::OpenOptions::new()
+                    .write(true)
+                    .open(&file_path)
+                    .await?;
+                file.seek(std::io::SeekFrom::Start(range.start)).await?;
+                file.write_all(&data).await?;
+                file.flush().await?;
+
+                Ok::<_, crate::error::Error>(())
+            }
+        })
+        .buffer_unordered(options.concurrency)
+        .try_collect::<()>()
+        .await?;
+
+    let file = tokio::fs::OpenOptions::new()
+        .write(true)
+        .open(output_path)
+        .await?;
+    file.sync_all().await?;
+
     Ok(())
 }

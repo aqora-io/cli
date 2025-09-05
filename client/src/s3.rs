@@ -78,6 +78,61 @@ impl TryFrom<Response> for S3GetResponse {
     }
 }
 
+pub struct S3HeadResponse {
+    pub location: String,
+    pub last_modified: String,
+    pub size: u64,
+    pub e_tag: Option<String>,
+    pub version: Option<String>,
+}
+
+impl TryFrom<Response> for S3HeadResponse {
+    type Error = S3Error;
+
+    fn try_from(response: Response) -> Result<Self, Self::Error> {
+        let headers = response.headers();
+
+        let last_modified = headers
+            .get(http::header::LAST_MODIFIED)
+            .ok_or(S3Error::MissingHeader("Last-Modified"))?
+            .to_str()
+            .map_err(|_| S3Error::InvalidHeader("Last-Modified"))?
+            .to_string();
+
+        let size = headers
+            .get(http::header::CONTENT_LENGTH)
+            .ok_or(S3Error::MissingHeader("Content-Length"))?
+            .to_str()
+            .map_err(|_| S3Error::InvalidHeader("Content-Length"))?
+            .parse::<u64>()
+            .map_err(|_| S3Error::InvalidHeader("Content-Length"))?;
+
+        let e_tag = headers
+            .get(http::header::ETAG)
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.trim_matches('"').to_string());
+
+        let version = headers
+            .get("x-amz-version-id")
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.to_string());
+
+        let location = response
+            .extensions()
+            .get::<http::Uri>()
+            .map(|uri| uri.path().to_string())
+            .unwrap_or_default();
+
+        Ok(Self {
+            location,
+            last_modified,
+            size,
+            e_tag,
+            version,
+        })
+    }
+}
+
 impl Client {
     pub fn s3_layer<L, E>(&mut self, layer: L) -> &mut Self
     where
@@ -127,6 +182,25 @@ impl Client {
             request = request.header(http::header::RANGE, range);
         }
         let request = request.body(Body::default())?;
+        let res = self.s3_service().oneshot(request).await?;
+        check_status(&res.status())?;
+        Ok(res.try_into()?)
+    }
+
+    pub async fn s3_head(&self, url: Url) -> Result<S3HeadResponse> {
+        self.validate_url_host(&url)?;
+
+        let body = Body::from(r#"{"head": true}"#.to_string());
+
+        let mut request = http::Request::builder()
+            .method(http::Method::GET)
+            .uri(url.to_string());
+
+        if let Some(content_length) = body.content_length() {
+            if let Some(headers) = request.headers_mut() { headers.insert(reqwest::header::CONTENT_LENGTH, content_length.into()); }
+        }
+
+        let request = request.body(body)?;
         let res = self.s3_service().oneshot(request).await?;
         check_status(&res.status())?;
         Ok(res.try_into()?)
