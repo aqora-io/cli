@@ -2,6 +2,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.17.0 - 2025-09-05
+#### Bug Fixes
+- remove low precision blob slicing - (238d79c) - Julian Popescu
+- suspend version prompt - (d946e25) - Angel-Dijoux
+#### Features
+- add MergeRangesAsyncFileReader - (4b738ee) - Julian Popescu
+- prompt for a version on upload - (0b50f36) - Angel-Dijoux
+- allow uploading parquet and directories with cli - (e238577) - Julian Popescu
+
+- - -
+
 ## v0.16.0 - 2025-09-02
 #### Bug Fixes
 - prettify output - (5b5e4ec) - Angel-Dijoux
