@@ -32,6 +32,7 @@ pub struct GetDatasetBySlug;
 pub struct GetDatasetSlugResponse {
     pub id: String,
     pub viewer_can_create_version: bool,
+    pub viewer_can_read_dataset_version_file: bool,
 }
 
 pub async fn get_dataset_by_slug(
@@ -60,11 +61,13 @@ pub async fn get_dataset_by_slug(
         return Ok(GetDatasetSlugResponse {
             id: new_dataset.id,
             viewer_can_create_version: new_dataset.viewer_can_create_version,
+            viewer_can_read_dataset_version_file: new_dataset.viewer_can_read_dataset_version_file,
         });
     };
 
     Ok(GetDatasetSlugResponse {
         id: dataset.id,
         viewer_can_create_version: dataset.viewer_can_create_version,
+        viewer_can_read_dataset_version_file: dataset.viewer_can_read_dataset_version_file,
     })
 }
