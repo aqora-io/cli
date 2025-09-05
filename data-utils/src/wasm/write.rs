@@ -116,7 +116,8 @@ impl JsRecordBatchStream {
         let options = options.options;
         let buffer_options = BufferOptions {
             batch_buffer_size: options.batch_buffer_size,
-            max_memory_size: options.max_memory_size,
+            row_group_size: options.row_group_size,
+            small_first_row_group: options.small_first_row_group,
         };
         ParquetStream::new(stream, writer, schema, options.try_into()?, buffer_options)
             .try_collect::<Vec<_>>()
@@ -163,7 +164,10 @@ pub struct JsWriteOptions {
     pub batch_buffer_size: Option<usize>,
     #[serde(default)]
     #[ts(optional)]
-    pub max_memory_size: Option<usize>,
+    pub row_group_size: Option<usize>,
+    #[serde(default)]
+    #[ts(optional, as = "Option<bool>")]
+    pub small_first_row_group: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub skip_arrow_metadata: Option<bool>,

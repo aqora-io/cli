@@ -22,7 +22,8 @@ use crate::schema::Schema;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BufferOptions {
     pub batch_buffer_size: Option<usize>,
-    pub max_memory_size: Option<usize>,
+    pub row_group_size: Option<usize>,
+    pub small_first_row_group: bool,
 }
 
 #[cfg_attr(feature = "parquet-no-send", async_trait(?Send))]
@@ -110,16 +111,17 @@ async fn write_part<W>(
     writer: W,
     mut part_writer: AsyncArrowWriter<W::Writer>,
     record_batch: RecordBatch,
-    max_memory_size: Option<usize>,
+    force_flush: bool,
+    row_group_size: Option<usize>,
 ) -> Result<(W, AsyncArrowWriter<W::Writer>)>
 where
     W: AsyncPartitionWriter,
 {
     part_writer.write(&record_batch).await?;
-    if let Some(max_memory_size) = max_memory_size {
-        if part_writer.memory_size() >= max_memory_size {
-            part_writer.flush().await?;
-        }
+    if force_flush
+        || row_group_size.is_some_and(|row_group_size| part_writer.memory_size() >= row_group_size)
+    {
+        part_writer.flush().await?;
     }
     Ok((writer, part_writer))
 }
@@ -163,6 +165,7 @@ where
     read_fut: Option<OwnedNextFut<'s, S, Result<RecordBatch>>>,
     write_state: WriteState<'w, W>,
     closing_futs: Vec<ClosePartFut<'w, W::Writer>>,
+    is_first_record_batch: bool,
 }
 
 impl<S, W> ParquetStream<'_, '_, S, W>
@@ -194,6 +197,7 @@ where
             read_fut,
             write_state,
             closing_futs: Vec::new(),
+            is_first_record_batch: true,
         }
     }
 }
@@ -269,13 +273,20 @@ where
                                 .batch_buffer
                                 .pop_front()
                                 .expect("Batch buffer should be checked to not be empty above");
+                            let force_flush = if *this.is_first_record_batch {
+                                *this.is_first_record_batch = false;
+                                this.buffer_options.small_first_row_group
+                            } else {
+                                false
+                            };
                             *this.write_state = WriteState::Busy {
                                 empty: false,
                                 fut: boxed_fut(write_part(
                                     writer,
                                     part_writer,
                                     record_batch,
-                                    this.buffer_options.max_memory_size,
+                                    force_flush,
+                                    this.buffer_options.row_group_size,
                                 )),
                             }
                         }

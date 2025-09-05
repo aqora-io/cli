@@ -131,7 +131,8 @@ impl ParquetReader {
         let options = options.options;
         let buffer_options = BufferOptions {
             batch_buffer_size: options.batch_buffer_size,
-            max_memory_size: options.max_memory_size,
+            row_group_size: options.row_group_size,
+            small_first_row_group: options.small_first_row_group,
         };
         stream
             .write_to_parquet(writer, options.try_into()?, buffer_options)
