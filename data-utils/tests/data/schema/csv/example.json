@@ -10,7 +10,7 @@
     },
     {
       "name": "c3",
-      "data_type": "Utf8"
+      "data_type": "LargeUtf8"
     },
     {
       "name": "c4",

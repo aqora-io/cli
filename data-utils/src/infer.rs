@@ -51,10 +51,13 @@ pub struct Options {
     pub no_map_as_struct: bool,
     #[serde(default)]
     #[cfg_attr(feature = "wasm", ts(optional, as = "Option<bool>"))]
-    pub sequence_as_large_list: bool,
+    pub sequence_as_small_list: bool,
     #[serde(default)]
     #[cfg_attr(feature = "wasm", ts(optional, as = "Option<bool>"))]
-    pub string_as_large_utf8: bool,
+    pub string_as_small_utf8: bool,
+    #[serde(default)]
+    #[cfg_attr(feature = "wasm", ts(optional, as = "Option<bool>"))]
+    pub bytes_as_small_binary: bool,
     #[serde(default)]
     #[cfg_attr(feature = "wasm", ts(optional, as = "Option<bool>"))]
     pub string_dictionary_encoding: bool,
@@ -96,8 +99,9 @@ impl Default for Options {
         Self {
             forbid_null_fields: false,
             no_map_as_struct: false,
-            sequence_as_large_list: false,
-            string_as_large_utf8: false,
+            sequence_as_small_list: false,
+            string_as_small_utf8: false,
+            bytes_as_small_binary: false,
             string_dictionary_encoding: false,
             no_coerce_numbers: false,
             forbid_to_string: false,
@@ -135,8 +139,9 @@ impl TryFrom<Options> for TracingOptions {
             .coerce_numbers(!value.no_coerce_numbers)
             .allow_to_string(!value.forbid_to_string)
             .map_as_struct(!value.no_map_as_struct)
-            .sequence_as_large_list(value.sequence_as_large_list)
-            .strings_as_large_utf8(value.string_as_large_utf8)
+            .sequence_as_large_list(!value.sequence_as_small_list)
+            .strings_as_large_utf8(!value.string_as_small_utf8)
+            .bytes_as_large_binary(!value.bytes_as_small_binary)
             .enums_without_data_as_strings(value.no_unit_enum_as_string)
             .string_dictionary_encoding(value.string_dictionary_encoding)
             .guess_dates(!value.no_guess_dates)

@@ -14,7 +14,7 @@
           "fields": [
             {
               "name": "d",
-              "data_type": "Utf8"
+              "data_type": "LargeUtf8"
             }
           ],
           "strategy": "MapAsStruct",

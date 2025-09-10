@@ -2,16 +2,16 @@
   "fields": [
     {
       "name": "events",
-      "data_type": "List",
+      "data_type": "LargeList",
       "field": {
         "name": "element",
-        "data_type": "Utf8",
+        "data_type": "LargeUtf8",
         "nullable": true
       }
     },
     {
       "name": "machine",
-      "data_type": "Utf8"
+      "data_type": "LargeUtf8"
     }
   ]
 }
