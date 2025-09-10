@@ -14,7 +14,7 @@
     },
     {
       "name": "item3",
-      "data_type": "Utf8"
+      "data_type": "LargeUtf8"
     },
     {
       "name": "item4",
@@ -23,7 +23,7 @@
     },
     {
       "name": "item5",
-      "data_type": "Utf8"
+      "data_type": "LargeUtf8"
     },
     {
       "name": "item6",

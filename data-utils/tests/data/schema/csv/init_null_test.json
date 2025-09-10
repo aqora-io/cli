@@ -22,7 +22,7 @@
     },
     {
       "name": "c_string",
-      "data_type": "Utf8",
+      "data_type": "LargeUtf8",
       "nullable": true
     }
   ]

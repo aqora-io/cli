@@ -96,9 +96,11 @@ pub struct InferOptions {
     #[arg(long)]
     no_map_as_struct: bool,
     #[arg(long)]
-    large_lists: bool,
+    small_list: bool,
     #[arg(long)]
-    large_utf8: bool,
+    small_string: bool,
+    #[arg(long)]
+    small_bytes: bool,
     #[arg(long)]
     string_dict_encoding: bool,
     #[arg(long)]
@@ -140,8 +142,9 @@ impl InferOptions {
             no_coerce_numbers: self.no_coerce_numbers,
             forbid_to_string: self.forbid_to_string,
             no_map_as_struct: self.no_map_as_struct,
-            sequence_as_large_list: self.large_lists,
-            string_as_large_utf8: self.large_utf8,
+            sequence_as_small_list: self.small_list,
+            string_as_small_utf8: self.small_string,
+            bytes_as_small_binary: self.small_bytes,
             no_unit_enum_as_string: self.no_unit_enum_as_string,
             string_dictionary_encoding: self.string_dict_encoding,
             no_guess_dates: self.no_guess_dates,
