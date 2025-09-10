@@ -2,6 +2,13 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.18.0 - 2025-09-10
+#### Bug Fixes
+- update serde_arrow and use large types as default - (17887e8) - Julian Popescu
+- force flush first record batch and increase row group size and compression - (e0d2bcc) - Julian Popescu
+
+- - -
+
 ## v0.17.0 - 2025-09-05
 #### Bug Fixes
 - remove low precision blob slicing - (238d79c) - Julian Popescu
