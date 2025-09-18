@@ -1,7 +1,7 @@
 # pyright: reportExplicitAny=false, reportAny=false
 
 from pathlib import Path
-from typing import Any, Never
+from typing_extensions import Any, Never
 
 class PipelineConfig:
     data: Path
