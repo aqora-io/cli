@@ -1,5 +1,5 @@
 from aqora_cli._aqora_cli import *  # pyright: ignore[reportAssignmentType, reportWildcardImportFromLibrary]  # noqa: F403
-from typing import Any, TypedDict, override
+from typing_extensions import Any, TypedDict, override
 
 
 class GraphQLError(TypedDict):
