@@ -1,4 +1,5 @@
 from aqora_cli._aqora_cli import *  # pyright: ignore[reportAssignmentType, reportWildcardImportFromLibrary]  # noqa: F403
+from aqora_cli._aqora_cli import __doc__ as __doc__
 from typing_extensions import Any, TypedDict, override
 
 
@@ -24,6 +25,3 @@ class ClientError(Exception):
             )
             return f"{self.message}: {error_messages}"
         return self.message
-
-
-__doc__ = _aqora_cli.__doc__  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType, reportUndefinedVariable]  # noqa: F405
