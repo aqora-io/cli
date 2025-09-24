@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.18.1 - 2025-09-24
+#### Bug Fixes
+- python3.10 import issue - (b3f199e) - Antoine Chauvin
+
+- - -
+
 ## v0.18.0 - 2025-09-10
 #### Bug Fixes
 - update serde_arrow and use large types as default - (17887e8) - Julian Popescu
