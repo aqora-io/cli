@@ -1,9 +1,10 @@
 use crate::{
     colors::ColorChoiceExt,
+    credentials::{get_credentials, Credentials},
     dialog::{Confirm, FuzzySelect},
     dirs::{config_home, init_venv, opt_init_venv},
     error::{self, Result},
-    graphql_client::{client, graphql_url, unauthenticated_client, GraphQLClient},
+    graphql_client::{base_url, client, graphql_url, unauthenticated_client, GraphQLClient},
     progress_bar::default_spinner,
 };
 use aqora_runner::python::{ColorChoice, LinkMode, PipOptions, PyEnv};
@@ -113,11 +114,23 @@ impl GlobalArgs {
         Ok(())
     }
 
-    pub fn aqora_url(&self) -> Result<Url> {
-        Ok(Url::parse(&self.url)?)
+    fn full_aqora_url(&self) -> Result<Url, url::ParseError> {
+        Url::parse(&self.url)
     }
 
-    pub fn graphql_url(&self) -> Result<Url> {
+    pub fn aqora_url(&self) -> Result<Url, url::ParseError> {
+        base_url(&self.full_aqora_url()?)
+    }
+
+    pub async fn credentials(&self) -> Result<Option<Credentials>> {
+        let url = self.full_aqora_url()?;
+        let base_url = base_url(&url)?;
+        let default_credentials = Credentials::parse_from_url(&url)?;
+        let config_home = self.config_home().await?;
+        get_credentials(config_home, base_url, default_credentials).await
+    }
+
+    pub fn graphql_url(&self) -> Result<Url, url::ParseError> {
         graphql_url(&self.aqora_url()?)
     }
 
@@ -143,11 +156,11 @@ impl GlobalArgs {
 
     pub async fn graphql_client(&self) -> Result<GraphQLClient> {
         let url = self.aqora_url()?;
-        match self.config_home().await {
-            Ok(config_home) => Ok(client(config_home, url).await?),
+        match self.credentials().await {
+            Ok(credentials) => client(url, credentials),
             Err(err) => {
-                tracing::warn!("Could not access credentials: {}", err.description());
-                Ok(unauthenticated_client(url)?)
+                tracing::warn!("Could not load credentials: {}", err.description());
+                unauthenticated_client(url)
             }
         }
     }

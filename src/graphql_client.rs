@@ -1,5 +1,5 @@
 use crate::{
-    credentials::{get_credentials, Credentials},
+    credentials::Credentials,
     error::{self, Error, Result},
 };
 use aqora_client::{
@@ -9,7 +9,6 @@ use aqora_client::{
 };
 use axum::http::Uri;
 use reqwest::header::{HeaderValue, USER_AGENT};
-use std::path::Path;
 use tokio::sync::Mutex;
 use url::{Host, Url};
 
@@ -20,6 +19,17 @@ pub mod custom_scalars {
 }
 
 pub use aqora_client::{Client as GraphQLClient, Error as GraphQLError};
+
+pub fn base_url(url: &Url) -> Result<Url, url::ParseError> {
+    Url::parse(&format!(
+        "{}://{}{}",
+        url.scheme(),
+        url.host_str().unwrap_or_default(),
+        url.port()
+            .map(|port| format!(":{port}"))
+            .unwrap_or_default()
+    ))
+}
 
 impl From<GraphQLError> for Error {
     fn from(error: GraphQLError) -> Self {
@@ -76,12 +86,11 @@ struct CredentialsForUrl {
 }
 
 impl CredentialsForUrl {
-    async fn load(config_home: impl AsRef<Path>, url: Url) -> Result<Self> {
-        let credentials = get_credentials(config_home, url.clone()).await?;
-        Ok(Self {
+    fn new(url: Url, credentials: Option<Credentials>) -> Self {
+        Self {
             credentials: Mutex::new(credentials),
             url,
-        })
+        }
     }
 }
 
@@ -116,8 +125,8 @@ const AQORA_USER_AGENT: HeaderValue = HeaderValue::from_static(concat!(
     env!("CARGO_PKG_VERSION")
 ));
 
-pub fn graphql_url(url: &Url) -> Result<Url> {
-    Ok(url.join("/graphql")?)
+pub fn graphql_url(url: &Url) -> Result<Url, url::ParseError> {
+    url.join("/graphql")
 }
 
 pub fn unauthenticated_client(url: Url) -> Result<GraphQLClient> {
@@ -133,9 +142,9 @@ pub fn unauthenticated_client(url: Url) -> Result<GraphQLClient> {
     Ok(client)
 }
 
-pub async fn client(config_home: impl AsRef<Path>, url: Url) -> Result<GraphQLClient> {
+pub fn client(url: Url, credentials: Option<Credentials>) -> Result<GraphQLClient> {
     let mut client = unauthenticated_client(url.clone())?;
-    let creds = CredentialsLayer::new(CredentialsForUrl::load(config_home, url).await?);
+    let creds = CredentialsLayer::new(CredentialsForUrl::new(url, credentials));
     client.graphql_layer(creds.clone());
     client.s3_layer(creds);
     Ok(client)

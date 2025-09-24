@@ -56,6 +56,24 @@ impl Credentials {
             expires_at: Utc::now() + Duration::try_seconds(issued.expires_in).unwrap(),
         }))
     }
+
+    pub fn parse_from_url(url: &Url) -> Result<Option<Self>> {
+        let mut map = serde_json::Map::deserialize(serde::de::value::MapDeserializer::<
+            _,
+            serde_json::Error,
+        >::new(url.query_pairs()))?;
+        if !url.username().is_empty() {
+            map.insert("client_id".into(), url.username().into());
+        }
+        if let Some(client_secret) = url.password() {
+            map.insert("client_secret".into(), client_secret.into());
+        }
+        if map.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(Self::deserialize(map)?))
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug, Eq, PartialEq, Clone)]
@@ -180,14 +198,22 @@ pub struct Oauth2RefreshMutation;
 pub async fn get_credentials(
     config_home: impl AsRef<Path>,
     url: Url,
+    default_credentials: Option<Credentials>,
 ) -> Result<Option<Credentials>> {
     let credentials = with_locked_credentials(config_home, |file| {
         async move {
-            let credentials = match file.credentials.get(&url).cloned() {
-                Some(credentials) => credentials,
-                None => return Ok(None),
+            let credentials = match (file.credentials.get(&url), default_credentials.as_ref()) {
+                (Some(credentials), Some(default_credentials)) => {
+                    if credentials.expires_at > default_credentials.expires_at {
+                        credentials
+                    } else {
+                        default_credentials
+                    }
+                }
+                (_, Some(credentials)) | (Some(credentials), _) => credentials,
+                (None, None) => return Ok(None),
             };
-            let credentials = credentials.refresh(&url).await?;
+            let credentials = credentials.clone().refresh(&url).await?;
             if let Some(credentials) = &credentials {
                 file.credentials.insert(url.clone(), credentials.clone());
             }

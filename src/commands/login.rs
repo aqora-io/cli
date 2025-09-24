@@ -1,6 +1,6 @@
 use crate::{
     commands::GlobalArgs,
-    credentials::{get_credentials, with_locked_credentials, Credentials},
+    credentials::{with_locked_credentials, Credentials},
     error::{self, Result},
     graphql_client::unauthenticated_client,
 };
@@ -330,10 +330,7 @@ pub async fn login(args: Login, global: GlobalArgs) -> Result<()> {
 }
 
 pub async fn check_login(global: GlobalArgs, multi_progress: &MultiProgress) -> Result<bool> {
-    if get_credentials(global.config_home().await?, global.aqora_url()?)
-        .await?
-        .is_some()
-    {
+    if global.credentials().await?.is_some() {
         return Ok(true);
     }
     let confirmation = multi_progress.suspend(|| {

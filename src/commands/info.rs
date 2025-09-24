@@ -87,7 +87,15 @@ pub async fn info(_: Info, global: GlobalArgs) -> Result<()> {
             .map(|p| p.display().to_string())
             .unwrap_or_else(|err| format!("[error: {err}]"))
     );
-    tracing::info!("URL {}", global.url);
+    tracing::info!(
+        "URL {}",
+        global
+            .aqora_url()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|err| {
+                format!("[error: failed to parse {url}: {err}", url = global.url)
+            })
+    );
     tracing::info!(
         "Viewer {}",
         viewer

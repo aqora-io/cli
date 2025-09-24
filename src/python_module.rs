@@ -2,6 +2,7 @@ use std::{borrow::Cow, ffi::OsString, sync::Arc};
 
 use aqora_client::{s3::S3Range, Client};
 use aqora_runner::pipeline::{LayerEvaluation, PipelineConfig};
+use futures::prelude::*;
 use pyo3::{
     exceptions::PyValueError,
     import_exception,
@@ -13,8 +14,9 @@ use tokio::sync::RwLock;
 use url::Url;
 
 use crate::{
+    credentials::{get_credentials, Credentials},
     dirs::config_home,
-    graphql_client::{client as authenticated_client, unauthenticated_client},
+    graphql_client::{base_url, client as authenticated_client, unauthenticated_client},
 };
 
 #[pyfunction]
@@ -73,17 +75,24 @@ impl PyClient {
             config_home().map_err(|error| ClientError::new_err((error.message(),)))?;
         let inner = Arc::clone(&self.inner);
         let url = self.url.clone();
-        future_into_py(py, async move {
-            let mut inner = inner.write().await;
-            let client = authenticated_client(config_home, url)
-                .await
-                .map_err(|error| ClientError::new_err((error.message(),)))?;
-            *inner = PyClientInner {
-                client,
-                authenticated: true,
-            };
-            Ok(())
-        })
+        future_into_py(
+            py,
+            async move {
+                let base_url = base_url(&url)?;
+                let default_credentials = Credentials::parse_from_url(&url)?;
+                let client = authenticated_client(
+                    base_url.clone(),
+                    get_credentials(config_home, base_url, default_credentials).await?,
+                )?;
+                let mut inner = inner.write().await;
+                *inner = PyClientInner {
+                    client,
+                    authenticated: true,
+                };
+                Ok::<_, crate::error::Error>(())
+            }
+            .map_err(|error| ClientError::new_err((error.message(),))),
+        )
     }
 
     #[pyo3(signature = (query, **variables))]
