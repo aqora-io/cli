@@ -25,6 +25,14 @@ use super::{
     },
 };
 
+#[derive(GraphQLQuery)]
+#[graphql(
+    query_path = "src/graphql/dataset_version_start_upload.graphql",
+    schema_path = "schema.graphql",
+    response_derives = "Debug"
+)]
+struct DatasetVersionStartUploadMutation;
+
 /// Upload a file to Aqora.io
 #[derive(Args, Debug, Serialize)]
 #[group(skip)]
@@ -216,6 +224,14 @@ pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
             }
         }
     };
+
+    client
+        .send::<DatasetVersionStartUploadMutation>(
+            dataset_version_start_upload_mutation::Variables {
+                id: dataset_version_id.clone(),
+            },
+        )
+        .await?;
 
     let write_options = args.write.parse()?;
 

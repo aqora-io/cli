@@ -1,0 +1,3 @@
+mutation DatasetVersionStartUploadMutation($id: ID!) {
+  startDatasetVersionUpload(datasetVersionId: $id) { id }
+}

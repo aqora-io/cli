@@ -148,6 +148,12 @@ type ActivityEdge {
 	cursor: String!
 }
 
+enum ActivityKind {
+	ALL
+	COMPETITION
+	DATASET
+}
+
 enum ActivityVisibility {
 	"""
 	Activity is only visible to invited members.
@@ -826,6 +832,7 @@ input CreateDatasetInput {
 	name: String!
 	private: Boolean!
 	tags: [ID!]!
+	shortDescription: String
 }
 
 input CreateDatasetVersionInput {
@@ -904,6 +911,7 @@ type Dataset implements Votable & ForumOwner & Node {
 	private: Boolean!
 	createdAt: DateTime!
 	votes: Int!
+	shortDescription: String
 	id: ID!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	owner: Entity!
@@ -2465,7 +2473,7 @@ type Query {
 	events(after: String, before: String, first: Int, last: Int, search: String): EventConnection!
 	eventBySlug(slug: String!): Event
 	version: Version!
-	tags(after: String, before: String, first: Int, last: Int, search: String): TagConnection!
+	tags(after: String, before: String, first: Int, last: Int, filters: TagQueryFilters): TagConnection!
 	forums(after: String, before: String, first: Int, last: Int, search: String): ForumConnection!
 	forumBySlug(slug: String!): Forum
 	blogArticles(after: String, before: String, first: Int, last: Int): BlogArticleConnection!
@@ -2689,6 +2697,11 @@ type TagEdge {
 	A cursor for use in pagination
 	"""
 	cursor: String!
+}
+
+input TagQueryFilters {
+	search: String
+	activityKind: ActivityKind = null
 }
 
 scalar TimeZone
@@ -2920,6 +2933,7 @@ input UpdateDatasetInput {
 	name: String
 	private: Boolean
 	tags: [ID!]
+	shortDescription: String
 }
 
 input UpdateDatasetVersionInput {

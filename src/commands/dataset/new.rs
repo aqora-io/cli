@@ -50,6 +50,7 @@ pub async fn create_dataset(
             input: create_dataset::CreateDatasetInput {
                 name: name.clone(),
                 local_slug: slugify(name),
+                short_description: None,
                 private,
                 tags: vec![],
             },
