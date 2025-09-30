@@ -97,6 +97,7 @@ impl Client {
     }
 
     pub async fn s3_put(&self, url: Url, body: impl Into<Body>) -> Result<S3PutResponse> {
+        self.validate_host(&url)?;
         let mut request = http::Request::builder()
             .method(http::Method::PUT)
             .uri(url.to_string());
@@ -118,7 +119,7 @@ impl Client {
     }
 
     pub async fn s3_get_range(&self, url: Url, range: impl Into<S3Range>) -> Result<S3GetResponse> {
-        self.validate_url_host(&url)?;
+        self.validate_host(&url)?;
         let mut request = http::Request::builder()
             .method(http::Method::GET)
             .uri(url.to_string());

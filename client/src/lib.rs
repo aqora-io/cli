@@ -17,12 +17,13 @@ mod sleep;
 pub mod tower_util;
 #[cfg(feature = "trace")]
 pub mod trace;
+pub mod utils;
 #[cfg(feature = "wasm")]
 mod wasm;
 #[cfg(feature = "tokio-ws")]
 pub mod ws;
 
-pub use client::{allow_request_url, Client};
+pub use client::{Client, ClientOptions};
 pub use error::{Error, Result};
 pub use graphql_client::GraphQLQuery;
 pub use reqwest;
