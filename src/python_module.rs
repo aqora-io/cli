@@ -39,30 +39,51 @@ struct PyClientInner {
     authenticated: bool,
 }
 
+fn get_environ<'py>(py: Python<'py>, key: &str) -> PyResult<Option<String>> {
+    let os = py.import(pyo3::intern!(py, "os"))?;
+    let value = os
+        .getattr("environ")?
+        .call_method1(pyo3::intern!(py, "get"), (key,))?;
+    if value.is_none() {
+        Ok(None)
+    } else {
+        Ok(Some(value.extract()?))
+    }
+}
+
 #[pymethods]
 impl PyClient {
     #[new]
     #[pyo3(signature = (url=None, *, allow_insecure_host=None))]
-    fn new(url: Option<&str>, allow_insecure_host: Option<bool>) -> PyResult<Self> {
+    fn new<'py>(
+        py: Python<'py>,
+        url: Option<&str>,
+        allow_insecure_host: Option<bool>,
+    ) -> PyResult<Self> {
         let url = url
             .map_or_else(
                 || {
-                    std::env::var("AQORA_URL")
-                        .ok()
-                        .map_or(Cow::Borrowed("https://aqora.io"), Cow::Owned)
+                    PyResult::Ok(
+                        get_environ(py, "AQORA_URL")?
+                            .map_or(Cow::Borrowed("https://aqora.io"), Cow::Owned),
+                    )
                 },
-                Cow::Borrowed,
-            )
+                |url| Ok(Cow::Borrowed(url)),
+            )?
             .parse::<Url>()
             .map_err(|error| PyValueError::new_err((error.to_string(),)))?;
-        let allow_insecure_host = allow_insecure_host.unwrap_or_else(|| {
-            std::env::var_os("AQORA_ALLOW_INSECURE_HOST").is_some_and(|var| {
-                !(var.is_empty()
-                    || var.eq_ignore_ascii_case("false")
-                    || var.eq_ignore_ascii_case("0"))
-            })
-        });
-
+        let allow_insecure_host = allow_insecure_host.map_or_else(
+            || {
+                PyResult::Ok(
+                    get_environ(py, "AQORA_ALLOW_INSECURE_HOST")?
+                        .map(|value| value.parse::<bool>())
+                        .transpose()
+                        .map_err(|error| PyValueError::new_err(error.to_string()))?
+                        .unwrap_or(false),
+                )
+            },
+            |allow_insecure_host| Ok(allow_insecure_host),
+        )?;
         let client = unauthenticated_client(
             url,
             ClientOptions {
