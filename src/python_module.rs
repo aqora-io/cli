@@ -1,6 +1,6 @@
 use std::{borrow::Cow, ffi::OsString, sync::Arc};
 
-use aqora_client::{s3::S3Range, Client};
+use aqora_client::{s3::S3Range, Client, ClientOptions};
 use aqora_runner::pipeline::{LayerEvaluation, PipelineConfig};
 use pyo3::{
     exceptions::PyValueError,
@@ -14,7 +14,7 @@ use url::Url;
 
 use crate::{
     dirs::config_home,
-    graphql_client::{client as authenticated_client, unauthenticated_client},
+    graphql_client::{authenticate_client, unauthenticated_client},
 };
 
 #[pyfunction]
@@ -31,7 +31,6 @@ import_exception!(aqora_cli, ClientError);
 
 #[pyclass(frozen, name = "Client", module = "aqora_cli")]
 struct PyClient {
-    url: Url,
     inner: Arc<RwLock<PyClientInner>>,
 }
 
@@ -43,8 +42,8 @@ struct PyClientInner {
 #[pymethods]
 impl PyClient {
     #[new]
-    #[pyo3(signature = (url=None))]
-    fn new(url: Option<&str>) -> PyResult<Self> {
+    #[pyo3(signature = (url=None, *, allow_insecure_host=None))]
+    fn new(url: Option<&str>, allow_insecure_host: Option<bool>) -> PyResult<Self> {
         let url = url
             .map_or_else(
                 || {
@@ -56,11 +55,22 @@ impl PyClient {
             )
             .parse::<Url>()
             .map_err(|error| PyValueError::new_err((error.to_string(),)))?;
+        let allow_insecure_host = allow_insecure_host.unwrap_or_else(|| {
+            std::env::var_os("AQORA_ALLOW_INSECURE_HOST").is_some_and(|var| {
+                !(var.is_empty()
+                    || var.eq_ignore_ascii_case("false")
+                    || var.eq_ignore_ascii_case("0"))
+            })
+        });
 
-        let client = unauthenticated_client(url.clone())
-            .map_err(|error| ClientError::new_err((error.message(),)))?;
-        Ok(Self {
+        let client = unauthenticated_client(
             url,
+            ClientOptions {
+                allow_insecure_host,
+            },
+        )
+        .map_err(|error| ClientError::new_err((error.message(),)))?;
+        Ok(Self {
             inner: Arc::new(RwLock::new(PyClientInner {
                 client,
                 authenticated: false,
@@ -72,10 +82,9 @@ impl PyClient {
         let config_home =
             config_home().map_err(|error| ClientError::new_err((error.message(),)))?;
         let inner = Arc::clone(&self.inner);
-        let url = self.url.clone();
         future_into_py(py, async move {
             let mut inner = inner.write().await;
-            let client = authenticated_client(config_home, url)
+            let client = authenticate_client(config_home, inner.client.clone())
                 .await
                 .map_err(|error| ClientError::new_err((error.message(),)))?;
             *inner = PyClientInner {

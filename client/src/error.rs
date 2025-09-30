@@ -71,8 +71,8 @@ pub enum Error {
     S3(#[from] S3Error),
     #[error("Bad S3 range requested")]
     BadS3Range,
-    #[error("Bad Origin")]
-    BadOrigin,
+    #[error("Bad Origin: {0}")]
+    BadOrigin(std::io::Error),
     #[error(transparent)]
     InvalidHeaderValue(#[from] reqwest::header::InvalidHeaderValue),
     #[cfg(feature = "tokio-ws")]

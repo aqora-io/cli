@@ -20,8 +20,8 @@ pub struct Tokens {
 #[cfg_attr(not(feature = "threaded"), async_trait(?Send))]
 pub trait CredentialsProvider {
     #[allow(unused_variables)]
-    fn authenticates(&self, url: &Uri) -> bool {
-        true
+    fn authenticates(&self, url: &Uri) -> Result<bool, BoxError> {
+        Ok(true)
     }
     async fn bearer_token(&self) -> Result<Option<String>, BoxError>;
     async fn revoke_access_token(&self) -> Result<(), BoxError> {
@@ -42,7 +42,7 @@ impl<T> CredentialsProvider for &T
 where
     T: ?Sized + CredentialsProvider + MaybeSend + MaybeSync,
 {
-    fn authenticates(&self, url: &Uri) -> bool {
+    fn authenticates(&self, url: &Uri) -> Result<bool, BoxError> {
         T::authenticates(self, url)
     }
     async fn bearer_token(&self) -> Result<Option<String>, BoxError> {
@@ -223,9 +223,16 @@ where
         }
     }
     fn call(&mut self, mut req: crate::http::Request) -> Self::Future {
-        if !self.credentials.authenticates(req.uri()) {
-            let fut = self.inner.call(req);
-            return async move { Ok(fut.await?) }.boxed_maybe_local();
+        match self.credentials.authenticates(req.uri()) {
+            Ok(true) => {}
+            Ok(false) => {
+                let fut = self.inner.call(req);
+                return async move { Ok(fut.await?) }.boxed_maybe_local();
+            }
+            Err(err) => {
+                return futures::future::ready(Err(MiddlewareError::Middleware(err)))
+                    .boxed_maybe_local()
+            }
         }
 
         if let Poll::Ready(Some(token)) = &self.ready.bearer {

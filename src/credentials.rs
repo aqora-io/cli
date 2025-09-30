@@ -1,7 +1,6 @@
 use crate::{
     dirs::credentials_path,
     error::{self, Result},
-    graphql_client::unauthenticated_client,
 };
 use chrono::{DateTime, Duration, Utc};
 use fs4::tokio::AsyncFileExt;
@@ -27,12 +26,15 @@ pub struct Credentials {
 }
 
 impl Credentials {
-    pub async fn refresh(self, url: &Url) -> error::Result<Option<Self>> {
+    pub async fn refresh(
+        self,
+        unauthenticated_client: &aqora_client::Client,
+    ) -> error::Result<Option<Self>> {
         if (self.expires_at - Duration::try_seconds(EXPIRATION_PADDING_SEC).unwrap()) > Utc::now() {
             return Ok(Some(self));
         }
 
-        let issued = unauthenticated_client(url.clone())?
+        let issued = unauthenticated_client
             .send::<Oauth2RefreshMutation>(oauth2_refresh_mutation::Variables {
                 client_id: self.client_id.clone(),
                 client_secret: self.client_secret.clone(),
@@ -177,17 +179,27 @@ where
 )]
 pub struct Oauth2RefreshMutation;
 
+#[inline]
+fn base_url(url: &Url) -> Url {
+    let mut url = url.clone();
+    url.set_path("");
+    url.set_query(None);
+    url.set_fragment(None);
+    url
+}
+
 pub async fn get_credentials(
     config_home: impl AsRef<Path>,
-    url: Url,
+    unauthenticated_client: aqora_client::Client,
 ) -> Result<Option<Credentials>> {
     let credentials = with_locked_credentials(config_home, |file| {
         async move {
+            let url = base_url(unauthenticated_client.url());
             let credentials = match file.credentials.get(&url).cloned() {
                 Some(credentials) => credentials,
                 None => return Ok(None),
             };
-            let credentials = credentials.refresh(&url).await?;
+            let credentials = credentials.refresh(&unauthenticated_client).await?;
             if let Some(credentials) = &credentials {
                 file.credentials.insert(url.clone(), credentials.clone());
             }

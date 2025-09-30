@@ -3,9 +3,10 @@ use crate::{
     dialog::{Confirm, FuzzySelect},
     dirs::{config_home, init_venv, opt_init_venv},
     error::{self, Result},
-    graphql_client::{client, graphql_url, unauthenticated_client, GraphQLClient},
+    graphql_client::{authenticate_client, graphql_url, unauthenticated_client, GraphQLClient},
     progress_bar::default_spinner,
 };
+use aqora_client::ClientOptions;
 use aqora_runner::python::{ColorChoice, LinkMode, PipOptions, PyEnv};
 use clap::Args;
 use comfy_table::Table;
@@ -36,6 +37,14 @@ pub struct GlobalArgs {
         hide = true
     )]
     pub url: String,
+    #[arg(
+        help_heading = HELP_HEADING,
+        long,
+        env = "AQORA_ALLOW_INSECURE_HOST",
+        global = true,
+        hide = true
+    )]
+    pub allow_insecure_host: bool,
     #[arg(
         help_heading = HELP_HEADING,
         long,
@@ -141,13 +150,25 @@ impl GlobalArgs {
         Ok(path)
     }
 
+    #[inline]
+    fn client_options(&self) -> ClientOptions {
+        ClientOptions {
+            allow_insecure_host: self.allow_insecure_host,
+        }
+    }
+
+    #[inline]
+    pub fn unauthenticated_graphql_client(&self) -> Result<GraphQLClient> {
+        unauthenticated_client(self.aqora_url()?, self.client_options())
+    }
+
     pub async fn graphql_client(&self) -> Result<GraphQLClient> {
-        let url = self.aqora_url()?;
+        let unauthenticated_client = self.unauthenticated_graphql_client()?;
         match self.config_home().await {
-            Ok(config_home) => Ok(client(config_home, url).await?),
+            Ok(config_home) => Ok(authenticate_client(config_home, unauthenticated_client).await?),
             Err(err) => {
                 tracing::warn!("Could not access credentials: {}", err.description());
-                Ok(unauthenticated_client(url)?)
+                Ok(unauthenticated_client)
             }
         }
     }

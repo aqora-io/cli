@@ -2,7 +2,6 @@ use crate::{
     commands::GlobalArgs,
     credentials::{get_credentials, with_locked_credentials, Credentials},
     error::{self, Result},
-    graphql_client::unauthenticated_client,
 };
 use base64::prelude::*;
 use chrono::{Duration, Utc};
@@ -73,7 +72,8 @@ async fn get_oauth_code(
     let signature_bytes = keypair.sign(authorize_url.as_str().as_bytes());
     let signature = BASE64_URL_SAFE_NO_PAD.encode(signature_bytes.as_ref());
 
-    let mut subscription = unauthenticated_client(global.aqora_url()?)?
+    let mut subscription = global
+        .unauthenticated_graphql_client()?
         .subscribe::<Oauth2RedirectSubscription>(oauth2_redirect_subscription::Variables {
             auth_url: authorize_url.clone(),
             signature,
@@ -293,7 +293,8 @@ async fn do_login(args: Login, global: GlobalArgs, progress: ProgressBar) -> Res
                 // cancelled
                 return Ok(());
             };
-            let result = unauthenticated_client(global.aqora_url()?)?
+            let result = global
+                .unauthenticated_graphql_client()?
                 .send::<Oauth2TokenMutation>(oauth2_token_mutation::Variables {
                     client_id: client_id.clone(),
                     code,
@@ -330,9 +331,12 @@ pub async fn login(args: Login, global: GlobalArgs) -> Result<()> {
 }
 
 pub async fn check_login(global: GlobalArgs, multi_progress: &MultiProgress) -> Result<bool> {
-    if get_credentials(global.config_home().await?, global.aqora_url()?)
-        .await?
-        .is_some()
+    if get_credentials(
+        global.config_home().await?,
+        global.unauthenticated_graphql_client()?,
+    )
+    .await?
+    .is_some()
     {
         return Ok(true);
     }

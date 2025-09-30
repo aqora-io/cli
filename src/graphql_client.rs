@@ -6,12 +6,13 @@ use aqora_client::{
     credentials::{CredentialsLayer, CredentialsProvider},
     error::BoxError,
     trace::TraceLayer,
+    ClientOptions,
 };
 use axum::http::Uri;
 use reqwest::header::{HeaderValue, USER_AGENT};
 use std::path::Path;
 use tokio::sync::Mutex;
-use url::{Host, Url};
+use url::Url;
 
 pub mod custom_scalars {
     pub type Semver = String;
@@ -42,7 +43,10 @@ impl From<GraphQLError> for Error {
             }
             GraphQLError::S3(error) => error::system(&format!("S3 Error: {error:?}"), ""),
             GraphQLError::BadS3Range => error::system("Bad S3 range requested", ""),
-            GraphQLError::BadOrigin => error::system("Bad origin requested", ""),
+            GraphQLError::BadOrigin(err) => error::user(
+                &format!("Bad origin requested {err}"),
+                "Try a different aqora URL",
+            ),
             GraphQLError::Response(errors) => error::user(
                 &errors
                     .into_iter()
@@ -70,38 +74,37 @@ impl From<GraphQLError> for Error {
     }
 }
 
-struct CredentialsForUrl {
+struct CredentialsForClient {
     credentials: Mutex<Option<Credentials>>,
-    url: Url,
+    unauthenticated_client: aqora_client::Client,
 }
 
-impl CredentialsForUrl {
-    async fn load(config_home: impl AsRef<Path>, url: Url) -> Result<Self> {
-        let credentials = get_credentials(config_home, url.clone()).await?;
+impl CredentialsForClient {
+    async fn load(
+        config_home: impl AsRef<Path>,
+        unauthenticated_client: aqora_client::Client,
+    ) -> Result<Self> {
+        let credentials = get_credentials(config_home, unauthenticated_client.clone()).await?;
         Ok(Self {
             credentials: Mutex::new(credentials),
-            url,
+            unauthenticated_client,
         })
     }
 }
 
 #[async_trait::async_trait]
-impl CredentialsProvider for CredentialsForUrl {
-    fn authenticates(&self, url: &Uri) -> bool {
-        let Some(scheme) = url.scheme_str() else {
-            return false;
-        };
-        aqora_client::allow_request_url(
-            scheme,
-            url.host().and_then(|host| Host::parse(host).ok()),
-            self.url.host(),
-        )
+impl CredentialsProvider for CredentialsForClient {
+    fn authenticates(&self, uri: &Uri) -> Result<bool, BoxError> {
+        Ok(aqora_client::utils::host_matches(
+            self.unauthenticated_client.url(),
+            &Url::parse(&uri.to_string())?,
+        )?)
     }
 
     async fn bearer_token(&self) -> Result<Option<String>, BoxError> {
         let mut creds = self.credentials.lock().await;
         if let Some(credentials) = creds.take() {
-            *creds = credentials.refresh(&self.url).await?;
+            *creds = credentials.refresh(&self.unauthenticated_client).await?;
         }
         if let Some(credentials) = creds.as_ref() {
             return Ok(Some(credentials.access_token.clone()));
@@ -120,8 +123,11 @@ pub fn graphql_url(url: &Url) -> Result<Url> {
     Ok(url.join("/graphql")?)
 }
 
-pub fn unauthenticated_client(url: Url) -> Result<GraphQLClient> {
-    let mut client = GraphQLClient::new(graphql_url(&url)?);
+pub fn unauthenticated_client(url: Url, options: ClientOptions) -> Result<GraphQLClient> {
+    if options.allow_insecure_host && !aqora_client::utils::is_url_secure(&url)? {
+        tracing::warn!("Using insecure host: {url}");
+    }
+    let mut client = GraphQLClient::new_with_options(graphql_url(&url)?, options);
     client
         .graphql_layer(TraceLayer::new().debug_body(true))
         .graphql_layer(tower_http::set_header::SetRequestHeaderLayer::appending(
@@ -133,9 +139,12 @@ pub fn unauthenticated_client(url: Url) -> Result<GraphQLClient> {
     Ok(client)
 }
 
-pub async fn client(config_home: impl AsRef<Path>, url: Url) -> Result<GraphQLClient> {
-    let mut client = unauthenticated_client(url.clone())?;
-    let creds = CredentialsLayer::new(CredentialsForUrl::load(config_home, url).await?);
+pub async fn authenticate_client(
+    config_home: impl AsRef<Path>,
+    mut client: aqora_client::Client,
+) -> Result<GraphQLClient> {
+    let creds =
+        CredentialsLayer::new(CredentialsForClient::load(config_home, client.clone()).await?);
     client.graphql_layer(creds.clone());
     client.s3_layer(creds);
     Ok(client)
