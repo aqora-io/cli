@@ -1,6 +1,6 @@
 [package]
 name = "aqora-data-utils"
-version = "0.18.2"
+version = "0.18.3"
 edition = "2021"
 publish = false
 
