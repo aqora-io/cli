@@ -9,7 +9,7 @@ use aqora_client::{
     ClientOptions,
 };
 use axum::http::Uri;
-use reqwest::header::{HeaderValue, USER_AGENT};
+use reqwest::header::{HeaderValue, ORIGIN, USER_AGENT};
 use std::path::Path;
 use tokio::sync::Mutex;
 use url::Url;
@@ -119,6 +119,23 @@ const AQORA_USER_AGENT: HeaderValue = HeaderValue::from_static(concat!(
     env!("CARGO_PKG_VERSION")
 ));
 
+fn origin(url: &Url) -> Result<HeaderValue> {
+    let mut origin = format!(
+        "{}://{}",
+        url.scheme(),
+        url.host_str().ok_or_else(|| {
+            error::user(
+                &format!("Invalid url {url}: no host"),
+                "Try a different AQORA_URL",
+            )
+        })?
+    );
+    if let Some(port) = url.port() {
+        origin.push_str(&format!(":{}", port));
+    }
+    Ok(origin.parse()?)
+}
+
 pub fn graphql_url(url: &Url) -> Result<Url> {
     Ok(url.join("/graphql")?)
 }
@@ -133,6 +150,10 @@ pub fn unauthenticated_client(url: Url, options: ClientOptions) -> Result<GraphQ
         .graphql_layer(tower_http::set_header::SetRequestHeaderLayer::appending(
             USER_AGENT,
             AQORA_USER_AGENT,
+        ))
+        .graphql_layer(tower_http::set_header::SetRequestHeaderLayer::appending(
+            ORIGIN,
+            origin(&url)?,
         ))
         .s3_layer(TraceLayer::new())
         .ws_layer(TraceLayer::new());
