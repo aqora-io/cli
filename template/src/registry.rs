@@ -2,8 +2,8 @@ use std::io::Write;
 use std::path::Path;
 
 use handlebars::{
-    Context, Handlebars, Helper, HelperResult, Output, RenderContext, RenderError,
-    RenderErrorReason,
+    handlebars_helper, no_escape, Context, Handlebars, Helper, HelperResult, Output, RenderContext,
+    RenderError, RenderErrorReason,
 };
 use rust_embed::RustEmbed;
 use serde::Serialize;
@@ -62,6 +62,15 @@ fn toml_val(
     Ok(())
 }
 
+handlebars_helper!(indent: |val: str, indent_str: str| {
+    let mut lines = val.lines();
+    let mut out = lines.next().unwrap_or("").to_string();
+    for line in lines {
+        out.push_str(&format!("\n{indent_str}{line}"));
+    }
+    out
+});
+
 pub struct Registry {
     handlebars: Handlebars<'static>,
 }
@@ -74,7 +83,9 @@ impl Registry {
         handlebars
             .register_embed_templates_with_extension::<Assets>(".hbs")
             .unwrap();
+        handlebars.register_escape_fn(no_escape);
         handlebars.register_helper("toml_val", Box::new(toml_val));
+        handlebars.register_helper("indent", Box::new(indent));
         Self { handlebars }
     }
 

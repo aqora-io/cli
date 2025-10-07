@@ -1,0 +1,6 @@
+/target
+.env*
+.venv
+dist
+__pycache__/
+*.so
