@@ -1,0 +1,44 @@
+import marimo
+
+__generated_with = "{{ marimo_version }}"
+app = marimo.App(width="full", auto_download=["html"])
+
+
+@app.cell(hide_code=True)
+def _(data, mo, sql_editor):
+    _ = data
+    _df = mo.sql(
+        f"""
+        SET disabled_filesystems = 'LocalFileSystem';
+        {sql_editor.value}
+        """
+    )
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    sql_editor = mo.ui.code_editor(value="SELECT * FROM data", language="sql", debounce=1000)
+    sql_editor
+    return (sql_editor,)
+
+
+@app.cell(hide_code=True)
+def _():
+    {{#if raw_init }}
+    {{ indent raw_init '    ' }}
+    {{else}}
+    from aqora_cli.pyarrow import dataset
+    data = dataset("{{ owner }}/{{ local_slug }}", "v{{ version }}")
+    {{/if}}
+    return (data,)
+
+
+@app.cell(hide_code=True)
+def _():
+    import marimo as mo
+    return (mo,)
+
+
+if __name__ == "__main__":
+    app.run()

@@ -1,0 +1,115 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Noto+Sans+Mono:wght@100..900&display=swap");
+
+:root {
+  --background: hsl(0 0% 99.2%);
+  --marimo-monospace-font: "Noto Sans Mono", monospace;
+  --marimo-text-font: "Inter", sans-serif;
+  --marimo-heading-font: "Inter", sans-serif;
+}
+
+#App[data-config-width="full"] > div {
+  padding-inline: calc(var(--spacing, 0.25rem) * 10);
+}
+
+#App[data-config-width="full"][data-command="run"] > div {
+  padding: 0;
+  padding-top: 1rem;
+}
+
+/* hide last button (feedback) in side panel */
+#root > div > div > div > div:first-child > button:last-of-type {
+  display: none;
+}
+
+/* Soften the cell shadow */
+.marimo-cell {
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+}
+
+/* === Markdown typography ===================================== */
+
+.markdown.prose {
+  line-height: 1.7;
+  font-size: 0.95rem;
+}
+
+/* Headings */
+.markdown.prose h1 {
+  font-weight: 600;
+  font-size: 2rem;
+  margin-top: 2.5rem;
+  margin-bottom: 1rem;
+}
+
+.markdown.prose h2 {
+  font-weight: 600;
+  font-size: 1.25rem;
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+}
+
+.markdown.prose h3 {
+  font-weight: 600;
+  font-size: 1.25rem;
+  line-height: 1.35;
+  margin-top: 1.8rem;
+  margin-bottom: 0.6rem;
+}
+
+.markdown.prose h4 {
+  font-weight: 600;
+  font-size: 1.1rem;
+  line-height: 1.4;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.markdown.prose h5 {
+  font-weight: 600;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 1.4rem;
+  margin-bottom: 0.4rem;
+}
+
+.markdown.prose h6 {
+  font-weight: 500;
+  font-size: 0.9rem;
+  margin-top: 1.2rem;
+  margin-bottom: 0.35rem;
+}
+
+/* Paragraph spans marimo wraps things in */
+.markdown.prose .paragraph {
+  display: block;
+  margin-top: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+/* Lists */
+.markdown.prose ul,
+.markdown.prose ol {
+  margin: 0.5rem 0 1rem;
+  padding-left: 1.4rem;
+}
+
+.markdown.prose li {
+  margin: 0.15rem 0;
+}
+
+/* Inline code (Monospace) */
+.markdown.prose code {
+  background: var(--slate-2);
+  padding: 0.05rem 0.35rem;
+  border-radius: 0.3rem;
+}
+
+/* Quote block (blue bar, softer background) */
+
+.markdown.prose blockquote {
+  margin: 1.5rem 0;
+  padding: 0.85rem 1.25rem;
+  border-left: 3px solid #371fc1; /* brand-600 */
+  font-style: italic;
+}

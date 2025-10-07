@@ -1,0 +1,8 @@
+query GetLatestDatasetVersionBySlug($owner: String!, $localSlug: String!) {
+  datasetBySlug(owner: $owner, localSlug: $localSlug) {
+    latestVersion {
+      id
+      version
+    }
+  }
+}

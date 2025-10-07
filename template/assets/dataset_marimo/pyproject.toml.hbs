@@ -1,0 +1,16 @@
+[project]
+name = "{{ name }}"
+version = "0.1.0"
+requires-python = ">={{ python_version }}"
+
+dependencies = [
+  "marimo[recommended,lsp]>={{ marimo_version }}",
+  "aqora-cli[pyarrow]>={{ cli_version }}",
+]
+
+[dependency-groups]
+dev = ["ty", "watchdog"]
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
