@@ -1,0 +1,17 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Noto+Sans+Mono:wght@100..900&display=swap");
+
+:root {
+  --background: hsl(0 0% 99.2%);
+  --marimo-monospace-font: "Noto Sans Mono", monospace;
+  --marimo-text-font: "Inter", sans-serif;
+  --marimo-heading-font: "Inter", sans-serif;
+}
+
+#App[data-config-width="full"] > div {
+  padding-inline: calc(var(--spacing, 0.25rem) * 10);
+}
+
+#App[data-config-width="full"][data-command="run"] > div {
+  padding-left: 0;
+  padding-top: 0;
+}
