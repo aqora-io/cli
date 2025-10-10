@@ -1,0 +1,17 @@
+[project]
+name = "{{ local_slug }}"
+version = "0.1.0"
+requires-python = ">={{ python_version }}"
+
+dependencies = [
+  "marimo[recommended,lsp]>={{ marimo_version }}",
+  "aqora-cli>={{ cli_version }}",
+  "fsspec",
+]
+
+[dependency-groups]
+dev = ["ty"]
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
