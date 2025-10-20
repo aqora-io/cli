@@ -4,11 +4,16 @@ use crate::{
     graphql_client::GraphQLClient,
     progress_bar::{self, TempProgressStyle},
 };
+use aqora_client::retry::{
+    BackoffBuilder, ExponentialBackoffBuilder, RetryClassifier, RetryStatusCodeRange,
+};
+use clap::Args;
 use futures::{prelude::*, TryStreamExt};
 use indicatif::ProgressBar;
-use std::path::Path;
-use tokio::io::{AsyncSeekExt, AsyncWriteExt};
-use tokio_util::io::ReaderStream;
+use serde::Serialize;
+use std::{ops::Range, path::Path, time::Duration};
+use tokio::io::{AsyncSeekExt, AsyncWriteExt, BufReader, BufWriter};
+use tokio_util::io::InspectWriter;
 use url::Url;
 
 struct DownloadInspector<'a> {
@@ -40,6 +45,12 @@ impl<'a> DownloadInspector<'a> {
     fn inspect(&self, bytes: &[u8]) {
         if self.should_inc {
             self.pb.inc(bytes.len() as u64)
+        }
+    }
+
+    fn rollback(&self, bytes: u64) {
+        if self.should_inc {
+            self.pb.dec(bytes)
         }
     }
 }
@@ -97,19 +108,44 @@ pub async fn download_archive(
     Ok(())
 }
 
-#[derive(Debug, Clone)]
-pub struct MultipartOptions {
-    pub chunk_size: usize,
-    pub concurrency: usize,
+const DEFAULT_CHUNK_SIZE: usize = 64 * 1024; // 64 KiB
+
+fn parse_duration(arg: &str) -> Result<std::time::Duration, std::num::ParseIntError> {
+    let seconds = arg.parse()?;
+    Ok(std::time::Duration::from_secs(seconds))
 }
 
-impl MultipartOptions {
-    pub fn new(chunk_size: usize, concurrency: usize) -> Self {
-        Self {
-            chunk_size,
-            concurrency,
+#[derive(Debug, Clone, Default, Serialize, Args)]
+pub struct ExponentialBackoffOptions {
+    #[arg(long, value_parser = parse_duration, default_value = "1")]
+    pub start_delay: Duration,
+    #[arg(long, default_value_t = 2.)]
+    pub factor: f64,
+    #[arg(long, value_parser = parse_duration, default_value = "60")]
+    pub max_delay: Duration,
+    #[arg(long, default_value_t = 5)]
+    pub max_retries: usize,
+}
+
+impl From<ExponentialBackoffOptions> for ExponentialBackoffBuilder {
+    fn from(value: ExponentialBackoffOptions) -> Self {
+        ExponentialBackoffBuilder {
+            start_delay: value.start_delay,
+            factor: value.factor,
+            max_delay: Some(value.max_delay),
+            max_retries: Some(value.max_retries),
         }
     }
+}
+
+#[derive(Debug, Default, Clone, Serialize, Args)]
+pub struct MultipartOptions {
+    #[arg(long, default_value_t = DEFAULT_CHUNK_SIZE)]
+    pub chunk_size: usize,
+    #[arg(long, default_value_t = 10)]
+    pub chunck_concurrency: usize,
+    #[command(flatten)]
+    backoff: ExponentialBackoffOptions,
 }
 
 struct ChunkIter {
@@ -129,7 +165,7 @@ impl ChunkIter {
 }
 
 impl Iterator for ChunkIter {
-    type Item = std::ops::Range<u64>;
+    type Item = Range<u64>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.current >= self.end {
@@ -139,6 +175,59 @@ impl Iterator for ChunkIter {
         let next_end = (start + self.step).min(self.end);
         self.current = next_end;
         Some(start..next_end)
+    }
+}
+
+#[derive(Clone)]
+struct RangeDownloader<R> {
+    client: GraphQLClient,
+    retry_classifier: R,
+    backoff_builder: ExponentialBackoffBuilder,
+}
+
+impl<R> RangeDownloader<R>
+where
+    R: RetryClassifier<aqora_client::http::Response, crate::error::Error> + Send + Sync + 'static,
+{
+    async fn download_range(
+        &self,
+        url: &Url,
+        range: Range<u64>,
+        inspector: &DownloadInspector<'_>,
+        mut file: tokio::fs::File,
+    ) -> Result<()> {
+        for delay in self.backoff_builder.build() {
+            match self
+                .client
+                .s3_get_range(url.clone(), range.start as usize..range.end as usize)
+                .await
+            {
+                Ok(response) => {
+                    file.seek(std::io::SeekFrom::Start(range.start)).await?;
+
+                    let mut writer = BufWriter::new(InspectWriter::new(file, |bytes: &[u8]| {
+                        inspector.inspect(bytes);
+                    }));
+
+                    let mut reader = BufReader::new(response.body.into_async_read());
+
+                    tokio::io::copy_buf(&mut reader, &mut writer).await?;
+
+                    writer.flush().await?;
+
+                    return Ok(());
+                }
+                Err(err) => {
+                    if !self.retry_classifier.should_retry(&Err(err.into())) {
+                        return Err(crate::error::system("S3 range", "non-retryable error"));
+                    }
+                    inspector.rollback(range.end - range.start);
+                    tokio::time::sleep(delay).await;
+                }
+            }
+        }
+
+        Err(crate::error::system("S3 range", "exhausted retries"))
     }
 }
 
@@ -161,51 +250,31 @@ pub async fn multipart_download(
 
     let inspector = DownloadInspector::new(pb, Some(size as _));
 
+    let downloader = RangeDownloader {
+        client: client.clone(),
+        retry_classifier: RetryStatusCodeRange::for_client_and_server_errors(),
+        backoff_builder: options.backoff.clone().into(),
+    };
+
     stream::iter(ChunkIter::new(size, options.chunk_size as _))
         .map(|range| {
-            let client = &client;
+            let downloader = downloader.clone();
+            let url = url.clone();
             let inspector = &inspector;
-            let url = url.to_owned();
-            let file_path = output_path.to_owned();
+            let file = &file;
 
             async move {
-                let body = client
-                    .s3_get_range(url, range.start as usize..range.end as usize)
-                    .await?
-                    .body;
+                let task_file = file.try_clone().await?;
 
-                let data = ReaderStream::new(body.into_async_read())
-                    .map_err(|e| crate::error::system("S3 body stream", &e.to_string()))
-                    .try_fold(
-                        Vec::with_capacity((range.end - range.start) as usize),
-                        |mut acc, chunk| {
-                            inspector.inspect(&chunk);
-                            acc.extend_from_slice(&chunk);
-                            async move { Ok::<_, crate::error::Error>(acc) }
-                        },
-                    )
-                    .await?;
-
-                let mut file = tokio::fs::OpenOptions::new()
-                    .write(true)
-                    .open(&file_path)
-                    .await?;
-                file.seek(std::io::SeekFrom::Start(range.start)).await?;
-                file.write_all(&data).await?;
-                file.flush().await?;
-
-                Ok::<_, crate::error::Error>(())
+                downloader
+                    .download_range(&url, range.clone(), inspector, task_file)
+                    .await
             }
         })
-        .buffer_unordered(options.concurrency)
+        .buffer_unordered(options.chunck_concurrency)
         .try_collect::<()>()
         .await?;
 
-    let file = tokio::fs::OpenOptions::new()
-        .write(true)
-        .open(output_path)
-        .await?;
     file.sync_all().await?;
-
     Ok(())
 }

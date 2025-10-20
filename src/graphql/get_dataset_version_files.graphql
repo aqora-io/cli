@@ -12,6 +12,9 @@ query GetDatasetVersionFiles($datasetVersionId: ID!) {
           rows
           url
           partitionNum
+          datasetVersion {
+            id
+          }
         }
       }
     }
