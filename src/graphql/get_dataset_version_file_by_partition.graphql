@@ -1,0 +1,14 @@
+query GetDatasetVersionFileByPartition(
+  $datasetVersionId: ID!
+  $partitionNum: Int!
+) {
+  node(id: $datasetVersionId) {
+    __typename
+    ... on DatasetVersion {
+      fileByPartitionNum(partitionNum: $partitionNum) {
+        id
+        url
+      }
+    }
+  }
+}

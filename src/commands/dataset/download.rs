@@ -27,12 +27,10 @@ pub struct Download {
     version: semver::Version,
     #[arg(short, long)]
     destination: PathBuf,
-    #[clap(long, short = 'c', default_value_t = 10_000_000)]
-    chunk_size: usize,
+    #[command(flatten)]
+    options: MultipartOptions,
     #[clap(long, default_value_t = 10)]
-    part_download_concurrency: usize,
-    #[clap(long, default_value_t = 10)]
-    file_download_concurrency: usize,
+    concurrency: usize,
 }
 
 #[derive(GraphQLQuery)]
@@ -43,13 +41,21 @@ pub struct Download {
 )]
 pub struct GetDatasetVersionFiles;
 
+#[derive(GraphQLQuery)]
+#[graphql(
+    query_path = "src/graphql/get_dataset_version_file_by_partition.graphql",
+    schema_path = "schema.graphql",
+    response_derives = "Debug"
+)]
+pub struct GetDatasetVersionFileByPartition;
+
 pub async fn download(args: Download, global: GlobalArgs) -> Result<()> {
     let m = MultiProgress::new();
 
     let client = global.graphql_client().await?;
 
     let (owner, local_slug) = args.common.slug_pair()?;
-    let multipart_options = MultipartOptions::new(args.chunk_size, args.part_download_concurrency);
+    let multipart_options = args.options;
 
     let dataset = get_dataset_by_slug(&global, owner, local_slug).await?;
     if !dataset.viewer_can_read_dataset_version_file {
@@ -103,9 +109,9 @@ pub async fn download(args: Download, global: GlobalArgs) -> Result<()> {
 
     stream::iter(nodes)
         .map(|node| {
-            let client = &client;
-            let m = &m;
-            let multipart_options = &multipart_options;
+            let client = client.to_owned();
+            let m = m.to_owned();
+            let multipart_options = multipart_options.to_owned();
             let dataset_dir = dataset_dir.to_owned();
             let dataset_name = dataset_name.to_owned();
 
@@ -121,7 +127,7 @@ pub async fn download(args: Download, global: GlobalArgs) -> Result<()> {
                 .await
             }
         })
-        .buffer_unordered(args.file_download_concurrency)
+        .buffer_unordered(args.concurrency)
         .try_collect::<()>()
         .await?;
 
@@ -138,7 +144,44 @@ async fn download_partition_file(
     dataset_name: &str,
     file_node: GetDatasetVersionFilesNodeOnDatasetVersionFilesNodes,
 ) -> Result<()> {
-    let metadata = client.s3_head(file_node.url.clone()).await?;
+    let (metadata, url) = match client.s3_head(file_node.url.clone()).await {
+        Ok(metadata) => (metadata, file_node.url.clone()),
+        // retry if presigned url expired due to long dataset download time
+        Err(e) => {
+            tracing::warn!(error = %e, "Retrying: failed to fetch object header");
+            let response = client
+                .send::<GetDatasetVersionFileByPartition>(
+                    get_dataset_version_file_by_partition::Variables {
+                        dataset_version_id: file_node.dataset_version.id,
+                        partition_num: file_node.partition_num,
+                    },
+                )
+                .await?;
+
+            let dataset_version_file = match response.node {
+            get_dataset_version_file_by_partition::GetDatasetVersionFileByPartitionNode::DatasetVersion(v) => v,
+            _ => {
+                return Err(error::system(
+                    "Invalid node type",
+                    "Unexpected GraphQL response",
+                ));
+            }
+        };
+            let file_by_partition_num = match dataset_version_file.file_by_partition_num {
+                Some(file_by_partition_num) => file_by_partition_num,
+                None => {
+                    return Err(error::system(
+                        "Invalid partition number",
+                        "The partition does not exist",
+                    ))
+                }
+            };
+
+            let file_url = file_by_partition_num.url;
+            (client.s3_head(file_url.clone()).await?, file_url)
+        }
+    };
+
     let filename = format!("{}-{}.parquet", dataset_name, file_node.partition_num);
     let output_path = output_dir.join(&filename);
 
@@ -157,9 +200,9 @@ async fn download_partition_file(
     pb.set_message(filename);
 
     multipart_download(
-        client,
+        &client,
         metadata.size,
-        file_node.url.clone(),
+        url,
         multipart_options,
         &temp_path,
         &pb,
