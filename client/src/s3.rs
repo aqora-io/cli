@@ -188,7 +188,7 @@ impl Client {
     }
 
     pub async fn s3_head(&self, url: Url) -> Result<S3HeadResponse> {
-        self.validate_url_host(&url)?;
+        self.validate_host(&url)?;
 
         let body = Body::from(r#"{"head": true}"#.to_string());
 
@@ -197,7 +197,9 @@ impl Client {
             .uri(url.to_string());
 
         if let Some(content_length) = body.content_length() {
-            if let Some(headers) = request.headers_mut() { headers.insert(reqwest::header::CONTENT_LENGTH, content_length.into()); }
+            if let Some(headers) = request.headers_mut() {
+                headers.insert(reqwest::header::CONTENT_LENGTH, content_length.into());
+            }
         }
 
         let request = request.body(body)?;
