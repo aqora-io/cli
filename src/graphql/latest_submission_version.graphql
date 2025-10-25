@@ -1,24 +1,31 @@
-query LatestSubmissionVersion($entityId: ID!, $slug: String!) {
+query LatestSubmissionVersion($asEntity: UsernameOrID, $slug: String!) {
+  viewer {
+    id
+  }
   competitionBySlug(slug: $slug) {
-    membership(entity: $entityId) {
+    id
+    membership {
       id
     }
-    entityRuleAgreements(entity: $entityId, first: 1) {
+    useCase {
+      latest {
+        version
+      }
+    }
+    entityRuleAgreements(first: 1) {
       nodes {
         id
       }
     }
     latestRule {
       text
-      entityAgreement(entity: $entityId) {
+      entityAgreement {
         id
       }
     }
-    submissions(entityId: $entityId) {
-      nodes {
-        latest {
-          version
-        }
+    submission(entity: $asEntity) {
+      latest {
+        version
       }
     }
   }

@@ -2,7 +2,7 @@ mutation UpdateSubmissionMutation(
   $competition_id: ID!
   $pyprojectToml: String!
   $readme: String
-  $entityId: String!
+  $as_entity: UsernameOrID,
   $compression: ProjectVersionCompressor!
 ) {
   createSubmissionVersion(
@@ -12,7 +12,7 @@ mutation UpdateSubmissionMutation(
       readme: $readme
       compression: $compression
     }
-    asEntity: $entityId
+    asEntity: $as_entity
   ) {
     node {
       id

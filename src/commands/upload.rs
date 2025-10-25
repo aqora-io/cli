@@ -90,32 +90,41 @@ async fn get_competition_by_slug(
 
 #[derive(GraphQLQuery)]
 #[graphql(
-    query_path = "src/graphql/submission_upload_info.graphql",
+    query_path = "src/graphql/latest_submission_version.graphql",
     schema_path = "schema.graphql",
     response_derives = "Debug"
 )]
-pub struct SubmissionUploadInfo;
+pub struct LatestSubmissionVersion;
 
-pub struct SubmissionUploadInfoResponse {
+#[derive(Debug)]
+pub struct LatestSubmissionVersionResponse {
+    viewer_id: Id,
     competition_id: Id,
     use_case_version: Version,
-    entity_id: Id,
+    is_member: bool,
+    previously_agreed: bool,
+    latest_agreed: bool,
+    rule_text: String,
+    version: Option<Version>,
 }
 
-pub async fn get_submission_upload_info(
+pub async fn get_latest_submission_version(
     client: &GraphQLClient,
-    slug: impl Into<String>,
-    username: Option<impl Into<String>>,
-) -> Result<SubmissionUploadInfoResponse> {
-    let slug = slug.into();
-    let username = username.map(|u| u.into());
+    slug: String,
+    username: Option<String>,
+) -> Result<LatestSubmissionVersionResponse> {
     let response = client
-        .send::<SubmissionUploadInfo>(submission_upload_info::Variables {
+        .send::<LatestSubmissionVersion>(latest_submission_version::Variables {
             slug: slug.clone(),
-            username: username.clone().unwrap_or_default(),
-            use_username: username.is_some(),
+            as_entity: username,
         })
         .await?;
+    let viewer_id = Id::parse_node_id(response.viewer.id).map_err(|err| {
+        error::system(
+            &format!("Could not parse viewer ID: {}", err),
+            "This is a bug, please report it",
+        )
+    })?;
     let competition = response.competition_by_slug.ok_or_else(|| {
         error::user(
             &format!("Competition '{}' not found", slug),
@@ -145,72 +154,8 @@ pub async fn get_submission_upload_info(
                 "Please contact the competition organizer",
             )
         })?;
-    let entity_id = if let Some(username) = username {
-        response
-            .entity_by_username
-            .ok_or_else(|| {
-                error::user(
-                    &format!("User '{}' not found", username),
-                    "Please make sure the username is correct",
-                )
-            })?
-            .id
-    } else {
-        response.viewer.id
-    };
-    let entity_id = Id::parse_node_id(entity_id).map_err(|err| {
-        error::system(
-            &format!("Could not parse entity ID: {}", err),
-            "This is a bug, please report it",
-        )
-    })?;
-    Ok(SubmissionUploadInfoResponse {
-        competition_id,
-        use_case_version,
-        entity_id,
-    })
-}
-
-#[derive(GraphQLQuery)]
-#[graphql(
-    query_path = "src/graphql/latest_submission_version.graphql",
-    schema_path = "schema.graphql",
-    response_derives = "Debug"
-)]
-pub struct LatestSubmissionVersion;
-
-#[derive(Debug)]
-pub struct LatestSubmissionVersionResponse {
-    is_member: bool,
-    previously_agreed: bool,
-    latest_agreed: bool,
-    rule_text: String,
-    version: Option<Version>,
-}
-
-pub async fn get_latest_submission_version(
-    client: &GraphQLClient,
-    slug: String,
-    entity_id: Id,
-) -> Result<LatestSubmissionVersionResponse> {
-    let competition = client
-        .send::<LatestSubmissionVersion>(latest_submission_version::Variables {
-            slug: slug.clone(),
-            entity_id: entity_id.to_node_id(),
-        })
-        .await?
-        .competition_by_slug
-        .ok_or_else(|| {
-            error::user(
-                &format!("Competition '{}' not found", slug),
-                "Please make sure the competition is correct",
-            )
-        })?;
-
     let version = competition
-        .submissions
-        .nodes
-        .first()
+        .submission
         .and_then(|submission| {
             submission.latest.as_ref().map(|latest| {
                 latest.version.parse().map_err(|err| {
@@ -226,6 +171,9 @@ pub async fn get_latest_submission_version(
     let previously_agreed =
         competition.entity_rule_agreements.nodes.len() > if latest_agreed { 1 } else { 0 };
     Ok(LatestSubmissionVersionResponse {
+        viewer_id,
+        competition_id,
+        use_case_version,
         is_member: competition.membership.is_some(),
         rule_text: competition.latest_rule.text,
         previously_agreed,
@@ -776,19 +724,16 @@ pub async fn upload_submission(
 
     let client = global.graphql_client().await?;
 
-    let SubmissionUploadInfoResponse {
-        entity_id,
+    let LatestSubmissionVersionResponse {
+        viewer_id,
         competition_id,
         use_case_version,
-    } = get_submission_upload_info(&client, slug, config.entity.as_ref()).await?;
-
-    let LatestSubmissionVersionResponse {
         version: submission_version,
         previously_agreed,
         latest_agreed,
         rule_text,
         is_member,
-    } = get_latest_submission_version(&client, slug.clone(), entity_id).await?;
+    } = get_latest_submission_version(&client, slug.clone(), config.entity.clone()).await?;
 
     if !latest_agreed {
         let message = if previously_agreed {
@@ -836,14 +781,14 @@ pub async fn upload_submission(
             client
                 .send::<JoinCompetition>(join_competition::Variables {
                     competition_id: competition_id.to_node_id(),
-                    entity_id: entity_id.to_node_id(),
+                    entity_id: viewer_id.to_node_id(),
                 })
                 .await?;
         }
         client
             .send::<AcceptCompetitionRules>(accept_competition_rules::Variables {
                 competition_id: competition_id.to_node_id(),
-                entity_id: entity_id.to_node_id(),
+                entity_id: viewer_id.to_node_id(),
             })
             .await?;
         pb.finish_with_message("Rules accepted");
@@ -983,7 +928,7 @@ Do you want to run the tests now?"#,
             competition_id: competition_id.to_node_id(),
             pyproject_toml,
             readme,
-            entity_id: entity_id.to_node_id(),
+            as_entity: config.entity,
             compression: update_submission_mutation::ProjectVersionCompressor::ZSTANDARD,
         })
         .await?
