@@ -1,0 +1,5 @@
+mutation ResetDraftDatasetVersion($datasetVersionId: ID!) {
+  resetDraftDatasetVersion(datasetVersionId: $datasetVersionId) {
+    version
+  }
+}
