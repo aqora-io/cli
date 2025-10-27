@@ -189,7 +189,7 @@ impl<R> RangeDownloader<R>
 where
     R: RetryClassifier<aqora_client::http::Response, crate::error::Error> + Send + Sync + 'static,
 {
-    async fn download_range(
+    async fn retry_range(
         &self,
         url: &Url,
         range: Range<u64>,
@@ -204,17 +204,13 @@ where
             {
                 Ok(response) => {
                     file.seek(std::io::SeekFrom::Start(range.start)).await?;
-
                     let mut writer = BufWriter::new(InspectWriter::new(file, |bytes: &[u8]| {
                         inspector.inspect(bytes);
                     }));
-
                     let mut reader = BufReader::new(response.body.into_async_read());
 
                     tokio::io::copy_buf(&mut reader, &mut writer).await?;
-
                     writer.flush().await?;
-
                     return Ok(());
                 }
                 Err(err) => {
@@ -264,10 +260,8 @@ pub async fn multipart_download(
             let file = &file;
 
             async move {
-                let task_file = file.try_clone().await?;
-
                 downloader
-                    .download_range(&url, range.clone(), inspector, task_file)
+                    .retry_range(&url, range.clone(), inspector, file.try_clone().await?)
                     .await
             }
         })
