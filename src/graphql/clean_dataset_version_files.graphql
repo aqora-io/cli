@@ -1,0 +1,5 @@
+mutation CleanDatasetVersionFiles($datasetVersionId: ID!) {
+  cleanDatasetVersionFiles(datasetVersionId: $datasetVersionId) {
+    version
+  }
+}
