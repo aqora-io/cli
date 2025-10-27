@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use url::Url;
 
 lazy_static::lazy_static! {
-    pub static ref DEFAULT_PARALLELISM: usize = std::thread::available_parallelism()
+    static ref DEFAULT_PARALLELISM: usize = std::thread::available_parallelism()
         .map(usize::from)
         .unwrap_or(1);
 }

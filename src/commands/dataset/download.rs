@@ -144,11 +144,15 @@ async fn download_partition_file(
     dataset_name: &str,
     file_node: GetDatasetVersionFilesNodeOnDatasetVersionFilesNodes,
 ) -> Result<()> {
+    let mut client = client.clone();
+    client.s3_layer(aqora_client::checksum::S3ChecksumLayer::new(
+        aqora_client::checksum::crc32fast::Crc32::new(),
+    ));
+
     let (metadata, url) = match client.s3_head(file_node.url.clone()).await {
         Ok(metadata) => (metadata, file_node.url.clone()),
         // retry if presigned url expired due to long dataset download time
-        Err(e) => {
-            tracing::warn!(error = %e, "Retrying: failed to fetch object header");
+        Err(_) => {
             let response = client
                 .send::<GetDatasetVersionFileByPartition>(
                     get_dataset_version_file_by_partition::Variables {
@@ -159,10 +163,10 @@ async fn download_partition_file(
                 .await?;
 
             let dataset_version_file = match response.node {
-            get_dataset_version_file_by_partition::GetDatasetVersionFileByPartitionNode::DatasetVersion(v) => v,
+            get_dataset_version_file_by_partition::GetDatasetVersionFileByPartitionNode::DatasetVersion(dataset_version) => dataset_version,
             _ => {
                 return Err(error::system(
-                    "Invalid node type",
+                    "Invalid dataset version",
                     "Unexpected GraphQL response",
                 ));
             }
@@ -185,6 +189,7 @@ async fn download_partition_file(
     let filename = format!("{}-{}.parquet", dataset_name, file_node.partition_num);
     let output_path = output_dir.join(&filename);
 
+    // if the file already exist, we don't download it again
     if let Ok(existing) = tokio::fs::metadata(&output_path).await {
         if existing.len() == metadata.size {
             return Ok(());
