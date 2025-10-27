@@ -144,6 +144,11 @@ async fn download_partition_file(
     dataset_name: &str,
     file_node: GetDatasetVersionFilesNodeOnDatasetVersionFilesNodes,
 ) -> Result<()> {
+    let mut client = client.clone();
+    client.s3_layer(aqora_client::checksum::S3ChecksumLayer::new(
+        aqora_client::checksum::crc32fast::Crc32::new(),
+    ));
+
     let (metadata, url) = match client.s3_head(file_node.url.clone()).await {
         Ok(metadata) => (metadata, file_node.url.clone()),
         // retry if presigned url expired due to long dataset download time
