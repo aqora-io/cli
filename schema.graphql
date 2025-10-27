@@ -299,6 +299,26 @@ enum Badge {
 	Finalist of the EPRI 2025 Challenge
 	"""
 	EPRI2025_THIRD
+	"""
+	Winner GIC-2025 Wells Fargo Challenge
+	"""
+	GIC2025_WELLS_FARGO
+	"""
+	Winner of GIC-2025 JPMorgan Chase Challenge
+	"""
+	GIC2025_JPMC
+	"""
+	Winner of GIC-2025 The World Bank Challenge
+	"""
+	GIC2025_WORLD_BANK
+	"""
+	Winner of GIC-2025 MITRE Challenge
+	"""
+	GIC2025_MITRE
+	"""
+	Winner of GIC-2025 NeuroQuantum Nexus Challenge
+	"""
+	GIC2025_NEURO_QUANTUM
 	UNKNOWN
 }
 
@@ -335,11 +355,25 @@ type BlogArticleAuthorConnection {
 	"""
 	A list of edges.
 	"""
-	edges: [EntityEdge!]!
+	edges: [BlogArticleAuthorConnectionEdge!]!
 	"""
 	A list of nodes.
 	"""
 	nodes: [Entity!]!
+}
+
+"""
+An edge in a connection.
+"""
+type BlogArticleAuthorConnectionEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Entity!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type BlogArticleConnection {
@@ -979,6 +1013,7 @@ type DatasetConnection {
 	"""
 	nodes: [Dataset!]!
 	totalCount: Int!
+	size: DatasetSize!
 }
 
 enum DatasetConnectionOrder {
@@ -1051,6 +1086,11 @@ input DatasetQueryFilters {
 	sortDirection: DatasetConnectionSortDirection! = DESCENDING
 }
 
+type DatasetSize {
+	low: Int!
+	high: Int!
+}
+
 type DatasetTagConnection {
 	"""
 	Information to aid in pagination.
@@ -1098,6 +1138,7 @@ type DatasetVersion implements Node {
 	schema: JSON
 	rows: Int!
 	size: Int!
+	publishable: Boolean!
 	records(offset: Int! = 0, limit: Int! = 100): [JSON!]!
 }
 
@@ -1971,6 +2012,7 @@ type Mutation {
 	createDatasetVersion(datasetId: ID!, input: CreateDatasetVersionInput): DatasetVersion!
 	startDatasetVersionUpload(datasetVersionId: ID!): DatasetVersion!
 	finishDatasetVersionUpload(datasetVersionId: ID!): DatasetVersion!
+	resetDraftDatasetVersion(datasetVersionId: ID!): DatasetVersion!
 	publishDatasetVersion(datasetVersionId: ID!): DatasetVersion!
 	updateDatasetVersion(datasetVersionId: ID!, input: UpdateDatasetVersionInput!): DatasetVersion!
 	deleteDatasetVersion(datasetVersionId: ID!): ID!
