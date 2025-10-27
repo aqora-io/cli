@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.18.4 - 2025-10-27
+#### Bug Fixes
+- no longer use orgs for submissions - (c904d0f) - Julian Popescu
+
+- - -
+
 ## v0.18.3 - 2025-10-01
 #### Bug Fixes
 - add origin to CLI requests - (8aaca28) - Julian Popescu

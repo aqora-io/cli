@@ -1,6 +1,6 @@
 [package]
 name = "aqora-template"
-version = "0.18.3"
+version = "0.18.4"
 edition = "2021"
 publish = false
 

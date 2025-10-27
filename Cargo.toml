@@ -4,7 +4,7 @@ members = ["archiver", "config", "runner", "template", "data-utils", "client"]
 
 [package]
 name = "aqora"
-version = "0.18.3"
+version = "0.18.4"
 edition = "2021"
 default-run = "aqora"
 publish = false
