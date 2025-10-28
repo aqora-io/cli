@@ -18,6 +18,7 @@ use graphql_client::GraphQLQuery;
 use indicatif::MultiProgress;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
+use tempfile::TempDir;
 use url::Url;
 
 fn relative_symlink(original: impl AsRef<Path>, link: impl AsRef<Path>) -> std::io::Result<()> {
@@ -232,28 +233,38 @@ pub async fn install_submission(
         use_case_pb = m.insert_before(&venv_pb, use_case_pb);
 
         let cloned_pb = use_case_pb.clone();
-        let options = PipOptions {
-            upgrade: args.upgrade,
-            ..global.pip_options()
-        };
-        let install_fut = pip_install(
-            &env,
-            [
-                PipPackage::pypi("aqora-cli[venv]"),
-                PipPackage::tar(use_case_package_name, use_case_package_url.to_string()),
-                PipPackage::editable(&global.project),
-            ],
-            &options,
-            &use_case_pb,
-        )
-        .map(move |res| {
+        let client_ref = &client;
+        let install_fut = async move {
+            let tmpdir = TempDir::new_in(&global.project)?;
+            download_archive(client_ref, use_case_package_url, tmpdir.path(), &cloned_pb).await?;
+            let use_case_dir = tmpdir.path().join(format!(
+                "{package}-{version}",
+                package = use_case_package_name.replace('-', "_"),
+                version = use_case_res.version
+            ));
+
+            let options = PipOptions {
+                upgrade: args.upgrade,
+                ..global.pip_options()
+            };
+            let res = pip_install(
+                &env,
+                [
+                    PipPackage::pypi("aqora-cli[venv]"),
+                    PipPackage::tar(use_case_package_name, use_case_dir.as_os_str()),
+                    PipPackage::editable(&global.project),
+                ],
+                &options,
+                &use_case_pb,
+            )
+            .await;
             if res.is_ok() {
                 cloned_pb.finish_with_message("Packages installed");
             } else {
                 cloned_pb.finish_with_message("Failed to install packages");
             }
             res
-        });
+        };
 
         futures::future::try_join(download_fut, install_fut).await?;
 
