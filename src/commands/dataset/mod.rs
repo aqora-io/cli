@@ -1,5 +1,6 @@
 mod common;
 mod convert;
+mod download;
 mod infer;
 mod new;
 mod upload;
@@ -13,6 +14,7 @@ use crate::commands::GlobalArgs;
 use crate::error::Result;
 
 use convert::{convert, Convert};
+use download::{download, Download};
 use infer::{infer, Infer};
 use new::{new, New};
 use upload::{upload, Upload};
@@ -26,6 +28,7 @@ pub enum Dataset {
     Convert(Convert),
     New(New),
     Upload(Upload),
+    Download(Download),
     Version {
         #[command(subcommand)]
         args: Version,
@@ -38,6 +41,7 @@ pub async fn dataset(args: Dataset, global: GlobalArgs) -> Result<()> {
         Dataset::Convert(args) => convert(args, global).await,
         Dataset::New(args) => new(args, global).await,
         Dataset::Upload(args) => upload(args, global).await,
+        Dataset::Download(args) => download(args, global).await,
         Dataset::Version { args } => version(args, global).await,
     }
 }

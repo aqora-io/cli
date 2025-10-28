@@ -1,9 +1,15 @@
-query DatasetVersionInfo($datasetId: ID!, $major: Int!, $minor: Int!, $patch: Int!) {
+query DatasetVersionInfo(
+  $datasetId: ID!
+  $major: Int!
+  $minor: Int!
+  $patch: Int!
+) {
   node(id: $datasetId) {
     __typename
     ... on Dataset {
       version(major: $major, minor: $minor, patch: $patch) {
         id
+        size
       }
     }
   }
