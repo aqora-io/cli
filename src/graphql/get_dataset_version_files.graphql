@@ -1,0 +1,22 @@
+query GetDatasetVersionFiles($datasetVersionId: ID!) {
+  node(id: $datasetVersionId) {
+    __typename
+    ... on DatasetVersion {
+      dataset {
+        name
+      }
+      files {
+        nodes {
+          id
+          size
+          rows
+          url
+          partitionNum
+          datasetVersion {
+            id
+          }
+        }
+      }
+    }
+  }
+}
