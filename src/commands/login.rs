@@ -1,6 +1,7 @@
 use crate::{
     commands::GlobalArgs,
-    credentials::{get_credentials, with_locked_credentials, Credentials},
+    credentials::{insert_credentials, load_credentials, Credentials},
+    dirs::credentials_path,
     error::{self, Result},
 };
 use base64::prelude::*;
@@ -281,48 +282,54 @@ async fn login_interactive(
 pub struct Oauth2TokenMutation;
 
 async fn do_login(args: Login, global: GlobalArgs, progress: ProgressBar) -> Result<()> {
-    with_locked_credentials(global.config_home().await?, |file| {
-        async move {
-            progress.set_message("Logging in...");
-            let client_id = client_id();
-            let Some((redirect_uri, code)) = (if args.interactive {
-                login_interactive(&global, &client_id, &progress).await?
-            } else {
-                get_oauth_code(&global, &client_id, &progress).await?
-            }) else {
-                // cancelled
-                return Ok(());
-            };
-            let result = global
-                .unauthenticated_graphql_client()?
-                .send::<Oauth2TokenMutation>(oauth2_token_mutation::Variables {
-                    client_id: client_id.clone(),
-                    code,
-                    redirect_uri,
-                })
-                .await?
-                .oauth2_token;
-            if let Some(issued) = result.issued {
-                let credentials = Credentials {
-                    client_id,
-                    client_secret: None,
-                    access_token: issued.access_token,
-                    refresh_token: issued.refresh_token,
-                    expires_at: Utc::now() + Duration::try_seconds(issued.expires_in).unwrap(),
-                };
-                file.credentials.insert(global.aqora_url()?, credentials);
-            } else {
-                return Err(error::system(
-                    "GraphQL response missing issued",
-                    "This is a bug, please report it",
-                ));
-            }
-            progress.finish_with_message("Logged in successfully!");
-            Ok(())
-        }
-        .boxed()
-    })
-    .await
+    progress.set_message("Logging in...");
+    let path = credentials_path(global.config_home().await?);
+    let url = global.aqora_url()?;
+    let client_id = client_id();
+    let Some((redirect_uri, code)) = (if args.interactive {
+        login_interactive(&global, &client_id, &progress).await?
+    } else {
+        get_oauth_code(&global, &client_id, &progress).await?
+    }) else {
+        // cancelled
+        return Ok(());
+    };
+    let Some(issued) = global
+        .unauthenticated_graphql_client()?
+        .send::<Oauth2TokenMutation>(oauth2_token_mutation::Variables {
+            client_id: client_id.clone(),
+            code,
+            redirect_uri,
+        })
+        .await?
+        .oauth2_token
+        .issued
+    else {
+        return Err(error::system(
+            "GraphQL response missing issued",
+            "This is a bug, please report it",
+        ));
+    };
+    let credentials = Credentials {
+        client_id,
+        client_secret: None,
+        access_token: issued.access_token,
+        refresh_token: issued.refresh_token,
+        expires_at: Utc::now() + Duration::try_seconds(issued.expires_in).unwrap(),
+    };
+    insert_credentials(&path, &url, credentials)
+        .await
+        .map_err(|e| {
+            error::system(
+                &format!(
+                    "Failed to update credentials for {url} in {path}: {e}",
+                    path = path.display()
+                ),
+                "Check your permissions",
+            )
+        })?;
+    progress.finish_with_message("Logged in successfully!");
+    Ok(())
 }
 
 pub async fn login(args: Login, global: GlobalArgs) -> Result<()> {
@@ -331,9 +338,9 @@ pub async fn login(args: Login, global: GlobalArgs) -> Result<()> {
 }
 
 pub async fn check_login(global: GlobalArgs, multi_progress: &MultiProgress) -> Result<bool> {
-    if get_credentials(
-        global.config_home().await?,
-        global.unauthenticated_graphql_client()?,
+    if load_credentials(
+        &credentials_path(global.config_home().await?),
+        &global.aqora_url()?,
     )
     .await?
     .is_some()
