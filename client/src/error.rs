@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, io};
 
 use thiserror::Error;
 
@@ -108,5 +108,11 @@ impl From<MiddlewareError> for Error {
             MiddlewareError::Ws(err) => Self::Tungstenite(err),
             MiddlewareError::Middleware(err) => Self::Middleware(err),
         }
+    }
+}
+
+impl From<Error> for io::Error {
+    fn from(error: Error) -> Self {
+        io::Error::other(error.to_string())
     }
 }
