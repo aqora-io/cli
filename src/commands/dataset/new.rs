@@ -17,8 +17,8 @@ pub struct New {
     /// The owner of the dataset (defaults to the current user if omitted)
     owner: Option<String>,
 
-    /// Whether the dataset should be private (defaults to true)
-    #[arg(default_value_t = true)]
+    /// Whether the dataset should be public (defaults to private)
+    #[arg(long = "public", action = clap::ArgAction::SetFalse)]
     private: bool,
 }
 
