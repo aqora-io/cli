@@ -1,17 +1,11 @@
 use crate::{
-    credentials::{get_credentials, Credentials},
+    credentials::CredentialsFileLayer,
+    dirs::credentials_path,
     error::{self, Error, Result},
 };
-use aqora_client::{
-    credentials::{CredentialsLayer, CredentialsProvider},
-    error::BoxError,
-    trace::TraceLayer,
-    ClientOptions,
-};
-use axum::http::Uri;
+use aqora_client::{trace::TraceLayer, ClientOptions};
 use reqwest::header::{HeaderValue, ORIGIN, USER_AGENT};
 use std::path::Path;
-use tokio::sync::Mutex;
 use url::Url;
 
 pub mod custom_scalars {
@@ -74,45 +68,6 @@ impl From<GraphQLError> for Error {
     }
 }
 
-struct CredentialsForClient {
-    credentials: Mutex<Option<Credentials>>,
-    unauthenticated_client: aqora_client::Client,
-}
-
-impl CredentialsForClient {
-    async fn load(
-        config_home: impl AsRef<Path>,
-        unauthenticated_client: aqora_client::Client,
-    ) -> Result<Self> {
-        let credentials = get_credentials(config_home, unauthenticated_client.clone()).await?;
-        Ok(Self {
-            credentials: Mutex::new(credentials),
-            unauthenticated_client,
-        })
-    }
-}
-
-#[async_trait::async_trait]
-impl CredentialsProvider for CredentialsForClient {
-    fn authenticates(&self, uri: &Uri) -> Result<bool, BoxError> {
-        Ok(aqora_client::utils::host_matches(
-            self.unauthenticated_client.url(),
-            &Url::parse(&uri.to_string())?,
-        )?)
-    }
-
-    async fn bearer_token(&self) -> Result<Option<String>, BoxError> {
-        let mut creds = self.credentials.lock().await;
-        if let Some(credentials) = creds.take() {
-            *creds = credentials.refresh(&self.unauthenticated_client).await?;
-        }
-        if let Some(credentials) = creds.as_ref() {
-            return Ok(Some(credentials.access_token.clone()));
-        }
-        Ok(None)
-    }
-}
-
 const AQORA_USER_AGENT: HeaderValue = HeaderValue::from_static(concat!(
     env!("CARGO_PKG_NAME"),
     "/",
@@ -162,11 +117,15 @@ pub fn unauthenticated_client(url: Url, options: ClientOptions) -> Result<GraphQ
 
 pub async fn authenticate_client(
     config_home: impl AsRef<Path>,
-    mut client: aqora_client::Client,
+    mut unauthenticated_client: aqora_client::Client,
 ) -> Result<GraphQLClient> {
-    let creds =
-        CredentialsLayer::new(CredentialsForClient::load(config_home, client.clone()).await?);
-    client.graphql_layer(creds.clone());
-    client.s3_layer(creds);
-    Ok(client)
+    let path = credentials_path(config_home);
+    let creds = CredentialsFileLayer::new(
+        path,
+        unauthenticated_client.url().clone(),
+        unauthenticated_client.clone(),
+    );
+    unauthenticated_client.graphql_layer(creds.clone());
+    unauthenticated_client.s3_layer(creds);
+    Ok(unauthenticated_client)
 }
