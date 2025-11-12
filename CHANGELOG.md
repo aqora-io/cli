@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.19.0 - 2025-11-12
+#### Features
+- reset dataset version draft - (9a4e24b) - Angel-Dijoux
+#### Bug Fixes
+- dataset new public/private flag - (d71def4) - Antoine Chauvin
+
+- - -
+
 ## v0.18.5 - 2025-10-28
 #### Bug Fixes
 - install private competitions - (f6dddba) - Antoine Chauvin
