@@ -2,6 +2,13 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.19.1 - 2025-12-11
+#### Bug Fixes
+- replace wasm-pack url - (47f7e73) - Julian Popescu
+- ensure credentials up-to-date - (6c97321) - Julian Popescu
+
+- - -
+
 ## v0.19.0 - 2025-11-12
 #### Features
 - reset dataset version draft - (9a4e24b) - Angel-Dijoux
