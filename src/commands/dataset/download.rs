@@ -31,6 +31,9 @@ pub struct Download {
     options: MultipartOptions,
     #[clap(long, default_value_t = 10)]
     concurrency: usize,
+    #[arg(short, long, default_value_t = false)]
+    /// Redownload the files that have already been downloaded
+    force: bool,
 }
 
 #[derive(GraphQLQuery)]
@@ -114,6 +117,7 @@ pub async fn download(args: Download, global: GlobalArgs) -> Result<()> {
             let multipart_options = multipart_options.to_owned();
             let dataset_dir = dataset_dir.to_owned();
             let dataset_name = dataset_name.to_owned();
+            let force = args.force.to_owned();
 
             async move {
                 download_partition_file(
@@ -122,6 +126,7 @@ pub async fn download(args: Download, global: GlobalArgs) -> Result<()> {
                     &multipart_options,
                     &dataset_dir,
                     &dataset_name,
+                    &force,
                     node,
                 )
                 .await
@@ -142,6 +147,7 @@ async fn download_partition_file(
     multipart_options: &MultipartOptions,
     output_dir: &std::path::Path,
     dataset_name: &str,
+    force: &bool,
     file_node: GetDatasetVersionFilesNodeOnDatasetVersionFilesNodes,
 ) -> Result<()> {
     let mut client = client.clone();
@@ -152,7 +158,8 @@ async fn download_partition_file(
     let (metadata, url) = match client.s3_head(file_node.url.clone()).await {
         Ok(metadata) => (metadata, file_node.url.clone()),
         // retry if presigned url expired due to long dataset download time
-        Err(_) => {
+        Err(err) => {
+            tracing::debug!("HEAD failed, refreshing URL: {err}");
             let response = client
                 .send::<GetDatasetVersionFileByPartition>(
                     get_dataset_version_file_by_partition::Variables {
@@ -189,11 +196,14 @@ async fn download_partition_file(
     let filename = format!("{}-{}.parquet", dataset_name, file_node.partition_num);
     let output_path = output_dir.join(&filename);
 
-    // if the file already exist, we don't download it again
-    if let Ok(existing) = tokio::fs::metadata(&output_path).await {
-        if existing.len() == metadata.size {
-            return Ok(());
-        }
+    // if the file already exists, and we don't force it, we don't download it again
+    if !force
+        && tokio::fs::metadata(&output_path)
+            .await
+            .map(|m| m.len() == metadata.size)
+            .unwrap_or(false)
+    {
+        return Ok(());
     }
 
     tokio::fs::create_dir_all(output_path.parent().unwrap()).await?;
