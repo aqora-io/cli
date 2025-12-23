@@ -16,6 +16,9 @@ use tokio::io::{AsyncSeekExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio_util::io::InspectWriter;
 use url::Url;
 
+const DEFAULT_CHUNK_SIZE: usize = 16 * 1024 * 1024; // 16 Mib
+const DEFAULT_CONCURRENCY: usize = 10;
+
 struct DownloadInspector<'a> {
     _temp: TempProgressStyle<'a>,
     pb: &'a ProgressBar,
@@ -45,12 +48,6 @@ impl<'a> DownloadInspector<'a> {
     fn inspect(&self, bytes: &[u8]) {
         if self.should_inc {
             self.pb.inc(bytes.len() as u64)
-        }
-    }
-
-    fn rollback(&self, bytes: u64) {
-        if self.should_inc {
-            self.pb.dec(bytes)
         }
     }
 }
@@ -108,8 +105,6 @@ pub async fn download_archive(
     Ok(())
 }
 
-const DEFAULT_CHUNK_SIZE: usize = 64 * 1024; // 64 KiB
-
 fn parse_duration(arg: &str) -> Result<std::time::Duration, std::num::ParseIntError> {
     let seconds = arg.parse()?;
     Ok(std::time::Duration::from_secs(seconds))
@@ -142,8 +137,8 @@ impl From<ExponentialBackoffOptions> for ExponentialBackoffBuilder {
 pub struct MultipartOptions {
     #[arg(long, default_value_t = DEFAULT_CHUNK_SIZE)]
     pub chunk_size: usize,
-    #[arg(long, default_value_t = 10)]
-    pub chunck_concurrency: usize,
+    #[arg(long, default_value_t = DEFAULT_CONCURRENCY)]
+    pub chunk_concurrency: usize,
     #[command(flatten)]
     backoff: ExponentialBackoffOptions,
 }
@@ -194,7 +189,7 @@ where
         url: &Url,
         range: Range<u64>,
         inspector: &DownloadInspector<'_>,
-        mut file: tokio::fs::File,
+        path: &Path,
     ) -> Result<()> {
         for delay in self.backoff_builder.build() {
             match self
@@ -203,6 +198,7 @@ where
                 .await
             {
                 Ok(response) => {
+                    let mut file = tokio::fs::OpenOptions::new().write(true).open(path).await?;
                     file.seek(std::io::SeekFrom::Start(range.start)).await?;
                     let mut writer = BufWriter::new(InspectWriter::new(file, |bytes: &[u8]| {
                         inspector.inspect(bytes);
@@ -217,7 +213,6 @@ where
                     if !self.retry_classifier.should_retry(&Err(err.into())) {
                         return Err(crate::error::system("S3 range", "non-retryable error"));
                     }
-                    inspector.rollback(range.end - range.start);
                     tokio::time::sleep(delay).await;
                 }
             }
@@ -243,6 +238,7 @@ pub async fn multipart_download(
         .open(output_path)
         .await?;
     file.set_len(size).await?;
+    drop(file);
 
     let inspector = DownloadInspector::new(pb, Some(size as _));
 
@@ -256,19 +252,15 @@ pub async fn multipart_download(
         .map(|range| {
             let downloader = downloader.clone();
             let url = url.clone();
+            let range = range.clone();
             let inspector = &inspector;
-            let file = &file;
+            let path = output_path.to_owned();
 
-            async move {
-                downloader
-                    .retry_range(&url, range.clone(), inspector, file.try_clone().await?)
-                    .await
-            }
+            async move { downloader.retry_range(&url, range, inspector, &path).await }
         })
-        .buffer_unordered(options.chunck_concurrency)
+        .buffer_unordered(options.chunk_concurrency)
         .try_collect::<()>()
         .await?;
 
-    file.sync_all().await?;
     Ok(())
 }
