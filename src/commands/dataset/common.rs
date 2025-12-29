@@ -15,9 +15,13 @@ pub struct DatasetCommonArgs {
 
 impl DatasetCommonArgs {
     pub fn slug_pair(&self) -> Result<(&str, &str)> {
-        self.slug
-            .split_once('/')
-            .ok_or_else(|| error::user("Malformed slug", "Expected a slug like: {owner}/{dataset}"))
+        let (owner, local_slug) = self.slug.split_once('/').ok_or_else(|| {
+            error::user("Malformed slug", "Expected a slug like: {owner}/{dataset}")
+        })?;
+
+        let owner = owner.strip_prefix('@').unwrap_or(owner);
+
+        Ok((owner, local_slug))
     }
 }
 
