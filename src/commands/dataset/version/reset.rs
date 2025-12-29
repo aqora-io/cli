@@ -33,7 +33,7 @@ pub struct Reset {
 pub async fn reset(args: Reset, global: GlobalArgs) -> Result<()> {
     let client = global.graphql_client().await?;
     let (owner, local_slug) = args.common.slug_pair()?;
-    let dataset = get_dataset_by_slug(&global, owner, local_slug).await?;
+    let dataset = get_dataset_by_slug(&global, owner, local_slug, false).await?;
 
     let version = args.version;
 

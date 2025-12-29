@@ -43,6 +43,7 @@ pub async fn get_dataset_by_slug(
     global: &GlobalArgs,
     owner: impl AsRef<str>,
     local_slug: impl AsRef<str>,
+    should_prompt_for_creation: bool,
 ) -> Result<GetDatasetSlugResponse> {
     let client = global.graphql_client().await?;
 
@@ -55,12 +56,22 @@ pub async fn get_dataset_by_slug(
         .dataset_by_slug;
 
     let Some(dataset) = dataset else {
-        let new_dataset = prompt_for_dataset_creation(
-            global,
-            Some(owner.as_ref().into()),
-            Some(local_slug.as_ref().into()),
-        )
-        .await?;
+        let new_dataset = match should_prompt_for_creation {
+            true => {
+                prompt_for_dataset_creation(
+                    global,
+                    Some(owner.as_ref().into()),
+                    Some(local_slug.as_ref().into()),
+                )
+                .await?
+            }
+            false => {
+                return Err(error::user(
+                    "Dataset not found",
+                    "Please double check the slug on Aqora.io",
+                ))
+            }
+        };
 
         return Ok(GetDatasetSlugResponse {
             id: new_dataset.id,
