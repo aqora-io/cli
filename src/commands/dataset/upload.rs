@@ -186,7 +186,7 @@ pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
     let client = global.graphql_client().await?;
 
     let (owner, local_slug) = args.common.slug_pair()?;
-    let dataset = get_dataset_by_slug(&global, owner, local_slug).await?;
+    let dataset = get_dataset_by_slug(&global, owner, local_slug, true).await?;
 
     if !dataset.viewer_can_create_version {
         return Err(error::user(

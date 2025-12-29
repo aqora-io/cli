@@ -61,7 +61,7 @@ pub async fn download(args: Download, global: GlobalArgs) -> Result<()> {
     let (owner, local_slug) = args.common.slug_pair()?;
     let multipart_options = args.options;
 
-    let dataset = get_dataset_by_slug(&global, owner, local_slug).await?;
+    let dataset = get_dataset_by_slug(&global, owner, local_slug, false).await?;
     if !dataset.viewer_can_read_dataset_version_file {
         return Err(error::user(
             "Permission denied",
