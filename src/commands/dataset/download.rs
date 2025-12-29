@@ -112,8 +112,7 @@ pub async fn download(args: Download, global: GlobalArgs) -> Result<()> {
     let nodes = dataset_version_files.files.nodes;
     let dataset_name = dataset_version_files.dataset.name;
 
-    let dataset_dir = args.destination.join(&dataset_name);
-    tokio::fs::create_dir_all(&dataset_dir).await?;
+    tokio::fs::create_dir_all(&args.destination).await?;
 
     let total_size = dataset_version_size as u64;
     let total_files = nodes.len();
@@ -130,7 +129,7 @@ pub async fn download(args: Download, global: GlobalArgs) -> Result<()> {
             let client = client.to_owned();
             let m = m.to_owned();
             let multipart_options = multipart_options.to_owned();
-            let dataset_dir = dataset_dir.to_owned();
+            let dataset_dir = args.destination.to_owned();
             let dataset_name = dataset_name.to_owned();
             let force = args.force.to_owned();
 
