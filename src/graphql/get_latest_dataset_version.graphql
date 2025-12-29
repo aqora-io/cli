@@ -1,0 +1,11 @@
+query GetLatestDatasetVersion($datasetId: ID!) {
+  node(id: $datasetId) {
+    __typename
+    ... on Dataset {
+      latestVersion {
+        id
+        size
+      }
+    }
+  }
+}

@@ -11,7 +11,7 @@ use crate::{
         dataset::{
             common::{get_dataset_by_slug, DatasetCommonArgs},
             download::get_dataset_version_files::GetDatasetVersionFilesNodeOnDatasetVersionFilesNodes,
-            version::common::get_dataset_version,
+            version::common::{get_dataset_version, get_latest_dataset_version},
         },
         GlobalArgs,
     },
@@ -24,8 +24,9 @@ pub struct Download {
     #[command(flatten)]
     common: DatasetCommonArgs,
     #[arg(short, long)]
-    version: semver::Version,
-    #[arg(short, long)]
+    /// Defaults to latest if omitted
+    version: Option<semver::Version>,
+    #[arg(short, long, default_value = ".")]
     destination: PathBuf,
     #[command(flatten)]
     options: MultipartOptions,
@@ -68,20 +69,34 @@ pub async fn download(args: Download, global: GlobalArgs) -> Result<()> {
         ));
     }
 
-    let dataset_version = get_dataset_version(
-        &client,
-        dataset.id,
-        args.version.major as _,
-        args.version.minor as _,
-        args.version.patch as _,
-    )
-    .await?
-    .ok_or_else(|| error::user("Not found", "Dataset version not found"))?;
+    let (dataset_version_id, dataset_version_size) = match args.version {
+        Some(version) => {
+            let dataset_version = get_dataset_version(
+                &client,
+                dataset.id,
+                version.major as _,
+                version.minor as _,
+                version.patch as _,
+            )
+            .await?
+            .ok_or_else(|| error::user("Not found", "Dataset version not found"))?;
+            (dataset_version.id, dataset_version.size)
+        }
+        None => {
+            let dataset_version = get_latest_dataset_version(&client, dataset.id)
+                .await?
+                .ok_or_else(|| {
+                    error::user(
+                        "Not found",
+                        "Latest Dataset version not found, please specify one.",
+                    )
+                })?;
+            (dataset_version.id, dataset_version.size)
+        }
+    };
 
     let response = client
-        .send::<GetDatasetVersionFiles>(get_dataset_version_files::Variables {
-            dataset_version_id: dataset_version.id,
-        })
+        .send::<GetDatasetVersionFiles>(get_dataset_version_files::Variables { dataset_version_id })
         .await?;
 
     let dataset_version_files = match response.node {
@@ -100,7 +115,7 @@ pub async fn download(args: Download, global: GlobalArgs) -> Result<()> {
     let dataset_dir = args.destination.join(&dataset_name);
     tokio::fs::create_dir_all(&dataset_dir).await?;
 
-    let total_size = dataset_version.size as u64;
+    let total_size = dataset_version_size as u64;
     let total_files = nodes.len();
 
     let overall_progress = m.add(global.spinner().with_message(format!(
