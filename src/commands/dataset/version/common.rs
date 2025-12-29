@@ -20,6 +20,14 @@ pub struct DatasetVersionInfo;
 )]
 pub struct GetDatasetVersions;
 
+#[derive(GraphQLQuery)]
+#[graphql(
+    query_path = "src/graphql/get_latest_dataset_version.graphql",
+    schema_path = "schema.graphql",
+    response_derives = "Debug"
+)]
+pub struct GetLatestDatasetVersion;
+
 pub async fn get_dataset_version(
     client: &GraphQLClient,
     dataset_id: String,
@@ -56,4 +64,26 @@ pub async fn get_dataset_versions(
         .send::<GetDatasetVersions>(variables)
         .await?
         .dataset_by_slug)
+}
+
+pub async fn get_latest_dataset_version(
+    client: &GraphQLClient,
+    dataset_id: String,
+) -> Result<Option<get_latest_dataset_version::GetLatestDatasetVersionNodeOnDatasetLatestVersion>> {
+    let node = client
+        .send::<GetLatestDatasetVersion>(get_latest_dataset_version::Variables { dataset_id })
+        .await?
+        .node;
+
+    let dataset_version = match node {
+        get_latest_dataset_version::GetLatestDatasetVersionNode::Dataset(dataset) => dataset,
+        _ => {
+            return Err(error::system(
+                "Cannot find dataset by id",
+                "This should not happen, kindly report this bug to Aqora developers please!",
+            ))
+        }
+    };
+
+    Ok(dataset_version.latest_version)
 }
