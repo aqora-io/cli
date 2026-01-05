@@ -2,6 +2,20 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.20.0 - 2026-01-05
+#### Features
+- retry if fail - (bb5dc4c) - Angel-Dijoux
+- download dataset - (0d90efd) - Angel-Dijoux
+#### Bug Fixes
+- skip dataset creation prompt when downloading and reseting - (b3bbe5d) - Angel-Dijoux
+- strip leading `@` from dataset owner in slug - (c591d46) - Angel-Dijoux
+- avoid creating a subdirectory with the dataset name - (5153e43) - Angel-Dijoux
+- make version and destination args optional - (b0aa790) - Angel-Dijoux
+- race condition in range download - (9ac2e12) - Angel-Dijoux
+- add s3 checksum layer - (bda30f2) - Angel-Dijoux
+
+- - -
+
 ## v0.19.1 - 2025-12-11
 #### Bug Fixes
 - replace wasm-pack url - (47f7e73) - Julian Popescu
