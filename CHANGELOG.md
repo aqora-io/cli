@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.21.0 - 2026-01-10
+#### Features
+- add template for kubimo - (5eabd12) - Julian Popescu
+
+- - -
+
 ## v0.20.0 - 2026-01-05
 #### Features
 - retry if fail - (bb5dc4c) - Angel-Dijoux
