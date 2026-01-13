@@ -1,4 +1,4 @@
-FROM ghcr.io/aqora-io/kubimo-marimo:main AS build
+FROM ghcr.io/aqora-io/kubimo-marimo:0.1.8 AS build
 
 USER 0
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y --no-update-default-toolchain
