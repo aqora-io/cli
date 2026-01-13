@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.22.0 - 2026-01-13
+#### Continuous Integration
+- require release for docker image so that python version is available - (7af24e4) - Julian Popescu
+#### Miscellaneous Chores
+- update marimo version - (201dcad) - Julian Popescu
+
+- - -
+
 ## v0.21.0 - 2026-01-10
 #### Features
 - add template for kubimo - (5eabd12) - Julian Popescu

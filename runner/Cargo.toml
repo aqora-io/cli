@@ -1,6 +1,6 @@
 [package]
 name = "aqora-runner"
-version = "0.21.0"
+version = "0.22.0"
 edition = "2021"
 publish = false
 
@@ -9,7 +9,7 @@ default = []
 extension-module = ["pyo3/extension-module", "pyo3/abi3-py39"]
 
 [dependencies]
-aqora-config = { path = "../config" , version = "0.21.0" }
+aqora-config = { path = "../config" , version = "0.22.0" }
 futures = "0.3"
 lazy_static = "1.4"
 pyo3 = { version = "0.24", features = ["serde"] }
