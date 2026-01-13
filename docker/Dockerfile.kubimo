@@ -1,4 +1,6 @@
-FROM ghcr.io/aqora-io/kubimo-marimo:0.1.8 AS build
+ARG KUBIMO_MARIMO_IMAGE=ghcr.io/aqora-io/kubimo-marimo:0.1.9
+
+FROM ${KUBIMO_MARIMO_IMAGE} AS build
 
 USER 0
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y --no-update-default-toolchain
@@ -17,7 +19,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 WORKDIR /workspace
 RUN aqora new dataset-marimo -s user/workspace -v 0.0.0 . && rm readme.py
 
-FROM ghcr.io/aqora-io/kubimo-marimo:main
+FROM ${KUBIMO_MARIMO_IMAGE}
 
 COPY --chown=1000:1000 ./docker/kubimo/marimo /home/me/.config/marimo
 COPY --from=build /bin/aqora /bin/aqora
