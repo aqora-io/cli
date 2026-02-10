@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.22.2 - 2026-02-10
+#### Bug Fixes
+- dataset new command - (4cbf2b4) - Angel-Dijoux
+#### Revert
+- "chore(version): v0.22.2" - (85016f6) - Angel-Dijoux
+#### Miscellaneous Chores
+- (**version**) v0.22.2 - (607f43c) - Angel-Dijoux
+
+- - -
+
 ## v0.22.1 - 2026-01-14
 #### Bug Fixes
 - add arg for base docker image - (0d40231) - Julian Popescu
