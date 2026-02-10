@@ -1,5 +1,6 @@
 query LatestSubmissionVersion($asEntity: UsernameOrID, $slug: String!) {
   viewer {
+    __typename
     id
   }
   competitionBySlug(slug: $slug) {
