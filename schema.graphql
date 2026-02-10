@@ -9,6 +9,7 @@ enum Action {
 	CREATE_COMMENT
 	CREATE_COMPETITION
 	CREATE_COMPETITION_RULE_AGREEMENT
+	CREATE_COMPETITION_TEAM_REQUEST
 	CREATE_COMPETITION_STAGE
 	CREATE_DATASET
 	CREATE_DATASET_COMPETITION
@@ -28,6 +29,7 @@ enum Action {
 	DELETE_BLOG_ARTICLE
 	DELETE_COMMENT
 	DELETE_COMPETITION
+	DELETE_COMPETITION_TEAM_REQUEST
 	DELETE_DATASET
 	DELETE_DATASET_COMPETITION
 	DELETE_DATASET_MEMBER
@@ -79,6 +81,7 @@ enum Action {
 	READ_USER_EMAIL
 	READ_USER_NOTIFICATIONS
 	READ_USER_PERMISSIONS
+	READ_WORKSPACE
 	REEVALUATE_COMPETITION
 	REMOVE_COMPETITION_JURY
 	REMOVE_COMPETITION_MEMBER
@@ -86,6 +89,7 @@ enum Action {
 	REMOVE_EVENT_COMPETITION
 	REMOVE_EVENT_MEMBER
 	REMOVE_ORGANIZATION_MEMBER
+	SEND_COMPETITION_TEAM_REQUEST_MESSAGE
 	SET_COMPETITION_ORDERING_PRIORITY
 	SET_EVENT_ORDERING_PRIORITY
 	TRANSFER_COMPETITION_OWNERSHIP
@@ -96,6 +100,8 @@ enum Action {
 	UPDATE_BLOG_ARTICLE
 	UPDATE_COMMENT
 	UPDATE_COMPETITION
+	UPDATE_COMPETITION_MEMBER
+	UPDATE_COMPETITION_TEAM_REQUEST
 	UPDATE_COMPETITION_STAGE
 	UPDATE_DATASET
 	UPDATE_DATASET_MEMBER
@@ -110,6 +116,7 @@ enum Action {
 	UPDATE_PROJECT_VERSION_FILE
 	UPDATE_TOPIC
 	UPDATE_USER
+	UPDATE_WORKSPACE
 	UPLOAD_FILES
 }
 
@@ -319,6 +326,70 @@ enum Badge {
 	Winner of GIC-2025 NeuroQuantum Nexus Challenge
 	"""
 	GIC2025_NEURO_QUANTUM
+	"""
+	Bradford Clinical Trial Optimization (Ingenii)
+	"""
+	BRADFORD_CLINICAL_TRIAL_OPTIMIZATION
+	"""
+	Bradford Bring Your Own Use Case (Quantinuum)
+	"""
+	BRADFORD_BRING_YOUR_OWN_USE_CASE
+	"""
+	Bradford Quantum Brush
+	"""
+	BRADFORD_QUANTUM_BRUSH
+	"""
+	Bradford Project Eleven Post-Quantum Cryptography
+	"""
+	BRADFORD_PROJECT_ELEVEN_POST_QUANTUM_CRYPTOGRAPHY
+	"""
+	PushQuantum Haiqu Early Fault-Tolerant Circuits
+	"""
+	PUSHQUANTUM_HAIQU_EARLY_FAULT_TOLERANT_CIRCUITS
+	"""
+	PushQuantum Qoro Quantum Molecular Detective
+	"""
+	PUSHQUANTUM_QORO_QUANTUM_MOLECULAR_DETECTIVE
+	"""
+	PushQuantum Quandela Quantum Option Pricing
+	"""
+	PUSHQUANTUM_QUANDELA_QUANTUM_OPTION_PRICING
+	"""
+	Qiskit Fall Fest Winner – Color Code
+	"""
+	QFF_COLOR_CODE
+	"""
+	Qiskit Fall Fest Winner – Quantum Random Walk Option Pricing
+	"""
+	QFF_QUANTUM_RANDOM_WALK
+	"""
+	Qiskit Fall Fest Winner – Quantum Machine Learning Option Pricing
+	"""
+	QFF_QUANTUM_MACHINE_LEARNING
+	"""
+	Big Quantum Hackathon Qatar 2025 – Winner
+	"""
+	BQH_QATAR_WINNER_2025
+	"""
+	Big Quantum Hackathon Qatar 2025 – Finalist
+	"""
+	BQH_QATAR_FINALIST_2025
+	"""
+	Hack The Horizon – Winner Team
+	"""
+	HTH_WINNER_TEAM
+	"""
+	Hack The Horizon – Most Innovative Idea
+	"""
+	HTH_MOST_INNOVATIVE_IDEA
+	"""
+	Hack The Horizon – Most Impactful Team
+	"""
+	HTH_MOST_IMPACTFUL_TEAM
+	"""
+	Hack The Horizon – Participation Badge
+	"""
+	HTH_PARTICIPATION
 	UNKNOWN
 }
 
@@ -405,7 +476,6 @@ type BlogArticleEdge {
 	cursor: String!
 }
 
-
 type Comment implements Votable & Node {
 	votes: Int!
 	createdAt: DateTime!
@@ -489,6 +559,7 @@ type Competition implements ForumOwner & Subscribable & Node {
 	entitySubscription(entity: UsernameOrID): SubjectSubscription
 	jury(after: String, before: String, first: Int, last: Int): CompetitionJuryConnection!
 	datasets(after: String, before: String, first: Int, last: Int): CompetitionDatasetConnection!
+	teamRequests(after: String, before: String, first: Int, last: Int, isOrganization: Boolean): CompetitionTeamRequestConnection!
 }
 
 type CompetitionConnection {
@@ -581,11 +652,14 @@ type CompetitionJuryEdge {
 
 type CompetitionMembership implements Node {
 	kind: CompetitionMembershipKind!
+	createdAt: DateTime!
 	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	entity: Entity!
+	asEntity: Entity!
 	competition: Competition!
 	ruleAgreements(after: String, before: String, first: Int, last: Int, latest: Boolean): CompetitionRuleAgreementConnection!
-	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	teamRequest: CompetitionTeamRequest
 }
 
 type CompetitionMembershipConnection {
@@ -781,6 +855,48 @@ type CompetitionTagConnection {
 	nodes: [Tag!]!
 }
 
+type CompetitionTeamRequest implements Node {
+	skills: String!
+	needs: String!
+	createdAt: DateTime!
+	updatedAt: DateTime!
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	competition: Competition!
+	entity: Entity!
+	timezone: TimeZone!
+	lastMessageAt: DateTime
+}
+
+type CompetitionTeamRequestConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [CompetitionTeamRequestEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [CompetitionTeamRequest!]!
+}
+
+"""
+An edge in a connection.
+"""
+type CompetitionTeamRequestEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: CompetitionTeamRequest!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
 input CreateBlogArticleInput {
 	title: String!
 	content: String!
@@ -804,7 +920,7 @@ input CreateCompetitionInput {
 	banner: Upload
 	thumbnail: Upload
 	visibility: ActivityVisibility! = UNAUTHENTICATED
-	tagIds: [ID]
+	tags: [String!]!
 	"""
 	Message shown to participants before they submit a solution.
 	"""
@@ -861,11 +977,17 @@ input CreateCompetitionStageInput {
 	submissionPreamble: String = null
 }
 
+input CreateCompetitionTeamRequestInput {
+	skills: String!
+	needs: String!
+	timezone: TimeZone!
+}
+
 input CreateDatasetInput {
 	localSlug: String!
 	name: String!
 	private: Boolean!
-	tags: [ID!]!
+	tags: [String!]!
 	shortDescription: String
 }
 
@@ -882,6 +1004,7 @@ input CreateEventInput {
 	banner: Upload
 	thumbnail: Upload
 	visibility: ActivityVisibility! = UNAUTHENTICATED
+	inviteEmail: String
 }
 
 input CreateForumInput {
@@ -939,6 +1062,12 @@ input CreateTopicInput {
 	description: String
 }
 
+type DOI {
+	full: String!
+	short: String
+	url: Url!
+}
+
 type Dataset implements Votable & ForumOwner & Node {
 	localSlug: String!
 	name: String!
@@ -962,6 +1091,7 @@ type Dataset implements Votable & ForumOwner & Node {
 	voted: EntityVote
 	voterCount: Int!
 	voters(after: String, before: String, first: Int, last: Int): VotersConnection!
+	publiclyIdentified: Boolean!
 }
 
 type DatasetAnalytics {
@@ -1123,7 +1253,6 @@ type DatasetTagConnectionEdge {
 
 type DatasetVersion implements Node {
 	version: Semver!
-	description: String!
 	license: String
 	publishedAt: DateTime
 	createdAt: DateTime!
@@ -1131,6 +1260,8 @@ type DatasetVersion implements Node {
 	id: ID!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	dataset: Dataset!
+	description: String!
+	doi: DOI
 	fileByPartitionNum(partitionNum: Int!): DatasetVersionFile
 	files(after: String, before: String, first: Int, last: Int): DatasetVersionFileConnection!
 	analytics: DatasetAnalytics!
@@ -1140,11 +1271,10 @@ type DatasetVersion implements Node {
 	size: Int!
 	publishable: Boolean!
 	records(offset: Int! = 0, limit: Int! = 100): [JSON!]!
+	workspace: Workspace
 }
 
-interface DatasetVersionAuthor {
-	displayName: String!
-}
+union DatasetVersionAuthor = User | UnregisteredUser
 
 type DatasetVersionAuthorConnection {
 	"""
@@ -1268,6 +1398,16 @@ input DatasetVersionQueryFilters {
 	sortDirection: DatasetVersionConnectionSortDirection! = DESCENDING
 }
 
+enum DatasetVersionStatus {
+	IDLE
+	GENERATING_DOI
+}
+
+type DatasetVersionUpdate {
+	status: DatasetVersionStatus!
+	datasetVersion: DatasetVersion!
+}
+
 """
 Implement the DateTime<FixedOffset> scalar
 
@@ -1309,6 +1449,7 @@ interface Entity {
 	bio: String
 	createdAt: DateTime!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	can(action: Action!, on: ID, actingAs: UsernameOrID): Boolean!
 	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID, allStages: Boolean): SubmissionConnection!
 	badges(after: String, before: String, first: Int, last: Int): EntityBadgeConnection!
 	subjectSubscriptions(kinds: [SubjectKind!], after: String, before: String, first: Int, last: Int): SubjectSubscriptionConnection!
@@ -1406,6 +1547,7 @@ type Event implements ForumOwner & Node {
 	shortDescription: String!
 	createdAt: DateTime!
 	visibility: ActivityVisibility!
+	inviteEmail: String
 	id: ID!
 	forumOwnerKind: ForumOwnerKind!
 	description: String
@@ -1759,7 +1901,6 @@ input FinishUploadFileInput {
 	key: String!
 }
 
-
 type Forum implements ForumOwner & Subscribable & Node {
 	forumOwnerKind: ForumOwnerKind!
 	slug: String!
@@ -1864,7 +2005,6 @@ type GlobalLeaderboardEdge {
 	cursor: String!
 }
 
-
 type InitUploadFile {
 	key: String!
 	uploadUrl: Url!
@@ -1875,7 +2015,6 @@ input InitUploadFileInput {
 	contentType: String!
 	contentLength: Int!
 }
-
 
 """
 A scalar that can represent any JSON value.
@@ -1929,10 +2068,11 @@ type Mutation {
 	withdrawBadge(id: ID!): ID!
 	agreeToCompetitionRule(competition: ID!, asEntity: UsernameOrID): CompetitionRuleAgreement!
 	agreeToEventRule(event: ID!, asEntity: UsernameOrID): EventRuleAgreement!
-	addCompetitionMember(competitionId: ID!, entityId: ID!): CompetitionMembershipEdge!
-	joinCompetition(competitionId: ID!, asEntity: UsernameOrID): CompetitionMembershipEdge!
+	addCompetitionMember(competitionId: ID!, entityId: ID!): [CompetitionMembershipEdge!]!
+	joinCompetition(competitionId: ID!, asEntity: UsernameOrID @deprecated(reason: "Use context-based authorization instead; parameter will be removed in a future version")): CompetitionMembershipEdge
 	removeCompetitionMember(id: ID!): ID!
-	transferCompetitionOwnership(competitionId: ID!, toEntityId: ID!): [CompetitionMembershipEdge!]!
+	updateCompetitionMembership(id: ID!, input: UpdateCompetitionMemberInput!): CompetitionMembership!
+	transferCompetitionOwnership(competitionId: ID!, toEntity: UsernameOrID!): [CompetitionMembershipEdge!]!
 	setUserNotificationSubscription(notification: NotificationKind!, subscribe: Boolean!): UserEdge!
 	unsubscribeFromAllNotifications: UserEdge!
 	unsubscribeNotificationForToken(token: String!): NotificationKind
@@ -1996,6 +2136,10 @@ type Mutation {
 	"""
 	removeCompetitionStage(stageId: ID!): Competition!
 	reevaluateCompetitionStage(competitionId: ID!, stage: Int): CompetitionStageEdge!
+	createCompetitionTeamRequest(competitionId: ID!, input: CreateCompetitionTeamRequestInput!): CompetitionTeamRequestEdge!
+	updateCompetitionTeamRequest(competitionTeamRequestId: ID!, input: UpdateCompetitionTeamRequestInput!): CompetitionTeamRequest!
+	deleteCompetitionTeamRequest(competitionTeamRequestId: ID!): ID!
+	sendCompetitionTeamRequestMessage(competitionTeamRequestId: ID!, message: String!): CompetitionTeamRequest!
 	createDataset(input: CreateDatasetInput!, asEntity: UsernameOrID): Dataset!
 	updateDataset(datasetId: ID!, input: UpdateDatasetInput!): Dataset!
 	deleteDataset(datasetId: ID!): ID!
@@ -2217,6 +2361,10 @@ type Organization implements Entity & Node {
 	users(after: String, before: String, first: Int, last: Int): OrganizationUserConnection!
 	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID, allStages: Boolean): SubmissionConnection!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	"""
+	can this user perform the action on the given resource
+	"""
+	can(action: Action!, on: ID, actingAs: UsernameOrID): Boolean!
 	badges(after: String, before: String, first: Int, last: Int): EntityBadgeConnection!
 	userMembership(user: UsernameOrID): OrganizationMembership
 	subjectSubscriptions(kinds: [SubjectKind!], after: String, before: String, first: Int, last: Int): SubjectSubscriptionConnection!
@@ -2506,12 +2654,12 @@ enum ProjectVersionStatus {
 
 type Query {
 	node(id: ID!): Node!
-	viewer: User!
 	competitions(after: String, before: String, first: Int, last: Int, search: String): CompetitionConnection!
 	competitionBySlug(slug: String!): Competition
 	entities(after: String, before: String, first: Int, last: Int, search: String, kinds: [EntityKind!]): EntityConnection!
 	entityByUsername(username: String!): Entity
 	leaderboard(after: String, before: String, first: Int, last: Int, search: String, kinds: [EntityKind!]): GlobalLeaderboardConnection!
+	viewer: Entity!
 	events(after: String, before: String, first: Int, last: Int, search: String): EventConnection!
 	eventBySlug(slug: String!): Event
 	version: Version!
@@ -2525,6 +2673,7 @@ type Query {
 	oauth2Authorize(input: Oauth2AuthorizeInput!): Oauth2PreGrant
 	datasets(after: String, before: String, first: Int, last: Int, filters: DatasetQueryFilters): DatasetConnection!
 	datasetBySlug(owner: String!, localSlug: String!): Dataset
+	workspaces(first: Int, after: String): WorkspaceConnection!
 }
 
 input ResetPasswordInput {
@@ -2532,10 +2681,16 @@ input ResetPasswordInput {
 	password: String!
 }
 
+enum RunnerCommand {
+	EDIT
+	RUN
+}
+
 enum Scope {
 	ALL
 	DEFAULT
 	READ_COMPETITION
+	READ_DATASET
 	READ_PROJECT
 }
 
@@ -2565,7 +2720,6 @@ input SignupUserInput {
 	signup: SignupInput!
 	subscribePromotionalNewsletter: Boolean
 }
-
 
 enum SubjectKind {
 	TOPIC
@@ -2701,9 +2855,11 @@ type Subscription {
 	newComments(topicId: ID): CommentEdge!
 	deletedComments(topicId: ID): DeletedComment!
 	updatedComments(topicId: ID): CommentEdge!
+	datasetVersionUpdate(datasetVersionId: ID!): DatasetVersionUpdate!
 	projectVersionStatusUpdate(competitionId: ID, entityId: ID, projectId: ID, projectVersionId: ID): ProjectVersion!
 	updatedEntity(id: ID): Entity!
 	oauth2Redirect(input: Oauth2RedirectInput!): Oauth2AuthorizationCode!
+	workspaceRunnerStatus(id: ID!): WorkspaceRunnerStatus!
 }
 
 type Tag implements Node {
@@ -2864,7 +3020,7 @@ entities without requiring a central allocating authority.
 # References
 
 * [Wikipedia: Universally Unique Identifier](http://en.wikipedia.org/wiki/Universally_unique_identifier)
-* [RFC4122: A Universally Unique IDentifier (UUID) URN Namespace](http://tools.ietf.org/html/rfc4122)
+* [RFC4122: A Universally Unique Identifier (UUID) URN Namespace](http://tools.ietf.org/html/rfc4122)
 """
 scalar UUID
 
@@ -2872,8 +3028,8 @@ input UnregisteredDatasetVersionAuthorInput {
 	fullName: String!
 }
 
-type UnregisteredUser implements DatasetVersionAuthor {
-	displayName: String!
+type UnregisteredUser {
+	fullName: String!
 }
 
 input UpdateAgendaInput {
@@ -2904,7 +3060,7 @@ input UpdateCompetitionInput {
 	thumbnail: Upload
 	rules: String
 	visibility: ActivityVisibility
-	tagIds: [ID]
+	tags: [String!]
 	"""
 	Enables jury system on competition
 	"""
@@ -2932,6 +3088,10 @@ input UpdateCompetitionInput {
 	submissionPreamble: String
 	scoringCriteria: [UpdateCompetitionScoringCriterionInput!]
 	timeline: UpdateTimelineInput
+}
+
+input UpdateCompetitionMemberInput {
+	asEntityId: ID
 }
 
 input UpdateCompetitionScoringCriterionInput {
@@ -2970,11 +3130,17 @@ input UpdateCompetitionStageInput {
 	scoringCriteria: [UpdateCompetitionScoringCriterionInput!]
 }
 
+input UpdateCompetitionTeamRequestInput {
+	skills: String
+	needs: String
+	timezone: TimeZone
+}
+
 input UpdateDatasetInput {
 	localSlug: String
 	name: String
 	private: Boolean
-	tags: [ID!]
+	tags: [String!]
 	shortDescription: String
 }
 
@@ -2994,6 +3160,7 @@ input UpdateEventInput {
 	thumbnail: Upload
 	visibility: ActivityVisibility
 	rules: String
+	inviteEmail: String
 }
 
 input UpdateForumInput {
@@ -3091,7 +3258,7 @@ type UseCase implements Project & Node {
 	name: String!
 }
 
-type User implements Entity & DatasetVersionAuthor & Node {
+type User implements Entity & Node {
 	username: String!
 	displayName: String!
 	location: String
@@ -3113,7 +3280,7 @@ type User implements Entity & DatasetVersionAuthor & Node {
 	can this user perform the action on the given resource
 	"""
 	can(action: Action!, on: ID, actingAs: UsernameOrID): Boolean!
-	organizations(after: String, before: String, first: Int, last: Int): UserOrganizationConnection!
+	organizations(after: String, before: String, first: Int, last: Int, search: String): UserOrganizationConnection!
 	submissions(after: String, before: String, first: Int, last: Int, competitionId: ID, allStages: Boolean): SubmissionConnection!
 	topics(after: String, before: String, first: Int, last: Int, order: VotableOrder): TopicConnection!
 	comments(after: String, before: String, first: Int, last: Int, order: VotableOrder): CommentConnection!
@@ -3242,10 +3409,105 @@ type WebsiteMetadata {
 	description: String
 }
 
+type Workspace implements Node {
+	storage: String
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	datasetVersion: DatasetVersion
+	editor: WorkspaceRunner
+	viewer: WorkspaceRunner
+	runners(first: Int, after: String): WorkspaceRunnerConnection!
+}
+
+type WorkspaceConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [WorkspaceEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Workspace!]!
+}
+
+"""
+An edge in a connection.
+"""
+type WorkspaceEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Workspace!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+type WorkspaceRunner implements Node {
+	command: RunnerCommand!
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	workspace: Workspace!
+	url(notebook: String): Url!
+}
+
+type WorkspaceRunnerConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [WorkspaceRunnerEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [WorkspaceRunner!]!
+}
+
+"""
+An edge in a connection.
+"""
+type WorkspaceRunnerEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: WorkspaceRunner!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+type WorkspaceRunnerStatus {
+	ready: Boolean!
+}
+
+"""
+Marks an element of a GraphQL schema as no longer supported.
+"""
 directive @deprecated(reason: String = "No longer supported") on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
+"""
+Directs the executor to include this field or fragment only when the `if` argument is true.
+"""
 directive @include(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+"""
+Indicates that an Input Object is a OneOf Input Object (and thus requires exactly one of its field be provided)
+"""
 directive @oneOf on INPUT_OBJECT
+"""
+Directs the executor to skip this field or fragment when the `if` argument is true.
+"""
 directive @skip(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+"""
+Provides a scalar specification URL for specifying the behavior of custom scalar types.
+"""
 directive @specifiedBy(url: String!) on SCALAR
 schema {
 	query: Query

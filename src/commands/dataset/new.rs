@@ -1,3 +1,4 @@
+use crate::commands::dataset::new::get_viewer_related_entities::GetViewerRelatedEntitiesViewerOn;
 use crate::commands::GlobalArgs;
 use crate::{
     error::{self, Result},
@@ -72,12 +73,15 @@ pub async fn ask_dataset_owner(
         .await?
         .viewer;
 
-    let organizations = viewer
-        .entities
-        .nodes
-        .into_iter()
-        .filter(|entity| entity.id != viewer.id)
-        .collect::<Vec<_>>();
+    let organizations = match viewer.on {
+        GetViewerRelatedEntitiesViewerOn::User(user) => Some(user.entities.nodes),
+        // organizations don't currently have an entities query
+        GetViewerRelatedEntitiesViewerOn::Organization => None,
+    }
+    .into_iter()
+    .flatten()
+    .filter(|entity| entity.id != viewer.id)
+    .collect::<Vec<_>>();
 
     let choices = organizations
         .iter()
