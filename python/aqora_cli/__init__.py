@@ -1,5 +1,8 @@
-from aqora_cli._aqora_cli import *  # pyright: ignore[reportAssignmentType, reportWildcardImportFromLibrary]  # noqa: F403
 from typing_extensions import Any, TypedDict, override
+
+from . import _aqora_cli
+from .notebook import notebook
+from aqora_cli._aqora_cli import *  # pyright: ignore[reportAssignmentType, reportWildcardImportFromLibrary]  # noqa: F403
 
 
 class GraphQLError(TypedDict):
@@ -26,4 +29,4 @@ class ClientError(Exception):
         return self.message
 
 
-__doc__ = _aqora_cli.__doc__  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType, reportUndefinedVariable]  # noqa: F405
+__doc__ = _aqora_cli.__doc__

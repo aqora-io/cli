@@ -4,3 +4,4 @@
 dist
 __pycache__/
 *.so
+python/aqora_cli/_workspace_notebooks
