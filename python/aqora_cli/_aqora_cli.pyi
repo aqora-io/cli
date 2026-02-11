@@ -24,3 +24,6 @@ class Client:
     async def s3_get(
         self, url: str, *, range: tuple[int | None, int | None] | None = None
     ) -> bytes: ...
+    async def _download_workspace_notebook(
+        self, owner: str, slug: str, dest: str | Path
+    ) -> None: ...

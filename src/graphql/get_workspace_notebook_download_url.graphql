@@ -1,0 +1,11 @@
+query GetWorkspaceNotebookDownloadUrl($owner: String!, $slug: String!) {
+  workspaceBySlug(owner: $owner, slug: $slug) {
+    entries {
+      __typename
+      ... on WorkspaceFile {
+        name
+        downloadUrl
+      }
+    }
+  }
+}

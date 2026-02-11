@@ -15,6 +15,7 @@ use url::Url;
 use crate::{
     dirs::config_home,
     graphql_client::{authenticate_client, unauthenticated_client},
+    workspace::download_workspace_notebook,
 };
 
 #[pyfunction]
@@ -198,6 +199,25 @@ impl PyClient {
                 let body = PyBytes::new(py, &body);
                 Ok(body.unbind())
             })
+        })
+    }
+
+    fn _download_workspace_notebook<'py>(
+        &self,
+        py: Python<'py>,
+        owner: &str,
+        slug: &str,
+        dest: std::path::PathBuf,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let inner = Arc::clone(&self.inner);
+        let owner = owner.to_owned();
+        let slug = slug.to_owned();
+        future_into_py(py, async move {
+            let client = inner.read().await.client.clone();
+            download_workspace_notebook(client, owner, slug, dest)
+                .await
+                .map_err(|error| ClientError::new_err((error.message(),)))?;
+            Ok(())
         })
     }
 
