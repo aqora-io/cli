@@ -38,7 +38,7 @@ impl IPython {
         )))
     }
 
-    fn __getattr__(&self, name: &str) -> PyResult<PyObject> {
+    fn __getattr__(&self, name: &str) -> PyResult<Py<PyAny>> {
         Err(pyo3::exceptions::PyAttributeError::new_err(format!(
             "aqora's 'ipython' does not support function '{name}'",
         )))

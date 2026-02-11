@@ -8,7 +8,7 @@ use pyo3::{
 #[pyclass]
 struct ProgressSuspendPyFunc {
     progress: ProgressBar,
-    func: PyObject,
+    func: Py<PyAny>,
 }
 
 #[pymethods]
@@ -19,11 +19,11 @@ impl ProgressSuspendPyFunc {
         py: Python<'_>,
         args: &Bound<'_, PyTuple>,
         kwargs: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         self.progress.suspend(|| self.func.call(py, args, kwargs))
     }
 
-    fn __getattr__(&self, py: Python<'_>, name: &Bound<'_, PyString>) -> PyResult<PyObject> {
+    fn __getattr__(&self, py: Python<'_>, name: &Bound<'_, PyString>) -> PyResult<Py<PyAny>> {
         self.func.getattr(py, name)
     }
 
@@ -61,7 +61,7 @@ fn override_module_func(
 }
 
 pub fn wrap_python_output(progress: &ProgressBar) -> Result<()> {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         override_module_func(
             py,
             &py.import(pyo3::intern!(py, "builtins"))?,
@@ -78,7 +78,7 @@ pub fn wrap_python_output(progress: &ProgressBar) -> Result<()> {
     })
     .map_err(|err| {
         progress.suspend(|| {
-            Python::with_gil(|py| err.print_and_set_sys_last_vars(py));
+            Python::attach(|py| err.print_and_set_sys_last_vars(py));
         });
         error::system("Failed to set python hooks", "")
     })

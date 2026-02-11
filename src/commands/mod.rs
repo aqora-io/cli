@@ -118,7 +118,7 @@ impl Cli {
                 serde_json::to_value(&self).unwrap_or_default(),
             )]));
 
-        let runtime_context = pyo3::Python::with_gil(|py| sentry::protocol::RuntimeContext {
+        let runtime_context = pyo3::Python::attach(|py| sentry::protocol::RuntimeContext {
             name: Some("Python".into()),
             version: Some(py.version().into()),
             ..Default::default()
