@@ -28,6 +28,8 @@ pub mod sentry;
 mod shutdown;
 mod upload;
 mod vscode;
+#[cfg(feature = "extension-module")]
+mod workspace;
 
 pub use commands::Cli;
 pub use run::run;
