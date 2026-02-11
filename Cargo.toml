@@ -21,16 +21,16 @@ default = []
 extension-module = ["pyo3/extension-module", "pyo3/abi3-py39", "pyo3/abi3"]
 
 [dependencies]
-aqora-client = { path = "client" , version = "0.22.2" }
+aqora-client = { path = "client", version = "0.22.2" }
 aqora-archiver = { path = "archiver", features = [
   "indicatif",
   "tokio",
   "tracing",
-] , version = "0.22.2" }
-aqora-config = { path = "config" , version = "0.22.2" }
-aqora-runner = { path = "runner", features = ["clap"] , version = "0.22.2" }
-aqora-template = { path = "template" , version = "0.22.2" }
-aqora-data-utils = { path = "data-utils" , version = "0.22.2" }
+], version = "0.22.2" }
+aqora-config = { path = "config", version = "0.22.2" }
+aqora-runner = { path = "runner", features = ["clap"], version = "0.22.2" }
+aqora-template = { path = "template", version = "0.22.2" }
+aqora-data-utils = { path = "data-utils", version = "0.22.2" }
 
 axum = "0.7"
 base32 = "0.5"
@@ -53,8 +53,8 @@ mime = "0.3"
 open = "5.0"
 owo-colors = { version = "4.0", features = ["supports-colors"] }
 passterm = "2.0"
-pyo3 = { version = "0.24", features = ["serde"] }
-pyo3-async-runtimes = { version = "0.24", features = [
+pyo3 = { version = "0.28", features = ["serde"] }
+pyo3-async-runtimes = { version = "0.28", features = [
   "attributes",
   "tokio-runtime",
 ] }

@@ -196,7 +196,7 @@ impl From<NotebookToPythonFunctionError> for Error {
 }
 
 fn notebook_path(env: &PyEnv, path: &PathStr) -> Result<PathBuf, NotebookToPythonFunctionError> {
-    let paths = Python::with_gil(|py| env.find_spec_search_locations(py, path))?;
+    let paths = Python::attach(|py| env.find_spec_search_locations(py, path))?;
     let filename = Path::new(path.name()).with_extension("ipynb");
     for path in paths {
         let notebook = path.join(&filename);
@@ -305,7 +305,7 @@ async fn notebook_to_script(
         .await
         .map_err(|e| NotebookToPythonFunctionError::Write(output_dir.to_path_buf(), e))?;
 
-    let script = Python::with_gil(|py| {
+    let script = Python::attach(|py| {
         let reads_kwargs = PyDict::new(py);
         reads_kwargs.set_item(pyo3::intern!(py, "as_version"), ipynb.nbformat.unwrap_or(4))?;
         let notebook = py.import(pyo3::intern!(py, "nbformat"))?.call_method(
@@ -758,7 +758,7 @@ get_ipython().system('echo "hello"')
 
     #[tokio::test]
     async fn test_notebook_to_script() {
-        pyo3::prepare_freethreaded_python();
+        pyo3::Python::initialize();
         let temp_dir = TempDir::new().unwrap();
         let env = PyEnv::init(
             which::which("uv").unwrap(),
