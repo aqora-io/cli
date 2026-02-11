@@ -1,4 +1,4 @@
-ARG KUBIMO_MARIMO_IMAGE=ghcr.io/aqora-io/kubimo-marimo:0.1.9
+ARG KUBIMO_MARIMO_IMAGE=ghcr.io/aqora-io/kubimo-marimo:pr-6
 
 FROM ${KUBIMO_MARIMO_IMAGE} AS build
 
