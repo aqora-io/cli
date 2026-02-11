@@ -16,7 +16,7 @@ pub struct Test {
 
 pub fn evaluate(
     evaluator: Evaluator,
-    inputs: impl Stream<Item = (usize, PyResult<PyObject>)>,
+    inputs: impl Stream<Item = (usize, PyResult<Py<PyAny>>)>,
     concurrency: usize,
     last_run_dir: Option<PathBuf>,
     label: Option<String>,
@@ -28,7 +28,7 @@ pub fn evaluate(
         .map(|((index, result), evaluator)| async move {
             match result {
                 Ok(input) => match evaluator
-                    .evaluate(Python::with_gil(|py| input.clone_ref(py)), None)
+                    .evaluate(Python::attach(|py| input.clone_ref(py)), None)
                     .await
                 {
                     Ok(result) => (

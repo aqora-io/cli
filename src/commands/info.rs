@@ -35,7 +35,7 @@ pub struct Info;
 
 pub async fn info(_: Info, global: GlobalArgs) -> Result<()> {
     let _ = global.opt_init_venv(&ProgressBar::hidden()).await?;
-    let python_prefix = Python::with_gil(|py| {
+    let python_prefix = Python::attach(|py| {
         py.import(pyo3::intern!(py, "sys"))
             .and_then(|sys| sys.getattr(pyo3::intern!(py, "prefix")))
             .and_then(|prefix| prefix.extract::<String>())

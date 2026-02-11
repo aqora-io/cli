@@ -22,7 +22,7 @@ pub fn main(py: Python<'_>) -> PyResult<()> {
     let _sentry = crate::sentry::setup();
     let sys = py.import("sys")?;
     let argv = sys.getattr("argv")?.extract::<Vec<OsString>>()?;
-    let exit_code = py.allow_threads(|| crate::run(argv));
+    let exit_code = py.detach(|| crate::run(argv));
     sys.getattr("exit")?.call1((exit_code,))?;
     Ok(())
 }
@@ -143,12 +143,12 @@ impl PyClient {
                 .await
                 .map_err(|error| ClientError::new_err((error.to_string(),)))?;
 
-            Python::with_gil(move |py| {
+            Python::attach(move |py| {
                 let py_json = py_json.bind(py);
 
                 let response = PyBytes::new(py, &response);
                 let response = py_json.call_method1(pyo3::intern!(py, "loads"), (response,))?;
-                let Ok(response) = response.downcast::<PyDict>() else {
+                let Ok(response) = response.cast::<PyDict>() else {
                     let error = format!(
                         "GraphQL returned unexpected value of type {}",
                         response.get_type()
@@ -194,7 +194,7 @@ impl PyClient {
                 .bytes()
                 .await
                 .map_err(|error| ClientError::new_err(error.to_string()))?;
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let body = PyBytes::new(py, &body);
                 Ok(body.unbind())
             })

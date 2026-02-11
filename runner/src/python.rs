@@ -14,7 +14,7 @@ use thiserror::Error;
 use tokio::process::Command;
 
 lazy_static::lazy_static! {
-    static ref PYTHON_VERSION: String = Python::with_gil(|py| {
+    static ref PYTHON_VERSION: String = Python::attach(|py| {
         let version = py.version_info();
         format!("{}.{}", version.major, version.minor)
     });
@@ -233,7 +233,7 @@ impl PyEnv {
         .await?;
         let venv_path = dunce::canonicalize(venv_path)
             .map_err(|err| EnvError::Io(venv_path.to_path_buf(), err))?;
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let sys = py.import(intern!(py, "sys"))?;
             let prefix = sys.getattr(intern!(py, "prefix"))?.extract::<PathBuf>()?;
             if prefix == venv_path {
@@ -430,7 +430,7 @@ impl PyEnv {
 #[macro_export]
 macro_rules! async_python_run {
     ($($closure:tt)*) => {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let closure = $($closure)*;
             let awaitable = match closure(py) {
                 Ok(awaitable) => awaitable,
@@ -445,8 +445,8 @@ macro_rules! async_python_run {
 }
 pub(crate) use async_python_run;
 
-pub fn async_generator(generator: PyObject) -> PyResult<impl Stream<Item = PyResult<PyObject>>> {
-    let generator = Python::with_gil(move |py| {
+pub fn async_generator(generator: Py<PyAny>) -> PyResult<impl Stream<Item = PyResult<Py<PyAny>>>> {
+    let generator = Python::attach(move |py| {
         generator
             .bind_borrowed(py)
             .call_method0(pyo3::intern!(py, "__aiter__"))?;
@@ -455,7 +455,7 @@ pub fn async_generator(generator: PyObject) -> PyResult<impl Stream<Item = PyRes
 
     Ok(
         futures::stream::unfold(generator, move |generator| async move {
-            let result = match Python::with_gil(|py| {
+            let result = match Python::attach(|py| {
                 pyo3_async_runtimes::into_future_with_locals(
                     &pyo3_async_runtimes::tokio::get_current_locals(py)?,
                     generator
@@ -466,12 +466,12 @@ pub fn async_generator(generator: PyObject) -> PyResult<impl Stream<Item = PyRes
                 Ok(result) => result.await,
                 Err(err) => return Some((Err(err), generator)),
             };
-            Python::with_gil(|py| match result {
+            Python::attach(|py| match result {
                 Ok(result) => Some((Ok(result), generator)),
                 Err(err) => {
                     if err
                         .get_type(py)
-                        .is(&PyType::new::<pyo3::exceptions::PyStopAsyncIteration>(py))
+                        .is(PyType::new::<pyo3::exceptions::PyStopAsyncIteration>(py))
                     {
                         None
                     } else {
@@ -521,7 +521,7 @@ pub mod serde_pickle {
         S: serde::ser::Serializer,
         T: for<'py> IntoPyObject<'py>,
     {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let out = py
                 .import("pickle")
                 .map_err(serde::ser::Error::custom)?
@@ -537,12 +537,12 @@ pub mod serde_pickle {
     pub fn deserialize<'de, D, T>(deserializer: D) -> Result<T, D::Error>
     where
         D: serde::de::Deserializer<'de>,
-        T: for<'a> FromPyObject<'a>,
+        T: for<'py> FromPyObjectOwned<'py>,
     {
         let bytes = deserializer.deserialize_any(BytesVisitor)?;
-        Python::with_gil(|py| {
+        Python::attach(|py| -> PyResult<T> {
             let out = py.import("pickle")?.getattr("loads")?.call1((bytes,))?;
-            FromPyObject::extract_bound(&out)
+            out.extract().map_err(Into::into)
         })
         .map_err(serde::de::Error::custom)
     }
@@ -552,7 +552,7 @@ pub mod serde_pickle {
         D: serde::de::Deserializer<'de>,
     {
         let bytes = deserializer.deserialize_any(BytesVisitor)?;
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let out = py
                 .import("pickle")?
                 .getattr("loads")?
@@ -603,16 +603,16 @@ pub mod serde_pickle_opt {
     pub fn deserialize<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
     where
         D: serde::de::Deserializer<'de>,
-        T: for<'a> FromPyObject<'a>,
+        T: for<'py> FromPyObjectOwned<'py>,
     {
         let bytes = deserializer.deserialize_option(MaybeBytesVisitor)?;
         if let Some(bytes) = bytes {
-            Python::with_gil(|py| {
+            Python::attach(|py| -> PyResult<T> {
                 let out = py
                     .import("pickle")?
                     .getattr("loads")?
                     .call1((bytes.as_ref(),))?;
-                FromPyObject::extract_bound(&out)
+                out.extract().map_err(Into::into)
             })
             .map_err(serde::de::Error::custom)
             .map(Some)
@@ -623,7 +623,7 @@ pub mod serde_pickle_opt {
 }
 
 pub fn format_err(pyerr: &PyErr) -> String {
-    Python::with_gil(|py| {
+    Python::attach(|py| -> PyResult<String> {
         let formatter = py.import("traceback")?.getattr("format_exc")?;
         pyerr.clone_ref(py).restore(py);
         formatter.call1((1,))?.extract()
@@ -631,7 +631,7 @@ pub fn format_err(pyerr: &PyErr) -> String {
     .unwrap_or_else(|err| err.to_string())
 }
 
-type AsyncIteratorStream = futures::stream::BoxStream<'static, PyObject>;
+type AsyncIteratorStream = futures::stream::BoxStream<'static, Py<PyAny>>;
 
 #[pyclass]
 pub struct AsyncIterator {
@@ -639,7 +639,7 @@ pub struct AsyncIterator {
 }
 
 impl AsyncIterator {
-    pub fn new(stream: impl Stream<Item = PyObject> + Send + Sync + 'static) -> Self {
+    pub fn new(stream: impl Stream<Item = Py<PyAny>> + Send + Sync + 'static) -> Self {
         Self {
             stream: std::sync::Arc::new(std::sync::Mutex::new(Some(stream.boxed()))),
         }

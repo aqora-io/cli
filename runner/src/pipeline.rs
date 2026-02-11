@@ -19,7 +19,7 @@ use thiserror::Error;
 
 #[derive(Debug)]
 pub struct LayerFunction {
-    func: PyObject,
+    func: Py<PyAny>,
     takes_input_arg: bool,
     takes_original_input_kwarg: bool,
     takes_context_kwarg: bool,
@@ -87,10 +87,10 @@ impl LayerFunction {
 
     pub async fn call(
         &self,
-        input: &PyObject,
-        original_input: &PyObject,
-        context: &PyObject,
-    ) -> PyResult<PyObject> {
+        input: &Py<PyAny>,
+        original_input: &Py<PyAny>,
+        context: &Py<PyAny>,
+    ) -> PyResult<Py<PyAny>> {
         async_python_run!(|py| {
             let args = if self.takes_input_arg {
                 PyTuple::new(py, [deepcopy(input.bind(py))?])?
@@ -157,27 +157,27 @@ impl Layer {
 #[pyclass]
 pub struct LayerEvaluation {
     #[serde(with = "serde_pickle")]
-    pub transform: PyObject,
+    pub transform: Py<PyAny>,
     #[serde(with = "serde_pickle")]
-    pub context: PyObject,
+    pub context: Py<PyAny>,
     #[serde(with = "serde_pickle_opt")]
-    pub metric: Option<PyObject>,
+    pub metric: Option<Py<PyAny>>,
     #[serde(with = "serde_pickle_opt")]
-    pub branch: Option<PyObject>,
+    pub branch: Option<Py<PyAny>>,
 }
 
 impl LayerEvaluation {
     fn branch_str(&self) -> PyResult<Option<String>> {
         self.branch
             .as_ref()
-            .map(|branch| Python::with_gil(|py| branch.extract::<String>(py)))
+            .map(|branch| Python::attach(|py| branch.extract::<String>(py)))
             .transpose()
     }
 }
 
 #[pymethods]
 impl LayerEvaluation {
-    fn __getitem__(&self, key: &str) -> Option<&PyObject> {
+    fn __getitem__(&self, key: &str) -> Option<&Py<PyAny>> {
         match key {
             "output" => Some(&self.transform),
             "context" => Some(&self.context),
@@ -187,19 +187,19 @@ impl LayerEvaluation {
         }
     }
     #[getter]
-    fn output(&self) -> &PyObject {
+    fn output(&self) -> &Py<PyAny> {
         &self.transform
     }
     #[getter]
-    fn context(&self) -> &PyObject {
+    fn context(&self) -> &Py<PyAny> {
         &self.context
     }
     #[getter]
-    fn metric(&self) -> Option<&PyObject> {
+    fn metric(&self) -> Option<&Py<PyAny>> {
         self.metric.as_ref()
     }
     #[getter]
-    fn branch(&self) -> Option<&PyObject> {
+    fn branch(&self) -> Option<&Py<PyAny>> {
         self.branch.as_ref()
     }
 }
@@ -209,7 +209,7 @@ pub type EvaluationResult = HashMap<String, Vec<LayerEvaluation>>;
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct EvaluateInputInfo {
     #[serde(with = "serde_pickle_opt")]
-    pub input: Option<PyObject>,
+    pub input: Option<Py<PyAny>>,
     pub result: EvaluationResult,
     pub error: Option<EvaluationError>,
 }
@@ -217,43 +217,43 @@ pub struct EvaluateInputInfo {
 #[derive(Serialize, Deserialize, Default, Debug)]
 pub struct EvaluateAllInfo {
     #[serde(with = "serde_pickle_opt")]
-    pub score: Option<PyObject>,
+    pub score: Option<Py<PyAny>>,
     pub num_inputs: u32,
 }
 
 impl Layer {
     pub async fn evaluate(
         &self,
-        input: &PyObject,
-        original_input: &PyObject,
-        context: &PyObject,
+        input: &Py<PyAny>,
+        original_input: &Py<PyAny>,
+        context: &Py<PyAny>,
         default: Option<&LayerEvaluation>,
     ) -> PyResult<LayerEvaluation> {
         let context = match &self.context {
             LayerFunctionDef::Some(func) => func.call(input, original_input, context).await?,
             LayerFunctionDef::UseDefault => {
                 if let Some(default) = default {
-                    Python::with_gil(|py| default.context.clone_ref(py))
+                    Python::attach(|py| default.context.clone_ref(py))
                 } else {
                     return Err(PyErr::new::<PyValueError, _>(
                         "Context function is ignored but no default is provided",
                     ));
                 }
             }
-            LayerFunctionDef::None => Python::with_gil(|py| context.clone_ref(py)),
+            LayerFunctionDef::None => Python::attach(|py| context.clone_ref(py)),
         };
         let transform = match &self.transform {
             LayerFunctionDef::Some(func) => func.call(input, original_input, &context).await?,
             LayerFunctionDef::UseDefault => {
                 if let Some(default) = default {
-                    Python::with_gil(|py| default.transform.clone_ref(py))
+                    Python::attach(|py| default.transform.clone_ref(py))
                 } else {
                     return Err(PyErr::new::<PyValueError, _>(
                         "Transform function is ignored but no default is provided",
                     ));
                 }
             }
-            LayerFunctionDef::None => Python::with_gil(|py| input.clone_ref(py)),
+            LayerFunctionDef::None => Python::attach(|py| input.clone_ref(py)),
         };
         let metric = match &self.metric {
             LayerFunctionDef::Some(func) => {
@@ -261,7 +261,7 @@ impl Layer {
             }
             LayerFunctionDef::UseDefault => {
                 if let Some(metric) = default.as_ref().and_then(|default| default.metric.as_ref()) {
-                    let cloned = Python::with_gil(|py| metric.clone_ref(py));
+                    let cloned = Python::attach(|py| metric.clone_ref(py));
                     Some(cloned)
                 } else {
                     return Err(PyErr::new::<PyValueError, _>(
@@ -278,7 +278,7 @@ impl Layer {
             }
             LayerFunctionDef::UseDefault => {
                 if let Some(branch) = default.as_ref().and_then(|default| default.branch.as_ref()) {
-                    Python::with_gil(|py| branch.clone_ref(py)).into()
+                    Python::attach(|py| branch.clone_ref(py)).into()
                 } else {
                     return Err(PyErr::new::<PyValueError, _>(
                         "Branch function is ignored but no default is provided",
@@ -298,7 +298,7 @@ impl Layer {
 }
 
 #[derive(Clone, Debug)]
-#[pyclass]
+#[pyclass(skip_from_py_object)]
 pub struct PipelineConfig {
     pub data: PathBuf,
 }
@@ -366,7 +366,7 @@ impl EvaluationError {
 impl Evaluator {
     pub async fn evaluate(
         &self,
-        mut input: PyObject,
+        mut input: Py<PyAny>,
         defaults: Option<&EvaluationResult>,
     ) -> Result<EvaluationResult, (EvaluationResult, EvaluationError)> {
         let mut out = EvaluationResult::new();
@@ -379,7 +379,7 @@ impl Evaluator {
             }};
         }
 
-        let (original_input, mut context) = Python::with_gil(|py| {
+        let (original_input, mut context) = Python::attach(|py| {
             (
                 input.clone_ref(py),
                 PyNone::get(py).unbind().clone_ref(py).into_any(),
@@ -406,7 +406,7 @@ impl Evaluator {
             } else {
                 layer_index += 1;
             }
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 input = result.transform.clone_ref(py);
                 context = result.context.clone_ref(py);
             });
@@ -417,8 +417,8 @@ impl Evaluator {
 }
 
 pub struct Pipeline {
-    generator: PyObject,
-    aggregator: PyObject,
+    generator: Py<PyAny>,
+    aggregator: Py<PyAny>,
     layers: Vec<Layer>,
     config: PipelineConfig,
 }
@@ -429,7 +429,7 @@ impl Pipeline {
         use_case: &AqoraUseCaseConfig,
         config: PipelineConfig,
     ) -> PyResult<Self> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let generator = env.import_path(py, &use_case.generator)?.unbind();
             let aggregator = env.import_path(py, &use_case.aggregator)?.unbind();
             let layers = use_case
@@ -473,8 +473,8 @@ impl Pipeline {
         }
     }
 
-    pub fn generator(&self) -> PyResult<impl Stream<Item = PyResult<PyObject>>> {
-        let generator = Python::with_gil(|py| {
+    pub fn generator(&self) -> PyResult<impl Stream<Item = PyResult<Py<PyAny>>>> {
+        let generator = Python::attach(|py| {
             PyResult::Ok(
                 self.generator
                     .call1(py, (self.config.clone().into_pyobject(py)?,))?
@@ -501,9 +501,9 @@ impl Pipeline {
             + Send
             + Sync
             + 'static,
-    ) -> Result<Option<PyObject>, EvaluationError> {
+    ) -> Result<Option<Py<PyAny>>, EvaluationError> {
         let (errs, results) = results.boxed().split_by_map(move |result| match result {
-            Ok(result) => Python::with_gil(|py| match result.into_pyobject(py) {
+            Ok(result) => Python::attach(|py| match result.into_pyobject(py) {
                 Ok(py_object) => Either::Right(py_object.into_any().unbind()),
                 Err(err) => Either::Left(Err(EvaluationError::Python(err))),
             }),

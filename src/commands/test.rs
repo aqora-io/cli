@@ -67,6 +67,8 @@ fn last_run_items(
     })
 }
 
+pub type PipelineResult = Result<Option<Py<PyAny>>, EvaluationError>;
+
 struct RunPipelineConfig {
     use_case: AqoraUseCaseConfig,
     pipeline_config: PipelineConfig,
@@ -80,7 +82,7 @@ async fn do_run_pipeline(
     config: RunPipelineConfig,
     name: Option<String>,
     pb: ProgressBar,
-) -> Result<(u32, Result<Option<PyObject>, EvaluationError>)> {
+) -> Result<(u32, PipelineResult)> {
     let label = name
         .as_ref()
         .map(|name| format!(" for {name}"))
@@ -92,7 +94,7 @@ async fn do_run_pipeline(
         Ok(pipeline) => pipeline,
         Err(err) => {
             pb.suspend(|| {
-                Python::with_gil(|py| err.print_and_set_sys_last_vars(py));
+                Python::attach(|py| err.print_and_set_sys_last_vars(py));
             });
             pb.finish_with_message(format!("Failed to import pipeline{label}"));
             return Err(error::user(
@@ -118,12 +120,12 @@ async fn do_run_pipeline(
                             })
                             .enumerate(),
                     )
-                        as Pin<Box<dyn Stream<Item = (usize, PyResult<PyObject>)> + Send + Sync>>,
+                        as Pin<Box<dyn Stream<Item = (usize, PyResult<Py<PyAny>>)> + Send + Sync>>,
                 )
             }
             Err(error) => {
                 pb.suspend(|| {
-                    Python::with_gil(|py| error.print_and_set_sys_last_vars(py));
+                    Python::attach(|py| error.print_and_set_sys_last_vars(py));
                 });
                 pb.finish_with_message(format!("Failed to run pipeline{label}"));
                 return Err(error::user(
@@ -159,7 +161,7 @@ async fn do_run_pipeline(
 
     let aggregated = pipeline
         .aggregate(evaluate(
-            Python::with_gil(|py| pipeline.evaluator(py)),
+            Python::attach(|py| pipeline.evaluator(py)),
             generator,
             config.max_concurrency,
             Some(config.last_run_dir),
@@ -179,7 +181,7 @@ fn run_pipeline(
     config: RunPipelineConfig,
     name: Option<&str>,
     pb: &ProgressBar,
-) -> Result<(u32, Result<Option<PyObject>, EvaluationError>)> {
+) -> Result<(u32, PipelineResult)> {
     let label = name
         .as_ref()
         .map(|name| format!(" for {name}"))
@@ -188,7 +190,7 @@ fn run_pipeline(
     let run_env = env.clone();
     let run_name = name.map(|n| n.to_string());
     Ok(
-        match pyo3::Python::with_gil(move |py| {
+        match pyo3::Python::attach(move |py| {
             pyo3_async_runtimes::tokio::run(py, async move {
                 Ok(do_run_pipeline(run_env, config, run_name, run_pb).await)
             })
@@ -196,7 +198,7 @@ fn run_pipeline(
             Ok(res) => res?,
             Err(err) => {
                 pb.suspend(|| {
-                    Python::with_gil(|py| err.print_and_set_sys_last_vars(py));
+                    Python::attach(|py| err.print_and_set_sys_last_vars(py));
                 });
                 pb.finish_with_message(format!("Failed to run pipeline{label}"));
                 return Err(error::system(
@@ -362,7 +364,7 @@ pub async fn run_submission_tests(
         }
         Err(EvaluationError::Python(e)) => {
             pipeline_pb.suspend(|| {
-                Python::with_gil(|py| e.print_and_set_sys_last_vars(py));
+                Python::attach(|py| e.print_and_set_sys_last_vars(py));
             });
             pipeline_pb.finish_with_message("Failed to run pipeline");
             Err(error::user(
@@ -397,7 +399,7 @@ pub async fn run_submission_tests(
         &LastRunResult {
             info: EvaluateAllInfo {
                 score: if tests.is_empty() {
-                    Python::with_gil(|py| result.as_ref().ok().map(|res| res.clone_ref(py)))
+                    Python::attach(|py| result.as_ref().ok().map(|res| res.clone_ref(py)))
                 } else {
                     None
                 },
@@ -487,7 +489,7 @@ async fn test_use_case_test(
         }
         Err(EvaluationError::Python(e)) => {
             pb.suspend(|| {
-                Python::with_gil(|py| e.print_and_set_sys_last_vars(py));
+                Python::attach(|py| e.print_and_set_sys_last_vars(py));
             });
             pb.finish_with_message(format!("Failed to run pipeline for {name}"));
             return Err(error::user(
@@ -520,7 +522,7 @@ async fn test_use_case_test(
                     )
                 })?;
 
-            let score_json: serde_json::Value = Python::with_gil(|py| {
+            let score_json: serde_json::Value = Python::attach(|py| {
                 py.import("ujson")?
                     .getattr("dumps")?
                     .call1((&result,))?
@@ -528,7 +530,7 @@ async fn test_use_case_test(
             })
             .map_err(|e| {
                 pb.suspend(|| {
-                    Python::with_gil(|py| e.print_and_set_sys_last_vars(py));
+                    Python::attach(|py| e.print_and_set_sys_last_vars(py));
                 });
                 pb.finish_with_message(format!("Failed to evaluate {name} score"));
                 error::user(
