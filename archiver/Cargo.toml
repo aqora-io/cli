@@ -1,6 +1,7 @@
 [package]
 name = "aqora-archiver"
-version = "0.22.2"
+version.workspace = true
+license.workspace = true
 edition = "2021"
 publish = false
 

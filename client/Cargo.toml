@@ -1,6 +1,7 @@
 [package]
 name = "aqora-client"
-version = "0.22.2"
+version.workspace = true
+license.workspace = true
 edition = "2021"
 publish = false
 
