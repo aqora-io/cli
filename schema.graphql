@@ -26,6 +26,7 @@ enum Action {
 	CREATE_TAG
 	CREATE_TOPIC
 	CREATE_USE_CASE_VERSION
+	CREATE_WORKSPACE
 	DELETE_BLOG_ARTICLE
 	DELETE_COMMENT
 	DELETE_COMPETITION
@@ -43,6 +44,7 @@ enum Action {
 	DELETE_TAG
 	DELETE_TOPIC
 	DELETE_USER
+	DELETE_WORKSPACE
 	FETCH_WEBSITE_METADATA
 	JOIN_COMPETITION
 	JOIN_EVENT
@@ -1062,6 +1064,13 @@ input CreateTopicInput {
 	description: String
 }
 
+input CreateWorkspaceInput {
+	fromWorkspaceId: UUID
+	name: String!
+	slug: String!
+	private: Boolean!
+}
+
 type DOI {
 	full: String!
 	short: String
@@ -1457,6 +1466,7 @@ interface Entity {
 	points: Int!
 	rank: Int!
 	datasets(after: String, before: String, first: Int, last: Int, filters: DatasetQueryFilters): DatasetConnection!
+	workspaces(after: String, before: String, first: Int, last: Int, filters: WorkspaceConnectionFilters): WorkspaceConnection!
 }
 
 enum EntityActivitiesConnectionKind {
@@ -2178,6 +2188,9 @@ type Mutation {
 	the last part was uploaded.
 	"""
 	completeDatasetVersionFile(datasetVersionFileId: ID!, eTags: [String!]!): DatasetVersionFile!
+	createWorkspace(input: CreateWorkspaceInput!, asEntity: UsernameOrID): Workspace!
+	updateWorkspace(id: ID!, input: UpdateWorkspaceInput!): Workspace!
+	deleteWorkspace(id: ID!): ID!
 }
 
 """
@@ -2372,6 +2385,7 @@ type Organization implements Entity & Node {
 	rank: Int!
 	points: Int!
 	datasets(after: String, before: String, first: Int, last: Int, filters: DatasetQueryFilters): DatasetConnection!
+	workspaces(after: String, before: String, first: Int, last: Int, filters: WorkspaceConnectionFilters): WorkspaceConnection!
 }
 
 type OrganizationConnection {
@@ -2673,7 +2687,8 @@ type Query {
 	oauth2Authorize(input: Oauth2AuthorizeInput!): Oauth2PreGrant
 	datasets(after: String, before: String, first: Int, last: Int, filters: DatasetQueryFilters): DatasetConnection!
 	datasetBySlug(owner: String!, localSlug: String!): Dataset
-	workspaces(first: Int, after: String): WorkspaceConnection!
+	workspaces(after: String, before: String, first: Int, last: Int, filters: WorkspaceConnectionFilters): WorkspaceConnection!
+	workspaceBySlug(owner: String!, slug: String!): Workspace
 }
 
 input ResetPasswordInput {
@@ -3236,6 +3251,12 @@ input UpdateUserInput {
 	organization: String
 }
 
+input UpdateWorkspaceInput {
+	name: String
+	slug: String
+	private: Boolean
+}
+
 scalar Upload
 
 input UploadNoCodeSubmissionInput {
@@ -3297,6 +3318,7 @@ type User implements Entity & Node {
 	activities(after: String, before: String, first: Int, last: Int, kinds: [EntityActivitiesConnectionKind!]): ActivityConnection!
 	isBanned: Boolean!
 	datasets(after: String, before: String, first: Int, last: Int, filters: DatasetQueryFilters): DatasetConnection!
+	workspaces(after: String, before: String, first: Int, last: Int, filters: WorkspaceConnectionFilters): WorkspaceConnection!
 }
 
 """
@@ -3409,14 +3431,24 @@ type WebsiteMetadata {
 	description: String
 }
 
-type Workspace implements Node {
+type Workspace implements Votable & Node {
 	storage: String
+	name: String
+	slug: String
+	createdAt: DateTime!
+	votes: Int!
+	private: Boolean!
 	id: ID!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	owner: Entity!
 	datasetVersion: DatasetVersion
 	editor: WorkspaceRunner
 	viewer: WorkspaceRunner
 	runners(first: Int, after: String): WorkspaceRunnerConnection!
+	voted: EntityVote
+	voterCount: Int!
+	voters(after: String, before: String, first: Int, last: Int): VotersConnection!
+	entries: [WorkspaceEntry!]!
 }
 
 type WorkspaceConnection {
@@ -3432,6 +3464,24 @@ type WorkspaceConnection {
 	A list of nodes.
 	"""
 	nodes: [Workspace!]!
+	totalCount: Int!
+}
+
+input WorkspaceConnectionFilters {
+	search: String
+	order: WorkspaceConnectionOrder! = CREATED_AT
+}
+
+enum WorkspaceConnectionOrder {
+	CREATED_AT
+	TRENDING
+}
+
+type WorkspaceDirectory implements WorkspaceEntry {
+	name: String!
+	created: DateTime
+	modified: DateTime
+	entries: [WorkspaceEntry!]!
 }
 
 """
@@ -3446,6 +3496,20 @@ type WorkspaceEdge {
 	A cursor for use in pagination
 	"""
 	cursor: String!
+}
+
+interface WorkspaceEntry {
+	name: String!
+	created: DateTime
+	modified: DateTime
+}
+
+type WorkspaceFile implements WorkspaceEntry {
+	name: String!
+	created: DateTime
+	modified: DateTime
+	size: Int
+	downloadUrl: Url
 }
 
 type WorkspaceRunner implements Node {
@@ -3487,6 +3551,19 @@ type WorkspaceRunnerEdge {
 
 type WorkspaceRunnerStatus {
 	ready: Boolean!
+}
+
+type WorkspaceSymlink implements WorkspaceEntry {
+	name: String!
+	created: DateTime
+	modified: DateTime
+	path: String
+}
+
+type WorkspaceUnknownEntry implements WorkspaceEntry {
+	name: String!
+	created: DateTime
+	modified: DateTime
 }
 
 """
