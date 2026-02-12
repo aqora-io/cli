@@ -139,7 +139,7 @@ dependencies = [
 
 [[package]]
 name = "aqora"
-version = "0.23.0-alpha.1"
+version = "0.23.0-alpha.2"
 dependencies = [
  "aqora-archiver",
  "aqora-client",
@@ -210,7 +210,7 @@ dependencies = [
 
 [[package]]
 name = "aqora-archiver"
-version = "0.23.0-alpha.1"
+version = "0.23.0-alpha.2"
 dependencies = [
  "crc32fast",
  "flate2",
@@ -231,7 +231,7 @@ dependencies = [
 
 [[package]]
 name = "aqora-client"
-version = "0.23.0-alpha.1"
+version = "0.23.0-alpha.2"
 dependencies = [
  "async-trait",
  "aws-config",
@@ -263,7 +263,7 @@ dependencies = [
 
 [[package]]
 name = "aqora-config"
-version = "0.23.0-alpha.1"
+version = "0.23.0-alpha.2"
 dependencies = [
  "pep440_rs",
  "pep508_rs",
@@ -275,7 +275,7 @@ dependencies = [
 
 [[package]]
 name = "aqora-data-utils"
-version = "0.23.0-alpha.1"
+version = "0.23.0-alpha.2"
 dependencies = [
  "aqora-client",
  "arrow",
@@ -324,7 +324,7 @@ dependencies = [
 
 [[package]]
 name = "aqora-runner"
-version = "0.23.0-alpha.1"
+version = "0.23.0-alpha.2"
 dependencies = [
  "aqora-config",
  "clap",
@@ -341,7 +341,7 @@ dependencies = [
 
 [[package]]
 name = "aqora-template"
-version = "0.23.0-alpha.1"
+version = "0.23.0-alpha.2"
 dependencies = [
  "derive_builder",
  "handlebars",
