@@ -2,7 +2,7 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
-## v0.22.2 - 2026-03-04
+## v0.22.3 - 2026-03-04
 #### Bug Fixes
 - upgrade kubimo to 0.1.10 - (391254c) - Julian Popescu
 - dataset new command - (4cbf2b4) - Angel-Dijoux
