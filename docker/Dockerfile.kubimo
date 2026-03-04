@@ -1,4 +1,4 @@
-ARG KUBIMO_MARIMO_IMAGE=ghcr.io/aqora-io/kubimo-marimo:0.1.10
+ARG KUBIMO_MARIMO_IMAGE=ghcr.io/aqora-io/kubimo-marimo:0.1.11
 
 FROM ${KUBIMO_MARIMO_IMAGE} AS build
 
@@ -24,4 +24,6 @@ FROM ${KUBIMO_MARIMO_IMAGE}
 COPY --chown=1000:1000 ./docker/kubimo/marimo /home/me/.config/marimo
 COPY --from=build /bin/aqora /bin/aqora
 COPY --chown=1000:1000 --from=build /workspace/* .
-RUN uv venv && uv sync
+RUN uv venv && uv sync \
+  && rm -rf /home/me/.cache \
+  && rm -rf /home/me/.rustup
