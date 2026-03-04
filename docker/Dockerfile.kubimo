@@ -24,4 +24,6 @@ FROM ${KUBIMO_MARIMO_IMAGE}
 COPY --chown=1000:1000 ./docker/kubimo/marimo /home/me/.config/marimo
 COPY --from=build /bin/aqora /bin/aqora
 COPY --chown=1000:1000 --from=build /workspace/* .
+
+ENV XDG_CACHE_HOME=/tmp
 RUN uv venv && uv sync
