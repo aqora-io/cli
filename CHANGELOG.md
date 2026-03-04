@@ -2,6 +2,20 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.22.2 - 2026-03-04
+#### Bug Fixes
+- upgrade kubimo to 0.1.10 - (391254c) - Julian Popescu
+- dataset new command - (4cbf2b4) - Angel-Dijoux
+#### Continuous Integration
+- update pyo3 to 0.28 - (85e3754) - Julian Popescu
+#### Miscellaneous Chores
+- **(version)** v0.22.2 - (e5503cb) - Angel-Dijoux
+- **(version)** v0.22.2 - (607f43c) - Angel-Dijoux
+#### Revert
+- "chore(version): v0.22.2" - (85016f6) - Angel-Dijoux
+
+- - -
+
 ## v0.22.2 - 2026-02-10
 #### Bug Fixes
 - dataset new command - (4cbf2b4) - Angel-Dijoux
