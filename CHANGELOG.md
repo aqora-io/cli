@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.22.5 - 2026-03-05
+#### Bug Fixes
+- build abi3 for manylinux by using 3.10 - (6fda6aa) - Julian Popescu
+
+- - -
+
 ## v0.22.4 - 2026-03-05
 #### Bug Fixes
 - update marimo and remove any cache - (a996043) - Julian Popescu
