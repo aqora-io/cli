@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.22.4 - 2026-03-05
+#### Bug Fixes
+- update marimo and remove any cache - (a996043) - Julian Popescu
+
+- - -
+
 ## v0.22.3 - 2026-03-04
 #### Bug Fixes
 - upgrade kubimo to 0.1.10 - (391254c) - Julian Popescu
