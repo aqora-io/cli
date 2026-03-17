@@ -21,6 +21,11 @@
   display: none;
 }
 
+/* hide back to gallery button */
+a[aria-label="Back to gallery"] {
+  display: none;
+}
+
 /* Soften the cell shadow */
 .marimo-cell {
   box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
