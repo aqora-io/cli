@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.23.0 - 2026-03-23
+#### Features
+- upgrade marimo - (419f208) - Julian Popescu
+#### Miscellaneous Chores
+- use workspace version and license - (92adf35) - Julian Popescu
+
+- - -
+
 ## v0.22.5 - 2026-03-05
 #### Bug Fixes
 - build abi3 for manylinux by using 3.10 - (6fda6aa) - Julian Popescu
