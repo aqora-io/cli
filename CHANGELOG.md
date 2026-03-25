@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.24.0 - 2026-03-25
+#### Features
+- notebook download - (3cafab3) - Julian Popescu
+
+- - -
+
 ## v0.23.1 - 2026-03-25
 #### Bug Fixes
 - update kubimo image version - (64d0db9) - Julian Popescu
