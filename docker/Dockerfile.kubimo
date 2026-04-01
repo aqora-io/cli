@@ -1,29 +1,8 @@
 ARG KUBIMO_MARIMO_IMAGE=ghcr.io/aqora-io/kubimo-marimo:0.1.14
-
-FROM ${KUBIMO_MARIMO_IMAGE} AS build
-
-USER 0
-RUN curl https://sh.rustup.rs -sSf | bash -s -- -y --no-update-default-toolchain
-ENV PATH="/root/.cargo/bin:${PATH}"
-
-WORKDIR /build
-COPY rust-toolchain .
-RUN rustc --version
-COPY . .
-RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
-  --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
-  --mount=type=cache,target=target,sharing=locked \
-  cargo build --release \
-  && cp target/release/aqora /bin/aqora
-
-WORKDIR /workspace
-RUN aqora new dataset-marimo -s user/workspace -v 0.0.0 . && rm readme.py
-
 FROM ${KUBIMO_MARIMO_IMAGE}
 
-COPY --chown=1000:1000 ./docker/kubimo/marimo /home/me/.config/marimo
-COPY --from=build /bin/aqora /bin/aqora
-COPY --chown=1000:1000 --from=build /workspace/* .
-RUN uv venv && uv sync \
-  && rm -rf /home/me/.cache \
-  && rm -rf /home/me/.rustup
+USER root
+RUN uv pip install --system 'aqora-cli[pyarrow]>=0.24.0'
+
+USER me
+COPY --chown=me ./docker/kubimo/marimo /home/me/.config/marimo
