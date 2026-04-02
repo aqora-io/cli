@@ -6,7 +6,7 @@ build-backend = "maturin"
 name = "aqora-cli"
 description = "The aqora command line interface"
 authors = [{ name = "S.A.S Aqora Quantum", email = "hello@aqora.io" }]
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dynamic = ["version"]
 # keywords = []
 # classifiers = []
@@ -29,6 +29,7 @@ venv = [
 
 fsspec = ["fsspec>=2025.3.0"]
 pyarrow = ["fsspec>=2025.3.0", "pyarrow>=17.0.0"]
+qiskit = ["qio>=0.2.2", "qiskit>=2.3.1"]
 
 [project.urls]
 Repository = "https://github.com/aqora-io/cli"
