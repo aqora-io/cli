@@ -2099,7 +2099,7 @@ type Mutation {
 	deleteProjectVersionApproval(projectVersionApprovalId: ID!): ID!
 	uploadProviderModelPayload: UploadProviderModelPayload!
 	createProviderModel(providerModelUploadId: UUID!, etag: String!, provider: String!): ProviderModel!
-	createProviderJob(providerModelId: UUID!, provider: String!, platformId: String!): ProviderJob!
+	createProviderJob(providerModelId: UUID!, provider: String!, platformId: String!, shots: Int): ProviderJob!
 	fetchWebsiteMetadata(url: Url!): WebsiteMetadata!
 	generateEventInviteCode(id: ID!): EventPublicInvite!
 	removeEventInviteCode(id: ID!): EventPublicInvite!
@@ -2670,6 +2670,7 @@ type ProviderJob implements Node {
 	resultCount: Int
 	createdAt: DateTime!
 	resultUploadAttempts: Int!
+	results(after: String, before: String, first: Int, last: Int): ProviderJobResultConnection!
 }
 
 type ProviderJobConnection {
@@ -2704,6 +2705,42 @@ type ProviderJobEdge {
 type ProviderJobPricing {
 	perCircuit: ProviderMoney!
 	perShot: ProviderMoney!
+}
+
+type ProviderJobResult {
+	id: UUID!
+	index: Int!
+	error: String
+	result: Url
+}
+
+type ProviderJobResultConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [ProviderJobResultEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [ProviderJobResult!]!
+}
+
+"""
+An edge in a connection.
+"""
+type ProviderJobResultEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: ProviderJobResult!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 enum ProviderJobStatus {
