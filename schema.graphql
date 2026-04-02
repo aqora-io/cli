@@ -1446,6 +1446,7 @@ interface Entity {
 	rank: Int!
 	datasets(after: String, before: String, first: Int, last: Int, filters: DatasetQueryFilters): DatasetConnection!
 	workspaces(after: String, before: String, first: Int, last: Int, filters: WorkspaceConnectionFilters): WorkspaceConnection!
+	providerJobs(after: String, before: String, first: Int, last: Int): ProviderJobConnection!
 }
 
 enum EntityActivitiesConnectionKind {
@@ -2096,6 +2097,9 @@ type Mutation {
 	createProjectVersionApproval(projectVersionId: ID!, input: ProjectVersionApprovalInput!): ProjectVersionApprovalEdge!
 	updateProjectVersionApproval(projectVersionApprovalId: ID!, input: ProjectVersionApprovalInput!): ProjectVersionApprovalEdge!
 	deleteProjectVersionApproval(projectVersionApprovalId: ID!): ID!
+	uploadProviderModelPayload: UploadProviderModelPayload!
+	createProviderModel(providerModelUploadId: UUID!, etag: String!, provider: String!): ProviderModel!
+	createProviderJob(providerModelId: UUID!, provider: String!, platformId: String!): ProviderJob!
 	fetchWebsiteMetadata(url: Url!): WebsiteMetadata!
 	generateEventInviteCode(id: ID!): EventPublicInvite!
 	removeEventInviteCode(id: ID!): EventPublicInvite!
@@ -2369,6 +2373,7 @@ type Organization implements Entity & Node {
 	points: Int!
 	datasets(after: String, before: String, first: Int, last: Int, filters: DatasetQueryFilters): DatasetConnection!
 	workspaces(after: String, before: String, first: Int, last: Int, filters: WorkspaceConnectionFilters): WorkspaceConnection!
+	providerJobs(after: String, before: String, first: Int, last: Int): ProviderJobConnection!
 }
 
 type OrganizationConnection {
@@ -2649,6 +2654,109 @@ enum ProjectVersionStatus {
 	OK
 }
 
+enum ProviderCurrency {
+	EURO
+	DOLLAR
+}
+
+type ProviderJob implements Node {
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	providerModelId: UUID!
+	provider: String!
+	status: ProviderJobStatus
+	error: String
+	duration: Int
+	resultCount: Int
+	createdAt: DateTime!
+	resultUploadAttempts: Int!
+}
+
+type ProviderJobConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [ProviderJobEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [ProviderJob!]!
+}
+
+"""
+An edge in a connection.
+"""
+type ProviderJobEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: ProviderJob!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+type ProviderJobPricing {
+	perCircuit: ProviderMoney!
+	perShot: ProviderMoney!
+}
+
+enum ProviderJobStatus {
+	WAITING
+	RUNNING
+	COMPLETED
+	CANCELLING
+	CANCELLED
+}
+
+type ProviderModel {
+	id: UUID!
+	providerModelUploadId: UUID!
+	provider: String!
+	createdAt: DateTime!
+}
+
+type ProviderMoney {
+	units: Int!
+	nanos: Int!
+	currency: ProviderCurrency!
+}
+
+type ProviderPlatform {
+	provider: String!
+	name: String!
+	id: String!
+	vendor: String
+	backend: String
+	maxQubits: Int
+	maxShots: Int
+	maxCircuits: Int
+	technology: ProviderPlatformTechnology
+	isQpu: Boolean
+	status: ProviderPlatformStatus
+	pricePerHour: ProviderMoney
+	jobPricing: ProviderJobPricing
+}
+
+enum ProviderPlatformStatus {
+	AVAILABLE
+	SHORTAGE
+	SCARCE
+	MAINTENANCE
+}
+
+enum ProviderPlatformTechnology {
+	PHOTONIC
+	TRAPPED_ION
+	SUPERCONDUCTING
+	NEUTRAL_ATOM
+}
+
 type Query {
 	node(id: ID!): Node!
 	competitions(after: String, before: String, first: Int, last: Int, search: String): CompetitionConnection!
@@ -2670,6 +2778,7 @@ type Query {
 	oauth2Authorize(input: Oauth2AuthorizeInput!): Oauth2PreGrant
 	datasets(after: String, before: String, first: Int, last: Int, filters: DatasetQueryFilters): DatasetConnection!
 	datasetBySlug(owner: String!, localSlug: String!): Dataset
+	listProviderPlatforms: [ProviderPlatform!]!
 	workspaces(after: String, before: String, first: Int, last: Int, filters: WorkspaceConnectionFilters): WorkspaceConnection!
 	workspaceBySlug(owner: String!, slug: String!): Workspace
 }
@@ -3269,6 +3378,11 @@ input UploadNoCodeSubmissionInput {
 	files: [Upload!]!
 }
 
+type UploadProviderModelPayload {
+	providerModelUploadId: UUID!
+	uploadUrl: Url!
+}
+
 """
 URL is a String implementing the [URL Standard](http://url.spec.whatwg.org/)
 """
@@ -3325,6 +3439,7 @@ type User implements Entity & Node {
 	isBanned: Boolean!
 	datasets(after: String, before: String, first: Int, last: Int, filters: DatasetQueryFilters): DatasetConnection!
 	workspaces(after: String, before: String, first: Int, last: Int, filters: WorkspaceConnectionFilters): WorkspaceConnection!
+	providerJobs(after: String, before: String, first: Int, last: Int): ProviderJobConnection!
 }
 
 """
