@@ -152,10 +152,22 @@ impl Client {
     }
 
     pub async fn s3_put(&self, url: Url, body: impl Into<Body>) -> Result<S3PutResponse> {
+        self.s3_put_with_content_type(url, body, None).await
+    }
+
+    pub async fn s3_put_with_content_type(
+        &self,
+        url: Url,
+        body: impl Into<Body>,
+        content_type: Option<&str>,
+    ) -> Result<S3PutResponse> {
         self.validate_host(&url)?;
         let mut request = http::Request::builder()
             .method(http::Method::PUT)
             .uri(url.to_string());
+        if let Some(content_type) = content_type {
+            request = request.header(reqwest::header::CONTENT_TYPE, content_type);
+        }
         let body = body.into();
         if let Some(content_length) = body.content_length() {
             request.headers_mut().map(|headers| {

@@ -24,7 +24,7 @@ def is_rosetta_translated():
 
 def get_python_clib():
     system = platform.system()
-    for major, minor in [(3, 12), (3, 11), (3, 10), (3, 9), (3, 8)]:
+    for major, minor in [(3, 12), (3, 11), (3, 10)]:
         if system == "Windows":
             name = f"python{major}{minor}"
         else:
@@ -46,7 +46,7 @@ def get_release_asset_name():
     py_version = get_python_clib()
     if py_version is None:
         raise Exception(
-            "Python bindings not found. Make sure Python >= 3.8 shared library is installed."
+            "Python bindings not found. Make sure a Python 3.10-3.12 shared library is installed."
         )
     py_version = f"py{py_version[0]}_{py_version[1]}"
 
