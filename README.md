@@ -1,7 +1,7 @@
 # Installation
 
 To install the CLI, we recommend using [uv](https://docs.astral.sh/uv/). Note
-that the CLI requires Python 3.9 or greater.
+that the CLI requires Python 3.10 or greater.
 
 If you don't already have `uv`, follow the [installation
 instructions](https://docs.astral.sh/uv/getting-started/installation/). Then

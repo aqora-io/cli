@@ -7,7 +7,7 @@ use serde::Serialize;
 use crate::registry::REGISTRY;
 use crate::utils::{assert_no_control_chars, assert_semver, assert_slug};
 
-const DEFAULT_PYTHON_VERSION: &str = "3.8";
+const DEFAULT_PYTHON_VERSION: &str = "3.10";
 const DEFAULT_CLI_VERSION_STR: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Builder, Serialize, Debug)]
