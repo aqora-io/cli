@@ -27,6 +27,7 @@ enum Action {
 	CREATE_TOPIC
 	CREATE_USE_CASE_VERSION
 	CREATE_WORKSPACE
+	CREATE_WORKSPACE_VERSION
 	DELETE_BLOG_ARTICLE
 	DELETE_COMMENT
 	DELETE_COMPETITION
@@ -45,6 +46,7 @@ enum Action {
 	DELETE_TOPIC
 	DELETE_USER
 	DELETE_WORKSPACE
+	DELETE_WORKSPACE_VERSION
 	FETCH_WEBSITE_METADATA
 	JOIN_COMPETITION
 	JOIN_EVENT
@@ -84,6 +86,7 @@ enum Action {
 	READ_USER_NOTIFICATIONS
 	READ_USER_PERMISSIONS
 	READ_WORKSPACE
+	READ_WORKSPACE_VERSION
 	REEVALUATE_COMPETITION
 	REMOVE_COMPETITION_JURY
 	REMOVE_COMPETITION_MEMBER
@@ -161,6 +164,7 @@ enum ActivityKind {
 	ALL
 	COMPETITION
 	DATASET
+	WORKSPACE
 }
 
 enum ActivityVisibility {
@@ -392,6 +396,22 @@ enum Badge {
 	Hack The Horizon – Participation Badge
 	"""
 	HTH_PARTICIPATION
+	"""
+	Q-volution Hackathon 2026 -- Energy Grid Optiminization
+	"""
+	QVOLUTION_26_ENERGY
+	"""
+	Q-volution Hackathon 2026 -- Solving Linear Differential Equations
+	"""
+	QVOLUTION_26_LINEAR_DIFF
+	"""
+	Q-volution Hackathon 2026 -- Quantum for Good
+	"""
+	QVOLUTION_26_QUANTUM_FOR_GOOD
+	"""
+	Q-volution Hackathon 2026 -- Option Pricing in Finance
+	"""
+	QVOLUTION_26_FINANCE
 	UNKNOWN
 }
 
@@ -410,6 +430,7 @@ type BlogArticle implements Node {
 	seoDescription: String
 	imageAlt: String
 	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	image: Url
 	authors(after: String, before: String, first: Int, last: Int): BlogArticleAuthorConnection!
 	topic: Topic!
@@ -417,7 +438,6 @@ type BlogArticle implements Node {
 	slugLower: String!
 	content: String
 	createdAt: DateTime!
-	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 }
 
 type BlogArticleAuthorConnection {
@@ -483,6 +503,7 @@ type Comment implements Votable & Node {
 	createdAt: DateTime!
 	edited: Boolean!
 	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	content: String!
 	author: User!
 	topic: Topic!
@@ -492,7 +513,6 @@ type Comment implements Votable & Node {
 	voterCount: Int!
 	voters(after: String, before: String, first: Int, last: Int): VotersConnection!
 	children(after: String, before: String, first: Int, last: Int, order: VotableOrder): CommentConnection!
-	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 }
 
 type CommentConnection {
@@ -525,7 +545,7 @@ type CommentEdge {
 	cursor: String!
 }
 
-type Competition implements ForumOwner & Subscribable & Node {
+type Competition implements ForumOwner & Subscribable & Node & Taggable {
 	slug: String!
 	title: String!
 	shortDescription: String!
@@ -557,7 +577,7 @@ type Competition implements ForumOwner & Subscribable & Node {
 	timeline: Timeline
 	membership(entity: UsernameOrID): CompetitionMembership
 	members(after: String, before: String, first: Int, last: Int, search: String): CompetitionMembershipConnection!
-	tags(after: String, before: String, first: Int, last: Int): CompetitionTagConnection!
+	tags(after: String, before: String, first: Int, last: Int): TaggableConnection!
 	entitySubscription(entity: UsernameOrID): SubjectSubscription
 	jury(after: String, before: String, first: Int, last: Int): CompetitionJuryConnection!
 	datasets(after: String, before: String, first: Int, last: Int): CompetitionDatasetConnection!
@@ -842,21 +862,6 @@ type CompetitionSubscription implements SubjectSubscription & Node {
 	subject: Subscribable!
 }
 
-type CompetitionTagConnection {
-	"""
-	Information to aid in pagination.
-	"""
-	pageInfo: PageInfo!
-	"""
-	A list of edges.
-	"""
-	edges: [TagEdge!]!
-	"""
-	A list of nodes.
-	"""
-	nodes: [Tag!]!
-}
-
 type CompetitionTeamRequest implements Node {
 	skills: String!
 	needs: String!
@@ -1067,8 +1072,12 @@ input CreateTopicInput {
 input CreateWorkspaceInput {
 	fromWorkspaceId: UUID
 	name: String!
-	slug: String!
 	private: Boolean!
+	shortDescription: String
+}
+
+input CreateWorkspaceVersionInput {
+	version: Semver!
 }
 
 type DOI {
@@ -1077,7 +1086,7 @@ type DOI {
 	url: Url!
 }
 
-type Dataset implements Votable & ForumOwner & Node {
+type Dataset implements Votable & ForumOwner & Node & Taggable {
 	localSlug: String!
 	name: String!
 	private: Boolean!
@@ -1096,7 +1105,7 @@ type Dataset implements Votable & ForumOwner & Node {
 	version(major: Int!, minor: Int!, patch: Int!): DatasetVersion
 	versions(after: String, before: String, first: Int, last: Int, filters: DatasetVersionQueryFilters): DatasetVersionConnection!
 	competitions(after: String, before: String, first: Int, last: Int, search: String): DatasetCompetitionConnection!
-	tags(after: String, before: String, first: Int, last: Int): DatasetTagConnection!
+	tags(after: String, before: String, first: Int, last: Int): TaggableConnection!
 	voted: EntityVote
 	voterCount: Int!
 	voters(after: String, before: String, first: Int, last: Int): VotersConnection!
@@ -1228,36 +1237,6 @@ input DatasetQueryFilters {
 type DatasetSize {
 	low: Int!
 	high: Int!
-}
-
-type DatasetTagConnection {
-	"""
-	Information to aid in pagination.
-	"""
-	pageInfo: PageInfo!
-	"""
-	A list of edges.
-	"""
-	edges: [DatasetTagConnectionEdge!]!
-	"""
-	A list of nodes.
-	"""
-	nodes: [Tag!]!
-	totalCount: Int!
-}
-
-"""
-An edge in a connection.
-"""
-type DatasetTagConnectionEdge {
-	"""
-	The item at the end of the edge
-	"""
-	node: Tag!
-	"""
-	A cursor for use in pagination
-	"""
-	cursor: String!
 }
 
 type DatasetVersion implements Node {
@@ -1920,10 +1899,10 @@ type Forum implements ForumOwner & Subscribable & Node {
 	orderingPriority: Int!
 	createdAt: DateTime!
 	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	description: String
 	owner: ForumOwner!
 	forum: Forum!
-	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	icon: Url
 	topics(after: String, before: String, first: Int, last: Int, order: VotableOrder): TopicConnection!
 	entitySubscription(entity: UsernameOrID): SubjectSubscription
@@ -1972,6 +1951,7 @@ enum ForumOwnerKind {
 	COMPETITION
 	EVENT
 	DATASET
+	WORKSPACE
 }
 
 type ForumSubscription implements SubjectSubscription & Node {
@@ -2188,9 +2168,12 @@ type Mutation {
 	the last part was uploaded.
 	"""
 	completeDatasetVersionFile(datasetVersionFileId: ID!, eTags: [String!]!): DatasetVersionFile!
+	deleteWorkspaceRunners(workspaceId: ID!): ID!
 	createWorkspace(input: CreateWorkspaceInput!, asEntity: UsernameOrID): Workspace!
 	updateWorkspace(id: ID!, input: UpdateWorkspaceInput!): Workspace!
 	deleteWorkspace(id: ID!): ID!
+	createWorkspaceVersion(id: ID!, input: CreateWorkspaceVersionInput!): WorkspaceVersion!
+	deleteWorkspaceVersion(id: ID!): ID!
 }
 
 """
@@ -2917,6 +2900,27 @@ input TagQueryFilters {
 	activityKind: ActivityKind = null
 }
 
+interface Taggable {
+	id: ID!
+	tags(before: String, after: String, first: Int, last: Int): TaggableConnection!
+}
+
+type TaggableConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [TagEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Tag!]!
+	totalCount: Int!
+}
+
 scalar TimeZone
 
 type Timeline {
@@ -2975,8 +2979,8 @@ type Topic implements Votable & Subscribable & Node {
 	votes: Int!
 	createdAt: DateTime!
 	id: ID!
-	description: String
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	description: String
 	author: Entity!
 	forum: Forum!
 	commentCount: Int!
@@ -3253,8 +3257,10 @@ input UpdateUserInput {
 
 input UpdateWorkspaceInput {
 	name: String
-	slug: String
 	private: Boolean
+	tags: [String!]
+	shortDescription: String
+	license: String
 }
 
 scalar Upload
@@ -3431,13 +3437,15 @@ type WebsiteMetadata {
 	description: String
 }
 
-type Workspace implements Votable & Node {
+type Workspace implements Votable & ForumOwner & Node & Taggable {
 	storage: String
 	name: String
-	slug: String
+	localSlug: String
 	createdAt: DateTime!
 	votes: Int!
 	private: Boolean!
+	shortDescription: String
+	license: String
 	id: ID!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	owner: Entity!
@@ -3445,10 +3453,17 @@ type Workspace implements Votable & Node {
 	editor: WorkspaceRunner
 	viewer: WorkspaceRunner
 	runners(first: Int, after: String): WorkspaceRunnerConnection!
+	forum: Forum!
+	forumOwnerKind: ForumOwnerKind!
+	slug: String!
 	voted: EntityVote
 	voterCount: Int!
 	voters(after: String, before: String, first: Int, last: Int): VotersConnection!
-	entries: [WorkspaceEntry!]!
+	tags(after: String, before: String, first: Int, last: Int): TaggableConnection!
+	entries: [WorkspaceEntry!]
+	versions(after: String, before: String, first: Int, last: Int): WorkspaceVersionConnection!
+	version(version: Semver!): WorkspaceVersion
+	latestVersion: WorkspaceVersion
 }
 
 type WorkspaceConnection {
@@ -3469,6 +3484,7 @@ type WorkspaceConnection {
 
 input WorkspaceConnectionFilters {
 	search: String
+	tags: [String!]
 	order: WorkspaceConnectionOrder! = CREATED_AT
 }
 
@@ -3550,7 +3566,8 @@ type WorkspaceRunnerEdge {
 }
 
 type WorkspaceRunnerStatus {
-	ready: Boolean!
+	podReady: Boolean!
+	runner: WorkspaceRunner!
 }
 
 type WorkspaceSymlink implements WorkspaceEntry {
@@ -3564,6 +3581,46 @@ type WorkspaceUnknownEntry implements WorkspaceEntry {
 	name: String!
 	created: DateTime
 	modified: DateTime
+}
+
+type WorkspaceVersion implements Node {
+	version: Semver!
+	latest: Boolean!
+	createdAt: DateTime!
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	workspace: Workspace!
+	entity: Entity!
+	viewer: WorkspaceRunner
+}
+
+type WorkspaceVersionConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [WorkspaceVersionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [WorkspaceVersion!]!
+}
+
+"""
+An edge in a connection.
+"""
+type WorkspaceVersionEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: WorkspaceVersion!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 """

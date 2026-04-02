@@ -34,6 +34,7 @@ pub async fn download_workspace_notebook(
 
     let download_url = workspace
         .entries
+        .unwrap_or_default()
         .into_iter()
         .find_map(|entry| match entry {
             get_workspace_notebook_download_url::GetWorkspaceNotebookDownloadUrlWorkspaceBySlugEntries::WorkspaceFile(
