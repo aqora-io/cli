@@ -23,7 +23,7 @@ name = "aqora"
 
 [features]
 default = []
-extension-module = ["pyo3/extension-module", "pyo3/abi3-py38", "pyo3/abi3"]
+extension-module = ["pyo3/extension-module", "pyo3/abi3-py310", "pyo3/abi3"]
 
 [dependencies]
 aqora-client = { path = "client" }

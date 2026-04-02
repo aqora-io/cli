@@ -202,6 +202,32 @@ impl PyClient {
         })
     }
 
+    #[pyo3(signature = (url, body, *, content_type=None))]
+    fn s3_put<'py>(
+        &self,
+        py: Python<'py>,
+        url: &str,
+        body: Vec<u8>,
+        content_type: Option<String>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let url = url
+            .parse::<Url>()
+            .map_err(|error| PyValueError::new_err(error.to_string()))?;
+        let inner = Arc::clone(&self.inner);
+        future_into_py(py, async move {
+            let inner = inner.read().await;
+            let response = inner
+                .client
+                .s3_put_with_content_type(url, body, content_type.as_deref())
+                .await
+                .map_err(|error| ClientError::new_err(error.to_string()))?;
+            Python::attach(|py| {
+                let etag = PyString::new(py, &response.etag);
+                Ok(etag.unbind())
+            })
+        })
+    }
+
     #[pyo3(signature = (owner, slug, dest_dir, notebook=None, force=false))]
     fn _download_workspace_notebook<'py>(
         &self,
