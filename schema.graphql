@@ -2116,8 +2116,8 @@ type Mutation {
 	updateProjectVersionApproval(projectVersionApprovalId: ID!, input: ProjectVersionApprovalInput!): ProjectVersionApprovalEdge!
 	deleteProjectVersionApproval(projectVersionApprovalId: ID!): ID!
 	uploadProviderModelPayload: UploadProviderModelPayload!
-	createProviderModel(providerModelUploadId: UUID!, etag: String!, provider: String!): ProviderModel!
-	createProviderJob(providerModelId: UUID!, provider: String!, shots: Int): ProviderJob!
+	createProviderModel(providerModelUploadId: UUID!, etag: String!): ProviderModel!
+	createProviderJob(providerModelId: UUID!, shots: Int): ProviderJob!
 	fetchWebsiteMetadata(url: Url!): WebsiteMetadata!
 	generateEventInviteCode(id: ID!): EventPublicInvite!
 	removeEventInviteCode(id: ID!): EventPublicInvite!
@@ -2765,8 +2765,6 @@ enum ProviderJobStatus {
 
 type ProviderModel {
 	id: UUID!
-	providerModelUploadId: UUID!
-	provider: String!
 	createdAt: DateTime!
 }
 
