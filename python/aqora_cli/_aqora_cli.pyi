@@ -25,5 +25,10 @@ class Client:
         self, url: str, *, range: tuple[int | None, int | None] | None = None
     ) -> bytes: ...
     async def _download_workspace_notebook(
-        self, owner: str, slug: str, dest: str | Path
-    ) -> None: ...
+        self,
+        owner: str,
+        slug: str,
+        dest_dir: str | Path,
+        notebook: str | None = None,
+        force: bool = False,
+    ) -> str: ...
