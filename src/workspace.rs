@@ -16,8 +16,10 @@ pub async fn download_workspace_notebook(
     client: aqora_client::Client,
     owner: String,
     slug: String,
-    dest: impl AsRef<Path>,
-) -> Result<()> {
+    dest_dir: impl AsRef<Path>,
+    notebook: Option<String>,
+    force: bool,
+) -> Result<String> {
     let workspace = client
         .send::<GetWorkspaceNotebookDownloadUrl>(get_workspace_notebook_download_url::Variables {
             owner: owner.clone(),
@@ -32,6 +34,21 @@ pub async fn download_workspace_notebook(
             )
         })?;
 
+    let notebook_name = notebook.or(workspace.default_notebook).ok_or_else(|| {
+        error::user(
+            &format!(
+                "No notebook specified and workspace '{owner}/{slug}' has no default notebook"
+            ),
+            "Please provide a filename or set a default notebook on the workspace",
+        )
+    })?;
+
+    let dest = dest_dir.as_ref().join(&notebook_name);
+
+    if !force && dest.exists() {
+        return Ok(notebook_name);
+    }
+
     let download_url = workspace
         .entries
         .unwrap_or_default()
@@ -39,44 +56,56 @@ pub async fn download_workspace_notebook(
         .find_map(|entry| match entry {
             get_workspace_notebook_download_url::GetWorkspaceNotebookDownloadUrlWorkspaceBySlugEntries::WorkspaceFile(
                 file,
-            ) if file.name == "readme.py" => file.download_url,
+            ) if file.name == notebook_name => file.download_url,
             _ => None,
         })
         .ok_or_else(|| {
             error::user(
-                &format!("File 'readme.py' not found in workspace '{owner}/{slug}'"),
-                "Please make sure the workspace contains a readme.py entry",
+                &format!("File '{notebook_name}' not found in workspace '{owner}/{slug}'"),
+                "Please make sure the workspace contains this file",
             )
         })?;
 
-    let dest = dest.as_ref();
-    if let Some(parent) = dest.parent().filter(|p| !p.as_os_str().is_empty()) {
-        tokio::fs::create_dir_all(parent).await.map_err(|e| {
-            error::user(
-                &format!(
-                    "Failed to create destination directory '{}': {e}",
-                    parent.display()
-                ),
-                "Please check your write permissions for the destination path",
-            )
-        })?;
-    }
-
-    let response = client.s3_get(download_url).await?;
-    let file = tokio::fs::File::create(dest).await.map_err(|e| {
+    let dest_dir = dest_dir.as_ref();
+    tokio::fs::create_dir_all(dest_dir).await.map_err(|e| {
         error::user(
             &format!(
-                "Failed to create destination file '{}': {e}",
-                dest.display()
+                "Failed to create destination directory '{}': {e}",
+                dest_dir.display()
             ),
             "Please check your write permissions for the destination path",
         )
     })?;
 
+    let temp = tempfile::NamedTempFile::new_in(dest_dir).map_err(|e| {
+        error::user(
+            &format!(
+                "Failed to create temporary file in '{}': {e}",
+                dest_dir.display()
+            ),
+            "Please check your write permissions for the destination path",
+        )
+    })?;
+    let temp_path = temp.path().to_owned();
+
+    let response = client.s3_get(download_url).await?;
+    let file = tokio::fs::File::from_std(temp.into_file());
+
     let mut reader = response.body.into_async_read();
     let mut writer = tokio::io::BufWriter::new(file);
-    tokio::io::copy_buf(&mut reader, &mut writer).await?;
-    writer.flush().await?;
-
-    Ok(())
+    match async {
+        tokio::io::copy_buf(&mut reader, &mut writer).await?;
+        writer.flush().await
+    }
+    .await
+    {
+        Ok(()) => {
+            tokio::fs::rename(&temp_path, &dest).await?;
+            Ok(notebook_name)
+        }
+        Err(e) => {
+            let _ = tokio::fs::remove_file(&temp_path).await;
+            Err(e.into())
+        }
+    }
 }

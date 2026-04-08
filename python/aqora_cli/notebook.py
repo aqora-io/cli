@@ -47,10 +47,11 @@ def _notebook_cache_dir() -> Path:
     raise PermissionError("Could not find a writable site-packages cache directory")
 
 
-def _module_name(owner: str, slug: str) -> str:
+def _module_name(owner: str, slug: str, filename: str) -> str:
     safe_owner = "".join(c if c.isalnum() or c == "_" else "_" for c in owner)
     safe_slug = "".join(c if c.isalnum() or c == "_" else "_" for c in slug)
-    return f"aqora_cli_workspace_{safe_owner}_{safe_slug}"
+    safe_file = "".join(c if c.isalnum() or c == "_" else "_" for c in Path(filename).stem)
+    return f"aqora_cli_workspace_{safe_owner}_{safe_slug}_{safe_file}"
 
 
 def _path_part(value: str) -> str:
@@ -61,22 +62,34 @@ def _path_part(value: str) -> str:
 async def _notebook_async(
     workspace: str,
     *,
+    filename: str | None = None,
     aqora_url: str | None = None,
     aqora_auth: bool = True,
     force_download: bool = False,
 ) -> ModuleType:
     owner, slug = _parse_workspace_slug(workspace)
-    notebook_path = _notebook_cache_dir() / _path_part(owner) / _path_part(slug) / "readme.py"
-    if force_download or not notebook_path.exists():
-        client = Client(aqora_url)
-        if aqora_auth and not client.authenticated:
-            await client.authenticate()
-        await client._download_workspace_notebook(owner, slug, str(notebook_path))
+    dest_dir = _notebook_cache_dir() / _path_part(owner) / _path_part(slug)
 
-    module_name = _module_name(owner, slug)
-    spec = importlib.util.spec_from_file_location(module_name, notebook_path)
+    if filename and not force_download:
+        notebook_path = dest_dir / filename
+        if notebook_path.exists():
+            return _load_module(owner, slug, filename, notebook_path)
+
+    client = Client(aqora_url)
+    if aqora_auth and not client.authenticated:
+        await client.authenticate()
+    actual_filename = await client._download_workspace_notebook(
+        owner, slug, str(dest_dir), filename, force_download
+    )
+    notebook_path = dest_dir / actual_filename
+    return _load_module(owner, slug, actual_filename, notebook_path)
+
+
+def _load_module(owner: str, slug: str, filename: str, path: Path) -> ModuleType:
+    module_name = _module_name(owner, slug, filename)
+    spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
-        raise ImportError(f"Could not create module spec for '{notebook_path}'")
+        raise ImportError(f"Could not create module spec for '{path}'")
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
@@ -86,12 +99,14 @@ async def _notebook_async(
 def notebook(
     workspace: str,
     *,
+    filename: str | None = None,
     aqora_url: str | None = None,
     aqora_auth: bool = True,
     force_download: bool = False,
 ) -> ModuleType | Coroutine[Any, Any, ModuleType]:
     coro = _notebook_async(
         workspace,
+        filename=filename,
         aqora_url=aqora_url,
         aqora_auth=aqora_auth,
         force_download=force_download,

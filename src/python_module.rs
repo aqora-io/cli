@@ -202,22 +202,26 @@ impl PyClient {
         })
     }
 
+    #[pyo3(signature = (owner, slug, dest_dir, notebook=None, force=false))]
     fn _download_workspace_notebook<'py>(
         &self,
         py: Python<'py>,
         owner: &str,
         slug: &str,
-        dest: std::path::PathBuf,
+        dest_dir: std::path::PathBuf,
+        notebook: Option<String>,
+        force: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let inner = Arc::clone(&self.inner);
         let owner = owner.to_owned();
         let slug = slug.to_owned();
         future_into_py(py, async move {
             let client = inner.read().await.client.clone();
-            download_workspace_notebook(client, owner, slug, dest)
-                .await
-                .map_err(|error| ClientError::new_err((error.message(),)))?;
-            Ok(())
+            let filename =
+                download_workspace_notebook(client, owner, slug, dest_dir, notebook, force)
+                    .await
+                    .map_err(|error| ClientError::new_err((error.message(),)))?;
+            Ok(filename)
         })
     }
 

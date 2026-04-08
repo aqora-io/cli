@@ -3461,6 +3461,7 @@ type Workspace implements Votable & ForumOwner & Node & Taggable {
 	voters(after: String, before: String, first: Int, last: Int): VotersConnection!
 	tags(after: String, before: String, first: Int, last: Int): TaggableConnection!
 	entries: [WorkspaceEntry!]
+	defaultNotebook: String
 	versions(after: String, before: String, first: Int, last: Int): WorkspaceVersionConnection!
 	version(version: Semver!): WorkspaceVersion
 	latestVersion: WorkspaceVersion
