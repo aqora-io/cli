@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::io;
-use std::pin::{pin, Pin};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
