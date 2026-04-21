@@ -8,7 +8,7 @@ use crate::registry::REGISTRY;
 use crate::utils::{assert_semver, assert_slug, assert_username, OptionExt};
 
 const DEFAULT_PYTHON_VERSION: &str = "3.10";
-const DEFAULT_MARIMO_VERSION: &str = "0.21.1";
+const DEFAULT_MARIMO_VERSION: &str = "0.23.2";
 const DEFAULT_CLI_VERSION_STR: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Builder, Serialize, Debug)]
