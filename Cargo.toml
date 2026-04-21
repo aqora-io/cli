@@ -3,7 +3,7 @@ resolver = "2"
 members = ["archiver", "config", "runner", "template", "data-utils", "client"]
 
 [workspace.package]
-version = "0.24.0"
+version = "0.25.0-alpha.1"
 license = "MIT"
 
 [package]
@@ -23,7 +23,7 @@ name = "aqora"
 
 [features]
 default = []
-extension-module = ["pyo3/extension-module", "pyo3/abi3-py38", "pyo3/abi3"]
+extension-module = ["pyo3/extension-module", "pyo3/abi3-py310", "pyo3/abi3"]
 
 [dependencies]
 aqora-client = { path = "client" }
