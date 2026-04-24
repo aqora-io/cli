@@ -5,4 +5,4 @@ dist
 __pycache__/
 *.so
 .claude
-python/aqora_cli/_workspace_notebooks
+python/aqora/_workspace_notebooks

@@ -1,6 +1,6 @@
 import pytest
 
-from aqora_cli.pyarrow import dataset
+from aqora.pyarrow import dataset
 
 testdata = [
     ("alice/test", "v1.0.0", (100_000, 8)),

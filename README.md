@@ -1,24 +1,25 @@
 # Installation
 
-To install the CLI, you can use pip. Note that the CLI requires Python 3.9 or greater
+To install the CLI, we recommend using [uv](https://docs.astral.sh/uv/). Note
+that the CLI requires Python 3.9 or greater.
+
+If you don't already have `uv`, follow the [installation
+instructions](https://docs.astral.sh/uv/getting-started/installation/). Then
+install the CLI as a tool:
 
 ```bash
-# with pip
-pip install aqora-cli
+uv tool install aqora
+```
 
-# with pipx
-pipx install aqora-cli
+This makes the `aqora` command available globally. To upgrade later, run:
 
-# on Windows with Python installed from python.org
-py -m pip install aqora-cli
-
-# on Windows with Python installed from the Windows Store
-python -m pip install aqora-cli
+```bash
+uv tool upgrade aqora
 ```
 
 ## Notes for Windows users
 
-If pip gives you a warning that the script is not on your PATH, you can copy the
+If `uv` gives you a warning that the script is not on your PATH, you can copy the
 directory in the warning and add it to your path by [following the instructions
 here](https://www.java.com/en/download/help/path.html)
 
