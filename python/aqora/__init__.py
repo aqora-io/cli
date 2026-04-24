@@ -1,7 +1,7 @@
 from typing_extensions import Any, TypedDict, override
 
 from . import _aqora
-from .notebook import notebook
+from .notebook import load
 from aqora._aqora import *  # pyright: ignore[reportAssignmentType, reportWildcardImportFromLibrary]  # noqa: F403
 
 
