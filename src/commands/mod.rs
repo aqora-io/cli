@@ -1,4 +1,5 @@
 mod add;
+mod auth;
 mod clean;
 mod dataset;
 mod global_args;
@@ -20,6 +21,7 @@ use serde::Serialize;
 pub use global_args::GlobalArgs;
 
 use add::{add, Add};
+use auth::{auth, Auth};
 use clean::{clean, Clean};
 use dataset::{dataset, Dataset};
 use info::{info, Info};
@@ -62,6 +64,10 @@ pub enum Commands {
         args: Dataset,
     },
     Login(Login),
+    Auth {
+        #[command(subcommand)]
+        args: Auth,
+    },
     Python(Python),
     Shell(Shell),
     Test(Test),
@@ -89,6 +95,7 @@ impl Cli {
                 Commands::New { args } => new(args, global).await,
                 Commands::Dataset { args } => dataset(args, global).await,
                 Commands::Login(args) => login(args, global).await,
+                Commands::Auth { args } => auth(args, global).await,
                 Commands::Python(args) => python(args, global).await,
                 Commands::Shell(args) => shell(args, global).await,
                 Commands::Test(args) => test(args, global).await,
