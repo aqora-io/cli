@@ -2,7 +2,7 @@
 import asyncio
 import pytest
 
-from aqora_cli import Client, ClientError
+from aqora import Client, ClientError
 
 
 @pytest.mark.asyncio
