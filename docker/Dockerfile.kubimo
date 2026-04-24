@@ -6,7 +6,7 @@ ARG AQORA_VERSION=0.25.0
 USER root
 RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
     --mount=type=cache,target=/root/.local/share/uv/python,sharing=locked \
-  uv pip install --system "aqora-cli==${AQORA_VERSION}"
+  uv pip install --system "aqora==${AQORA_VERSION}"
 
 USER me
 WORKDIR /home/me/workspace

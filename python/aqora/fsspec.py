@@ -7,7 +7,7 @@ from fsspec.asyn import AsyncFileSystem
 from fsspec.callbacks import DEFAULT_CALLBACK as FSSPEC_DEFAULT_CALLBACK
 from typing_extensions import Any, Unpack, TypedDict, override
 
-from ._aqora_cli import Client
+from ._aqora import Client
 
 
 @dataclass(frozen=True)

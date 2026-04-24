@@ -28,7 +28,7 @@ def _():
     {{#if raw_init }}
     {{ indent raw_init '    ' }}
     {{else}}
-    from aqora_cli.pyarrow import dataset
+    from aqora.pyarrow import dataset
     data = dataset("{{ owner }}/{{ local_slug }}", "v{{ version }}")
     {{/if}}
     return (data,)

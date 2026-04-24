@@ -1,6 +1,6 @@
 from types import NoneType
 from typing import Dict, AsyncIterator, List, Any
-from aqora_cli import PipelineConfig, LayerEvaluation
+from aqora import PipelineConfig, LayerEvaluation
 
 Input = NoneType
 Output = Any

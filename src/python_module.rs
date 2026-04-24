@@ -28,9 +28,9 @@ pub fn main(py: Python<'_>) -> PyResult<()> {
     Ok(())
 }
 
-import_exception!(aqora_cli, ClientError);
+import_exception!(aqora, ClientError);
 
-#[pyclass(frozen, name = "Client", module = "aqora_cli")]
+#[pyclass(frozen, name = "Client", module = "aqora")]
 struct PyClient {
     inner: Arc<RwLock<PyClientInner>>,
 }
@@ -232,8 +232,8 @@ impl PyClient {
 }
 
 #[pymodule]
-#[pyo3(name = "_aqora_cli")]
-pub fn aqora_cli(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+#[pyo3(name = "_aqora")]
+pub fn aqora(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(main, m)?)?;
     m.add_class::<PipelineConfig>()?;
     m.add_class::<LayerEvaluation>()?;
