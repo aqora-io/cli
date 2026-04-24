@@ -146,7 +146,7 @@ async fn refresh_credentials(
     Ok(())
 }
 
-async fn load_refreshed_credentials(
+pub async fn load_refreshed_credentials(
     path: &Path,
     url: &Url,
     unauthenticated_client: &aqora_client::Client,
