@@ -117,8 +117,8 @@ fn field_to_serde_arrow_overwrite(
     field: FieldRef,
 ) -> Result<serde_json::Value, serde_arrow::Error> {
     let schema = serde_arrow::schema::SerdeArrowSchema::try_from([field].as_slice())?;
-    if let serde_json::Value::Object(mut map) =
-        serde_json::to_value(schema).map_err(|err| serde_arrow::Error::custom(err.to_string()))?
+    if let serde_json::Value::Object(mut map) = serde_json::to_value(schema)
+        .map_err(|err| serde_arrow::Error::new(serde_arrow::ErrorKind::Custom, err.to_string()))?
     {
         if let Some(serde_json::Value::Array(mut arr)) = map.remove("fields") {
             if let Some(field) = arr.pop() {
@@ -126,7 +126,8 @@ fn field_to_serde_arrow_overwrite(
             }
         }
     }
-    Err(serde_arrow::Error::custom(
+    Err(serde_arrow::Error::new(
+        serde_arrow::ErrorKind::Custom,
         "Invalid JSON returned for SerdeArrowSchema".into(),
     ))
 }

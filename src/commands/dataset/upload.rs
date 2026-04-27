@@ -268,7 +268,7 @@ pub async fn upload(args: Upload, global: GlobalArgs) -> Result<()> {
     let written_records =
         write::ParquetStream::new(stream, writer, schema, write_options, args.buffer.parse())
             .try_fold(0usize, async |acc, (_part, meta)| {
-                Ok(acc + 0usize.saturating_add_signed(meta.num_rows as _))
+                Ok(acc + 0usize.saturating_add_signed(meta.file_metadata().num_rows() as _))
             })
             .await
             .map_err(|err| {

@@ -356,7 +356,7 @@ pub struct JsSortingColumn {
     nulls_first: bool,
 }
 
-impl From<JsSortingColumn> for parquet::format::SortingColumn {
+impl From<JsSortingColumn> for parquet::file::metadata::SortingColumn {
     fn from(value: JsSortingColumn) -> Self {
         Self {
             column_idx: value.column_idx,
@@ -375,7 +375,7 @@ pub struct JsKeyValue {
     value: Option<String>,
 }
 
-impl From<JsKeyValue> for parquet::format::KeyValue {
+impl From<JsKeyValue> for parquet::file::metadata::KeyValue {
     fn from(value: JsKeyValue) -> Self {
         Self {
             key: value.key,
@@ -470,7 +470,7 @@ impl TryFrom<JsWriterProperties> for parquet::file::properties::WriterProperties
             builder = builder.set_write_batch_size(write_batch_size);
         }
         if let Some(max_row_group_size) = value.max_row_group_size {
-            builder = builder.set_max_row_group_size(max_row_group_size);
+            builder = builder.set_max_row_group_row_count(Some(max_row_group_size));
         }
         if let Some(bloom_filter_position) = value.bloom_filter_position {
             builder = builder.set_bloom_filter_position(bloom_filter_position.into());

@@ -97,9 +97,9 @@ pub struct SortingColumn {
     pub nulls_first: bool,
 }
 
-impl From<SortingColumn> for parquet::format::SortingColumn {
+impl From<SortingColumn> for parquet::file::metadata::SortingColumn {
     fn from(value: SortingColumn) -> Self {
-        parquet::format::SortingColumn {
+        parquet::file::metadata::SortingColumn {
             column_idx: value.column_idx,
             descending: value.descending,
             nulls_first: value.nulls_first,
@@ -258,7 +258,7 @@ impl WriteOptions {
             .set_data_page_row_count_limit(self.data_page_row_count)
             .set_dictionary_page_size_limit(self.dictionary_page_size)
             .set_write_batch_size(self.write_batch_size)
-            .set_max_row_group_size(self.max_row_group_size)
+            .set_max_row_group_row_count(Some(self.max_row_group_size))
             .set_bloom_filter_position(self.bloom_filter_position.into())
             .set_offset_index_disabled(self.offset_index_disabled)
             .set_dictionary_enabled(!self.no_dictionary_enabled)
@@ -431,7 +431,10 @@ pub async fn convert(args: Convert, global: GlobalArgs) -> Result<()> {
     pb.set_style(indicatif::ProgressStyle::default_spinner());
     pb.finish_with_message(format!(
         "{} records written",
-        metadata.iter().map(|(_, meta)| meta.num_rows).sum::<i64>(),
+        metadata
+            .iter()
+            .map(|(_, meta)| meta.file_metadata().num_rows())
+            .sum::<i64>(),
     ));
     Ok(())
 }

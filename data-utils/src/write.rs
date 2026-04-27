@@ -12,7 +12,7 @@ use pin_project::pin_project;
 
 pub use parquet::arrow::arrow_writer::ArrowWriterOptions as Options;
 pub use parquet::arrow::async_writer::AsyncFileWriter;
-pub use parquet::format::FileMetaData;
+pub use parquet::file::metadata::ParquetMetaData;
 
 use crate::async_util::parquet_async::*;
 use crate::error::{Error, Result};
@@ -80,7 +80,7 @@ where
 
 async fn close_part<W>(
     mut part_writer: AsyncArrowWriter<W::Writer>,
-) -> Result<(W::Writer, FileMetaData)>
+) -> Result<(W::Writer, ParquetMetaData)>
 where
     W: AsyncPartitionWriter,
 {
@@ -89,7 +89,7 @@ where
     Ok((writer, meta))
 }
 
-type ClosePartFut<'w, Writer> = BoxFuture<'w, Result<(Writer, FileMetaData)>>;
+type ClosePartFut<'w, Writer> = BoxFuture<'w, Result<(Writer, ParquetMetaData)>>;
 
 async fn create_part<W>(
     mut writer: W,
@@ -207,7 +207,7 @@ where
     S: Stream<Item = Result<RecordBatch, Error>> + MaybeSend + Unpin,
     W: AsyncPartitionWriter + MaybeSend,
 {
-    type Item = Result<(W::Writer, FileMetaData), Error>;
+    type Item = Result<(W::Writer, ParquetMetaData), Error>;
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.project();
         loop {
@@ -407,7 +407,7 @@ mod test {
         while let Some((file, meta)) = parquets.try_next().await.unwrap() {
             file_count += 1;
             assert!(file.metadata().await.unwrap().len() > 0);
-            assert!(meta.num_rows > 0);
+            assert!(meta.file_metadata().num_rows() > 0);
         }
         assert_eq!(file_count, 1);
     }
