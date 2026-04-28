@@ -291,7 +291,7 @@ impl PyEnv {
         cmd.env("VIRTUAL_ENV", path)
             .arg("pip")
             .arg("install")
-            .arg("aqora-cli[venv]");
+            .arg("aqora[venv]");
         if let Some(cache_path) = options.cache_path.as_ref() {
             cmd.arg("--cache-dir").arg(cache_path);
         }

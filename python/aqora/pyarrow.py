@@ -6,7 +6,7 @@ from pyarrow.dataset import dataset as pyarrow_dataset, Dataset
 from pyarrow.fs import FSSpecHandler
 
 
-from aqora_cli.fsspec import AqoraFileSystem
+from aqora.fsspec import AqoraFileSystem
 
 
 def dataset(

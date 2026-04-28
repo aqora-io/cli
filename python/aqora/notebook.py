@@ -8,7 +8,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Coroutine
 
-from ._aqora_cli import Client
+from ._aqora import Client
 
 def _parse_workspace_slug(workspace: str) -> tuple[str, str]:
     owner, slash, slug = workspace.strip().partition("/")
@@ -24,10 +24,10 @@ def _notebook_cache_dir() -> Path:
     package_dir = Path(__file__).resolve().parent
     candidates = [
         package_dir / "_workspace_notebooks",
-        Path(site.getusersitepackages()) / "aqora_cli" / "_workspace_notebooks",
+        Path(site.getusersitepackages()) / "aqora" / "_workspace_notebooks",
     ]
     for site_package in site.getsitepackages():
-        candidates.append(Path(site_package) / "aqora_cli" / "_workspace_notebooks")
+        candidates.append(Path(site_package) / "aqora" / "_workspace_notebooks")
 
     seen: set[Path] = set()
     for candidate in candidates:
@@ -51,7 +51,7 @@ def _module_name(owner: str, slug: str, filename: str) -> str:
     safe_owner = "".join(c if c.isalnum() or c == "_" else "_" for c in owner)
     safe_slug = "".join(c if c.isalnum() or c == "_" else "_" for c in slug)
     safe_file = "".join(c if c.isalnum() or c == "_" else "_" for c in Path(filename).stem)
-    return f"aqora_cli_workspace_{safe_owner}_{safe_slug}_{safe_file}"
+    return f"aqora_workspace_{safe_owner}_{safe_slug}_{safe_file}"
 
 
 def _path_part(value: str) -> str:

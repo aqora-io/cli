@@ -250,7 +250,7 @@ pub async fn install_submission(
             let res = pip_install(
                 &env,
                 [
-                    PipPackage::pypi("aqora-cli[venv]"),
+                    PipPackage::pypi("aqora[venv]"),
                     PipPackage::tar(use_case_package_name, use_case_dir.as_os_str()),
                     PipPackage::editable(&global.project),
                 ],
@@ -302,7 +302,7 @@ pub async fn install_use_case(args: Install, global: GlobalArgs, project: PyProj
     let env = global.init_venv(&pb).await?;
 
     let mut deps = vec![
-        PipPackage::pypi("aqora-cli[venv]"),
+        PipPackage::pypi("aqora[venv]"),
         PipPackage::editable(&global.project),
     ];
 

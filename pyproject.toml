@@ -3,7 +3,7 @@ requires = ["maturin>=1.4,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "aqora-cli"
+name = "aqora"
 description = "The aqora command line interface"
 authors = [{ name = "S.A.S Aqora Quantum", email = "hello@aqora.io" }]
 requires-python = ">=3.8"
@@ -14,7 +14,7 @@ dynamic = ["version"]
 dependencies = ["typing-extensions>=4.13.2", "uv >=0.3.2, <1.0.0"]
 
 [project.entry-points."fsspec.specs"]
-aqora = "aqora_cli.fsspec.AqoraFileSystem"
+aqora = "aqora.fsspec.AqoraFileSystem"
 
 [project.optional-dependencies]
 venv = [
@@ -35,11 +35,11 @@ Repository = "https://github.com/aqora-io/cli"
 Documentation = "https://github.com/aqora-io/cli"
 
 [project.scripts]
-aqora = "aqora_cli:main"
+aqora = "aqora:main"
 
 [tool.maturin]
 python-source = "python"
-module-name = "aqora_cli._aqora_cli"
+module-name = "aqora._aqora"
 strip = true
 features = ["extension-module"]
 
