@@ -96,7 +96,7 @@ def _load_module(owner: str, slug: str, filename: str, path: Path) -> ModuleType
     return module
 
 
-def notebook(
+def load(
     workspace: str,
     *,
     filename: str | None = None,
