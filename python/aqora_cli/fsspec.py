@@ -86,6 +86,8 @@ class _Cat(TypedDict):
 
 
 class AqoraFileSystem(AsyncFileSystem):
+    protocol = "aqora"
+
     _client: Client
     _need_auth: bool
 

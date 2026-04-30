@@ -15,6 +15,7 @@ dependencies = ["typing-extensions>=4.13.2", "uv >=0.3.2, <1.0.0"]
 
 [project.entry-points."fsspec.specs"]
 aqora = "aqora_cli.fsspec.AqoraFileSystem"
+aqora-iceberg = "aqora_cli.iceberg_fs.AqoraIcebergFileSystem"
 
 [project.optional-dependencies]
 venv = [
@@ -29,6 +30,10 @@ venv = [
 
 fsspec = ["fsspec>=2025.3.0"]
 pyarrow = ["fsspec>=2025.3.0", "pyarrow>=17.0.0"]
+iceberg = [
+  "fsspec[http]>=2025.3.0",
+  "pyiceberg>=0.9.0; python_version >= '3.9'",
+]
 
 [project.urls]
 Repository = "https://github.com/aqora-io/cli"
