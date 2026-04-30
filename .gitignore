@@ -1,6 +1,7 @@
 /target
 .env*
 .venv
+uv.lock
 dist
 __pycache__/
 *.so
