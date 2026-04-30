@@ -16,6 +16,7 @@ dependencies = ["typing-extensions>=4.13.2", "uv >=0.3.2, <1.0.0"]
 
 [project.entry-points."fsspec.specs"]
 aqora = "aqora.fsspec.AqoraFileSystem"
+aqora-iceberg = "aqora.iceberg_fs.AqoraIcebergFileSystem"
 
 [project.optional-dependencies]
 venv = [
@@ -33,6 +34,12 @@ pyarrow = ["fsspec>=2025.3.0", "pyarrow>=17.0.0"]
 qiskit = ["qio>=0.2.2", "qiskit>=2.3.1"]
 pytket = ["pytket>=1.30"]
 guppy = ["guppylang>=0.21"]
+iceberg = [
+  "fsspec[http]>=2025.3.0",
+  # 0.11.0 is the first release defining `pyiceberg.catalog.rest.auth`
+  # `AUTH_MANAGER`, which `aqora.iceberg` imports.
+  "pyiceberg>=0.11.0",
+]
 
 [project.urls]
 Repository = "https://github.com/aqora-io/cli"
