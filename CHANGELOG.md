@@ -2,6 +2,18 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.25.0 - 2026-05-06
+#### Bug Fixes
+- add default downloads to template - (785709f) - Julian Popescu
+#### Continuous Integration
+- add docker image for auth-proxy - (76bc497) - Julian Popescu
+#### Features
+- add auth-proxy - (0ea1d8c) - Julian Popescu
+#### Miscellaneous Chores
+- update kubimo - (823694c) - Julian Popescu
+
+- - -
+
 ## v0.24.0 - 2026-03-25
 #### Features
 - notebook download - (3cafab3) - Julian Popescu
