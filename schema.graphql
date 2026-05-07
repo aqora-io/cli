@@ -97,6 +97,7 @@ enum Action {
 	SEND_COMPETITION_TEAM_REQUEST_MESSAGE
 	SET_COMPETITION_ORDERING_PRIORITY
 	SET_EVENT_ORDERING_PRIORITY
+	SUBMIT_PROVIDER_JOB
 	TRANSFER_COMPETITION_OWNERSHIP
 	TRANSFER_DATASET_OWNERSHIP
 	TRANSFER_EVENT_OWNERSHIP
@@ -123,6 +124,7 @@ enum Action {
 	UPDATE_USER
 	UPDATE_WORKSPACE
 	UPLOAD_FILES
+	UPLOAD_PROVIDER_MODEL
 }
 
 type Activity {
@@ -163,6 +165,7 @@ type ActivityEdge {
 enum ActivityKind {
 	ALL
 	COMPETITION
+	EVENT
 	DATASET
 	WORKSPACE
 }
@@ -597,6 +600,7 @@ type CompetitionConnection {
 	A list of nodes.
 	"""
 	nodes: [Competition!]!
+	totalCount: Int!
 }
 
 type CompetitionDatasetConnection {
@@ -716,6 +720,10 @@ type CompetitionMembershipEdge {
 enum CompetitionMembershipKind {
 	HOST
 	PARTICIPANT
+}
+
+input CompetitionQueryFilters {
+	search: String
 }
 
 type CompetitionRule implements Node {
@@ -1012,6 +1020,7 @@ input CreateEventInput {
 	thumbnail: Upload
 	visibility: ActivityVisibility! = UNAUTHENTICATED
 	inviteEmail: String
+	tags: [String!]!
 }
 
 input CreateForumInput {
@@ -1245,6 +1254,7 @@ type DatasetVersion implements Node {
 	publishedAt: DateTime
 	createdAt: DateTime!
 	updatedAt: DateTime!
+	bibtex: String
 	id: ID!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	dataset: Dataset!
@@ -1260,6 +1270,7 @@ type DatasetVersion implements Node {
 	publishable: Boolean!
 	records(offset: Int! = 0, limit: Int! = 100): [JSON!]!
 	workspace: Workspace
+	croissantUrl: Url
 }
 
 union DatasetVersionAuthor = User | UnregisteredUser
@@ -1446,6 +1457,7 @@ interface Entity {
 	rank: Int!
 	datasets(after: String, before: String, first: Int, last: Int, filters: DatasetQueryFilters): DatasetConnection!
 	workspaces(after: String, before: String, first: Int, last: Int, filters: WorkspaceConnectionFilters): WorkspaceConnection!
+	providerJobs(after: String, before: String, first: Int, last: Int): ProviderJobConnection!
 }
 
 enum EntityActivitiesConnectionKind {
@@ -1530,7 +1542,7 @@ type EntityVote {
 	subject: VotableEdge!
 }
 
-type Event implements ForumOwner & Node {
+type Event implements ForumOwner & Node & Taggable {
 	slug: String!
 	title: String!
 	shortDescription: String!
@@ -1556,6 +1568,7 @@ type Event implements ForumOwner & Node {
 	rules(after: String, before: String, first: Int, last: Int): EventRuleConnection!
 	entityRuleAgreements(after: String, before: String, first: Int, last: Int, entity: UsernameOrID, latest: Boolean): EventRuleAgreementConnection!
 	invite: EventPublicInvite!
+	tags(after: String, before: String, first: Int, last: Int): TaggableConnection!
 }
 
 type EventCompetition implements Node {
@@ -1578,6 +1591,7 @@ type EventCompetitionConnection {
 	A list of nodes.
 	"""
 	nodes: [EventCompetition!]!
+	totalCount: Int!
 }
 
 """
@@ -1607,6 +1621,7 @@ type EventConnection {
 	A list of nodes.
 	"""
 	nodes: [Event!]!
+	totalCount: Int!
 }
 
 """
@@ -1749,6 +1764,10 @@ type EventPublicInvite implements Node & EventInvite {
 	shortDescription: String!
 	thumbnail: Url
 	latestRuleText: String!
+}
+
+input EventQueryFilters {
+	search: String
 }
 
 type EventRule implements Node {
@@ -2096,10 +2115,13 @@ type Mutation {
 	createProjectVersionApproval(projectVersionId: ID!, input: ProjectVersionApprovalInput!): ProjectVersionApprovalEdge!
 	updateProjectVersionApproval(projectVersionApprovalId: ID!, input: ProjectVersionApprovalInput!): ProjectVersionApprovalEdge!
 	deleteProjectVersionApproval(projectVersionApprovalId: ID!): ID!
+	uploadProviderModelPayload: UploadProviderModelPayload!
+	createProviderModel(providerModelUploadId: UUID!, etag: String!, provider: String!): ProviderModel!
+	createProviderJob(providerModelId: UUID!, provider: String!, shots: Int): ProviderJob!
 	fetchWebsiteMetadata(url: Url!): WebsiteMetadata!
 	generateEventInviteCode(id: ID!): EventPublicInvite!
 	removeEventInviteCode(id: ID!): EventPublicInvite!
-	acceptEventInvite(id: ID!, code: String, asEntity: UsernameOrID): EventInvite!
+	acceptEventInvite(id: ID!, code: String): EventInvite!
 	createBlogArticle(input: CreateBlogArticleInput!): BlogArticleEdge!
 	updateBlogArticle(id: ID!, input: UpdateBlogArticleInput!): BlogArticleEdge!
 	deleteBlogArticle(id: ID!): ID!
@@ -2369,6 +2391,7 @@ type Organization implements Entity & Node {
 	points: Int!
 	datasets(after: String, before: String, first: Int, last: Int, filters: DatasetQueryFilters): DatasetConnection!
 	workspaces(after: String, before: String, first: Int, last: Int, filters: WorkspaceConnectionFilters): WorkspaceConnection!
+	providerJobs(after: String, before: String, first: Int, last: Int): ProviderJobConnection!
 }
 
 type OrganizationConnection {
@@ -2649,15 +2672,157 @@ enum ProjectVersionStatus {
 	OK
 }
 
+enum Provider {
+	SCALEWAY
+}
+
+type ProviderJob implements Node {
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	providerModelId: UUID!
+	provider: String!
+	status: ProviderJobStatus
+	error: String
+	duration: Int
+	resultCount: Int
+	createdAt: DateTime!
+	resultUploadAttempts: Int!
+	results(after: String, before: String, first: Int, last: Int): ProviderJobResultConnection!
+}
+
+type ProviderJobConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [ProviderJobEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [ProviderJob!]!
+}
+
+"""
+An edge in a connection.
+"""
+type ProviderJobEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: ProviderJob!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+type ProviderJobResult {
+	id: UUID!
+	index: Int!
+	error: String
+	result: Url
+}
+
+type ProviderJobResultConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [ProviderJobResultEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [ProviderJobResult!]!
+}
+
+"""
+An edge in a connection.
+"""
+type ProviderJobResultEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: ProviderJobResult!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+enum ProviderJobStatus {
+	WAITING
+	RUNNING
+	COMPLETED
+	CANCELLING
+	CANCELLED
+}
+
+type ProviderModel {
+	id: UUID!
+	providerModelUploadId: UUID!
+	provider: String!
+	createdAt: DateTime!
+}
+
+type ProviderPlatform implements Node {
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	provider: Provider!
+	name: String!
+	meta: ProviderPlatformMeta!
+}
+
+type ProviderPlatformConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [ProviderPlatformEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [ProviderPlatform!]!
+	totalCount: Int!
+}
+
+"""
+An edge in a connection.
+"""
+type ProviderPlatformEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: ProviderPlatform!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+type ProviderPlatformMeta {
+	maxQubits: Int
+	maxShots: Int
+	maxCircuits: Int
+}
+
 type Query {
 	node(id: ID!): Node!
-	competitions(after: String, before: String, first: Int, last: Int, search: String): CompetitionConnection!
+	competitions(after: String, before: String, first: Int, last: Int, filters: CompetitionQueryFilters): CompetitionConnection!
 	competitionBySlug(slug: String!): Competition
 	entities(after: String, before: String, first: Int, last: Int, search: String, kinds: [EntityKind!]): EntityConnection!
 	entityByUsername(username: String!): Entity
 	leaderboard(after: String, before: String, first: Int, last: Int, search: String, kinds: [EntityKind!]): GlobalLeaderboardConnection!
 	viewer: Entity!
-	events(after: String, before: String, first: Int, last: Int, search: String): EventConnection!
+	events(after: String, before: String, first: Int, last: Int, filters: EventQueryFilters): EventConnection!
 	eventBySlug(slug: String!): Event
 	version: Version!
 	tags(after: String, before: String, first: Int, last: Int, filters: TagQueryFilters): TagConnection!
@@ -2670,6 +2835,7 @@ type Query {
 	oauth2Authorize(input: Oauth2AuthorizeInput!): Oauth2PreGrant
 	datasets(after: String, before: String, first: Int, last: Int, filters: DatasetQueryFilters): DatasetConnection!
 	datasetBySlug(owner: String!, localSlug: String!): Dataset
+	providerPlatforms(after: String, before: String, first: Int, last: Int): ProviderPlatformConnection!
 	workspaces(after: String, before: String, first: Int, last: Int, filters: WorkspaceConnectionFilters): WorkspaceConnection!
 	workspaceBySlug(owner: String!, slug: String!): Workspace
 }
@@ -2690,6 +2856,7 @@ enum Scope {
 	READ_COMPETITION
 	READ_DATASET
 	READ_PROJECT
+	PROVIDER
 }
 
 scalar Semver
@@ -3180,6 +3347,7 @@ input UpdateEventInput {
 	visibility: ActivityVisibility
 	rules: String
 	inviteEmail: String
+	tags: [String!]
 }
 
 input UpdateForumInput {
@@ -3269,6 +3437,11 @@ input UploadNoCodeSubmissionInput {
 	files: [Upload!]!
 }
 
+type UploadProviderModelPayload {
+	providerModelUploadId: UUID!
+	uploadUrl: Url!
+}
+
 """
 URL is a String implementing the [URL Standard](http://url.spec.whatwg.org/)
 """
@@ -3325,6 +3498,7 @@ type User implements Entity & Node {
 	isBanned: Boolean!
 	datasets(after: String, before: String, first: Int, last: Int, filters: DatasetQueryFilters): DatasetConnection!
 	workspaces(after: String, before: String, first: Int, last: Int, filters: WorkspaceConnectionFilters): WorkspaceConnection!
+	providerJobs(after: String, before: String, first: Int, last: Int): ProviderJobConnection!
 }
 
 """
