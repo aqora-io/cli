@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.25.1 - 2026-05-19
+#### Build system
+- simplify kubimo image - (f360b8c) - Antoine Chauvin
+
+- - -
+
 ## v0.25.0 - 2026-05-06
 #### Bug Fixes
 - add default downloads to template - (785709f) - Julian Popescu
