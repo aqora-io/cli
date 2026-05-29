@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.25.2 - 2026-05-29
+#### Bug Fixes
+- cog.toml bad field - (dbd8125) - Julian Popescu
+#### Continuous Integration
+- move from aqora-cli to aqora for pypi - (2fcec11) - Julian Popescu
+
+- - -
+
 ## v0.25.1 - 2026-05-19
 #### Build system
 - simplify kubimo image - (f360b8c) - Antoine Chauvin

@@ -3,7 +3,7 @@ resolver = "2"
 members = ["archiver", "config", "runner", "template", "data-utils", "client"]
 
 [workspace.package]
-version = "0.25.1"
+version = "0.25.2"
 license = "MIT"
 
 [package]
