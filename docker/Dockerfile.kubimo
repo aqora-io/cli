@@ -2,11 +2,14 @@ ARG KUBIMO_MARIMO_IMAGE=ghcr.io/aqora-io/kubimo-marimo:0.1.23
 
 FROM ${KUBIMO_MARIMO_IMAGE}
 
-ARG AQORA_VERSION=0.25.0
+# Optional pin for the aqora PyPI package. Empty installs the latest published
+# release (local dev + non-tag CI builds); tagged releases pass the exact
+# version via the AQORA_VERSION bake variable in docker-bake.hcl.
+ARG AQORA_VERSION=
 USER root
 RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
     --mount=type=cache,target=/root/.local/share/uv/python,sharing=locked \
-  uv pip install --system "aqora==${AQORA_VERSION}"
+  uv pip install --system "aqora${AQORA_VERSION:+==${AQORA_VERSION}}"
 
 USER me
 WORKDIR /home/me/workspace
