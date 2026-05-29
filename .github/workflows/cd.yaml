@@ -150,6 +150,10 @@ jobs:
             type=semver,pattern={{major}}
       - name: Build and push
         uses: docker/bake-action@v6
+        env:
+          # Pin aqora to the release version only for tag builds; non-tag
+          # builds (main/PR/merge_group/dispatch) install the latest release.
+          AQORA_VERSION: ${{ startsWith(github.ref, 'refs/tags/') && steps.meta-kubimo.outputs.version || '' }}
         with:
           set: |
             kubimo*.cache-from=type=registry,ref=ghcr.io/aqora-io/cli-kubimo:latest
