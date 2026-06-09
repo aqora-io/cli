@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.25.4 - 2026-06-09
+#### Bug Fixes
+- rename notebook to load - (dcee55e) - Julian Popescu
+#### Build system
+- update kubimo v0.1.24 - (5f6a5d2) - Antoine Chauvin
+
+- - -
+
 ## v0.25.3 - 2026-05-29
 #### Bug Fixes
 - pull latest aqora version based on DOCKER_META_VERSION - (e9b5df8) - Julian Popescu
