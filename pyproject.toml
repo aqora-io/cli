@@ -5,6 +5,7 @@ build-backend = "maturin"
 [project]
 name = "aqora"
 description = "The aqora command line interface"
+readme = "README.md"
 authors = [{ name = "S.A.S Aqora Quantum", email = "hello@aqora.io" }]
 requires-python = ">=3.8"
 dynamic = ["version"]
