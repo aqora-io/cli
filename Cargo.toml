@@ -58,7 +58,7 @@ mime = "0.3"
 open = "5.0"
 owo-colors = { version = "4.0", features = ["supports-colors"] }
 passterm = "2.0"
-pyo3 = { version = "0.28", features = ["serde"] }
+pyo3 = { version = "0.29", features = ["serde"] }
 pyo3-async-runtimes = { version = "0.28", features = [
   "attributes",
   "tokio-runtime",
@@ -134,3 +134,4 @@ arrow-buffer = { git = "https://github.com/aqora-io/arrow-rs", branch = "dataset
 arrow-data = { git = "https://github.com/aqora-io/arrow-rs", branch = "dataset" }
 arrow-schema = { git = "https://github.com/aqora-io/arrow-rs", branch = "dataset" }
 arrow-ipc = { git = "https://github.com/aqora-io/arrow-rs", branch = "dataset" }
+pyo3-async-runtimes = { git = "https://github.com/cimandef/pyo3-async-runtimes", branch = "angel/bump_pyo3_version" }
