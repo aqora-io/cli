@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.26.0 - 2026-06-15
+#### Features
+- add qiskit provider - (da74891) - Julian Popescu
+#### Miscellaneous Chores
+- release candidate 3 - (b5f74a7) - Julian Popescu
+- update schema - (f4b016a) - Julian Popescu
+- add README to pypi description - (8736106) - Julian Popescu
+
+- - -
+
 ## v0.25.4 - 2026-06-09
 #### Bug Fixes
 - rename notebook to load - (dcee55e) - Julian Popescu
