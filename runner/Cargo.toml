@@ -14,7 +14,7 @@ aqora-config = { path = "../config" }
 futures = "0.3"
 lazy_static = "1.4"
 pyo3 = { version = "0.29", features = ["serde"] }
-pyo3-async-runtimes = { version = "0.28", features = [
+pyo3-async-runtimes = { version = "0.29", features = [
   "attributes",
   "tokio-runtime",
   "tokio",
