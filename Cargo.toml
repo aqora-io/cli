@@ -58,8 +58,8 @@ mime = "0.3"
 open = "5.0"
 owo-colors = { version = "4.0", features = ["supports-colors"] }
 passterm = "2.0"
-pyo3 = { version = "0.28", features = ["serde"] }
-pyo3-async-runtimes = { version = "0.28", features = [
+pyo3 = { version = "0.29", features = ["serde"] }
+pyo3-async-runtimes = { version = "0.29", features = [
   "attributes",
   "tokio-runtime",
 ] }
