@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.26.1 - 2026-06-22
+#### Build system
+- (**kubimo**) upgrade marimo - (89eaf35) - Antoine Chauvin
+
+- - -
+
 ## v0.26.0 - 2026-06-15
 #### Features
 - add qiskit provider - (da74891) - Julian Popescu
