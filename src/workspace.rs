@@ -1,4 +1,5 @@
 use crate::error::{self, Result};
+use crate::graphql_client::custom_scalars::Semver;
 use graphql_client::GraphQLQuery;
 use std::path::Path;
 use tokio::io::AsyncWriteExt;
@@ -12,29 +13,114 @@ use url::Url;
 )]
 pub struct GetWorkspaceNotebookDownloadUrl;
 
+#[derive(GraphQLQuery)]
+#[graphql(
+    query_path = "src/graphql/get_workspace_version_notebook_download_url.graphql",
+    schema_path = "schema.graphql",
+    response_derives = "Debug"
+)]
+pub struct GetWorkspaceVersionNotebookDownloadUrl;
+
+/// A workspace version's notebook metadata, normalized across the "latest
+/// version" and "specific version" queries so the download logic is shared.
+struct NotebookVersion {
+    lib_notebook: Option<String>,
+    files: Vec<(String, Option<Url>)>,
+}
+
+/// Fetches the notebook metadata for the requested version, or the latest
+/// published version when `version` is `None`.
+async fn fetch_notebook_version(
+    client: &aqora_client::Client,
+    owner: &str,
+    slug: &str,
+    version: Option<String>,
+) -> Result<NotebookVersion> {
+    let workspace_not_found = || {
+        error::user(
+            &format!("Workspace '{owner}/{slug}' not found"),
+            "Please make sure the owner and slug are correct",
+        )
+    };
+
+    if let Some(version) = version {
+        use get_workspace_version_notebook_download_url::*;
+        let selected = client
+            .send::<GetWorkspaceVersionNotebookDownloadUrl>(Variables {
+                owner: owner.to_owned(),
+                slug: slug.to_owned(),
+                version: version.clone(),
+            })
+            .await?
+            .workspace_by_slug
+            .ok_or_else(workspace_not_found)?
+            .version
+            .ok_or_else(|| {
+                error::user(
+                    &format!("Workspace '{owner}/{slug}' has no version '{version}'"),
+                    "Please make sure the version exists and is published",
+                )
+            })?;
+        Ok(NotebookVersion {
+            lib_notebook: selected.lib_notebook,
+            files: selected
+                .entries
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|entry| match entry {
+                    GetWorkspaceVersionNotebookDownloadUrlWorkspaceBySlugVersionEntries::WorkspaceFile(file) => {
+                        Some((file.name, file.download_url))
+                    }
+                    _ => None,
+                })
+                .collect(),
+        })
+    } else {
+        use get_workspace_notebook_download_url::*;
+        let latest = client
+            .send::<GetWorkspaceNotebookDownloadUrl>(Variables {
+                owner: owner.to_owned(),
+                slug: slug.to_owned(),
+            })
+            .await?
+            .workspace_by_slug
+            .ok_or_else(workspace_not_found)?
+            .latest_version
+            .ok_or_else(|| {
+                error::user(
+                    &format!("Workspace '{owner}/{slug}' has no published version"),
+                    "Please make sure the workspace has a published version",
+                )
+            })?;
+        Ok(NotebookVersion {
+            lib_notebook: latest.lib_notebook,
+            files: latest
+                .entries
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|entry| match entry {
+                    GetWorkspaceNotebookDownloadUrlWorkspaceBySlugLatestVersionEntries::WorkspaceFile(file) => {
+                        Some((file.name, file.download_url))
+                    }
+                    _ => None,
+                })
+                .collect(),
+        })
+    }
+}
+
 pub async fn download_workspace_notebook(
     client: aqora_client::Client,
     owner: String,
     slug: String,
     dest_dir: impl AsRef<Path>,
     notebook: Option<String>,
+    version: Option<String>,
     force: bool,
 ) -> Result<String> {
-    let workspace = client
-        .send::<GetWorkspaceNotebookDownloadUrl>(get_workspace_notebook_download_url::Variables {
-            owner: owner.clone(),
-            slug: slug.clone(),
-        })
-        .await?
-        .workspace_by_slug
-        .ok_or_else(|| {
-            error::user(
-                &format!("Workspace '{owner}/{slug}' not found"),
-                "Please make sure the owner and slug are correct",
-            )
-        })?;
+    let selected = fetch_notebook_version(&client, &owner, &slug, version).await?;
 
-    let notebook_name = notebook.or(workspace.default_notebook).ok_or_else(|| {
+    let notebook_name = notebook.or(selected.lib_notebook).ok_or_else(|| {
         error::user(
             &format!(
                 "No notebook specified and workspace '{owner}/{slug}' has no default notebook"
@@ -49,16 +135,10 @@ pub async fn download_workspace_notebook(
         return Ok(notebook_name);
     }
 
-    let download_url = workspace
-        .entries
-        .unwrap_or_default()
+    let download_url = selected
+        .files
         .into_iter()
-        .find_map(|entry| match entry {
-            get_workspace_notebook_download_url::GetWorkspaceNotebookDownloadUrlWorkspaceBySlugEntries::WorkspaceFile(
-                file,
-            ) if file.name == notebook_name => file.download_url,
-            _ => None,
-        })
+        .find_map(|(name, download_url)| (name == notebook_name).then_some(download_url).flatten())
         .ok_or_else(|| {
             error::user(
                 &format!("File '{notebook_name}' not found in workspace '{owner}/{slug}'"),

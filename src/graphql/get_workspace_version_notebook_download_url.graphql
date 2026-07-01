@@ -1,6 +1,6 @@
-query GetWorkspaceNotebookDownloadUrl($owner: String!, $slug: String!) {
+query GetWorkspaceVersionNotebookDownloadUrl($owner: String!, $slug: String!, $version: Semver!) {
   workspaceBySlug(owner: $owner, slug: $slug) {
-    latestVersion {
+    version(version: $version) {
       libNotebook
       entries {
         __typename
