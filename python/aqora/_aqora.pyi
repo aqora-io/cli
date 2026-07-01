@@ -35,5 +35,6 @@ class Client:
         slug: str,
         dest_dir: str | Path,
         notebook: str | None = None,
+        version: str | None = None,
         force: bool = False,
     ) -> str: ...
