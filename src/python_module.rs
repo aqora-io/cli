@@ -228,7 +228,7 @@ impl PyClient {
         })
     }
 
-    #[pyo3(signature = (owner, slug, dest_dir, notebook=None, force=false))]
+    #[pyo3(signature = (owner, slug, dest_dir, notebook=None, version=None, force=false))]
     fn _download_workspace_notebook<'py>(
         &self,
         py: Python<'py>,
@@ -236,6 +236,7 @@ impl PyClient {
         slug: &str,
         dest_dir: std::path::PathBuf,
         notebook: Option<String>,
+        version: Option<String>,
         force: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let inner = Arc::clone(&self.inner);
@@ -244,7 +245,7 @@ impl PyClient {
         future_into_py(py, async move {
             let client = inner.read().await.client.clone();
             let filename =
-                download_workspace_notebook(client, owner, slug, dest_dir, notebook, force)
+                download_workspace_notebook(client, owner, slug, dest_dir, notebook, version, force)
                     .await
                     .map_err(|error| ClientError::new_err((error.message(),)))?;
             Ok(filename)

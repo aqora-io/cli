@@ -263,6 +263,54 @@ enum ArchiveKind {
 	ZIP
 }
 
+type AudienceGroup {
+	label: String!
+	position: Int!
+	id: ID!
+	items: [AudienceGroupItem!]!
+}
+
+type AudienceGroupConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [AudienceGroupEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [AudienceGroup!]!
+	totalCount: Int!
+}
+
+"""
+An edge in a connection.
+"""
+type AudienceGroupEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: AudienceGroup!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+input AudienceGroupInput {
+	label: String!
+	position: Int!
+	items: [String!]!
+}
+
+type AudienceGroupItem {
+	label: String!
+	id: ID!
+}
+
 enum Badge {
 	TEST
 	"""
@@ -987,6 +1035,10 @@ input CreateAnnouncementInput {
 	expiresAt: NaiveDate!
 }
 
+input CreateAudienceGroupsInput {
+	groups: [AudienceGroupInput!]!
+}
+
 input CreateBlogArticleInput {
 	title: String!
 	content: String!
@@ -1038,6 +1090,10 @@ input CreateCompetitionInput {
 	privateApprovals: Boolean! = true
 	timeline: CreateTimelineInput
 	rewards: [RewardInput!]
+	about: String
+	purpose: String
+	gettingStarted: String
+	audience: CreateAudienceGroupsInput
 }
 
 input CreateCompetitionStageInput {
@@ -1099,6 +1155,10 @@ input CreateEventInput {
 	tags: [String!]!
 	rewards: [RewardInput!]
 	timeline: CreateTimelineInput
+	about: String
+	purpose: String
+	gettingStarted: String
+	audience: CreateAudienceGroupsInput
 }
 
 input CreateForumInput {
@@ -1157,7 +1217,11 @@ input CreateTopicInput {
 }
 
 input CreateWorkspaceInput {
-	fromWorkspaceId: UUID
+	"""
+	The workspace version to clone the new workspace's first draft from;
+	seeds from the README template when omitted.
+	"""
+	fromVersionId: ID
 	name: String!
 	private: Boolean!
 	shortDescription: String
@@ -1656,6 +1720,7 @@ type Event implements ForumOwner & Node & Taggable & Rewardable {
 	invite: EventPublicInvite!
 	tags(after: String, before: String, first: Int, last: Int): TaggableConnection!
 	rewards(after: String, before: String, first: Int, last: Int): RewardConnection!
+	audienceGroups(before: String, after: String, first: Int, last: Int): AudienceGroupConnection!
 }
 
 type EventCompetition implements Node {
@@ -3422,6 +3487,10 @@ input UpdateAgendaInput {
 	agenda: JSON
 }
 
+input UpdateAudienceGroupsInput {
+	groups: [AudienceGroupInput!]!
+}
+
 input UpdateBlogArticleInput {
 	title: String
 	shortDescription: String
@@ -3475,6 +3544,10 @@ input UpdateCompetitionInput {
 	scoringCriteria: [UpdateCompetitionScoringCriterionInput!]
 	timeline: UpdateTimelineInput
 	rewards: [RewardInput!]
+	about: String
+	purpose: String
+	gettingStarted: String
+	audience: UpdateAudienceGroupsInput
 }
 
 input UpdateCompetitionMemberInput {
@@ -3551,6 +3624,10 @@ input UpdateEventInput {
 	tags: [String!]
 	rewards: [RewardInput!]
 	timeline: UpdateTimelineInput
+	about: String
+	purpose: String
+	gettingStarted: String
+	audience: UpdateAudienceGroupsInput
 }
 
 input UpdateForumInput {
@@ -3635,7 +3712,20 @@ input UpdateWorkspaceInput {
 }
 
 input UpdateWorkspaceVersionInput {
-	version: Semver!
+	"""
+	Rename the version's SemVer (drafts only). Omit to leave it unchanged.
+	"""
+	version: Semver
+	"""
+	Override the overview notebook for this version; null clears it (revert to
+	auto-detection), undefined leaves it unchanged.
+	"""
+	overviewNotebook: String
+	"""
+	Override the lib notebook for this version; null clears it, undefined
+	leaves it unchanged.
+	"""
+	libNotebook: String
 }
 
 scalar Upload
@@ -3844,8 +3934,8 @@ type Workspace implements Votable & ForumOwner & Node & Taggable {
 	voterCount: Int!
 	voters(after: String, before: String, first: Int, last: Int): VotersConnection!
 	tags(after: String, before: String, first: Int, last: Int): TaggableConnection!
-	entries: [WorkspaceEntry!]
-	defaultNotebook: String
+	overviewNotebook: String
+	libNotebook: String
 	versions(after: String, before: String, first: Int, last: Int, filters: WorkspaceVersionQueryFilters): WorkspaceVersionConnection!
 	version(version: Semver!): WorkspaceVersion
 	latestVersion: WorkspaceVersion
@@ -3916,6 +4006,11 @@ type WorkspaceFile implements WorkspaceEntry {
 	created: DateTime
 	modified: DateTime
 	size: Int
+	"""
+	Whether this file is a marimo notebook (carries marimo metadata),
+	so clients can render it as a live app view instead of source.
+	"""
+	isNotebook: Boolean!
 	downloadUrl: Url
 }
 
@@ -3999,6 +4094,22 @@ type WorkspaceVersion implements Node {
 	have no renderer.
 	"""
 	renderer: WorkspaceRunner
+	"""
+	Browse this version's indexed files. The version's storage is a kubimo
+	`WorkspaceDir` CR named after the version id; the root is batched through
+	the loader, nested directories are looked up by their `spec.path`.
+	"""
+	entries(path: String): [WorkspaceEntry!]
+	"""
+	The version's overview notebook: this version's override if set, else the
+	auto-detected default from this version's own files.
+	"""
+	overviewNotebook: String
+	"""
+	The version's lib notebook: this version's override if set, else a marimo
+	`lib.py` from this version's files, else the overview notebook.
+	"""
+	libNotebook: String
 }
 
 type WorkspaceVersionConnection {
