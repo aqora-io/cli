@@ -166,10 +166,12 @@ pub async fn download_workspace_notebook(
             "Please check your write permissions for the destination path",
         )
     })?;
-    let temp_path = temp.path().to_owned();
+    // Keep the TempPath guard alive: `into_file()` would drop it and delete
+    // the file from disk before the rename below.
+    let (temp_file, temp_path) = temp.into_parts();
 
     let response = client.s3_get(download_url).await?;
-    let file = tokio::fs::File::from_std(temp.into_file());
+    let file = tokio::fs::File::from_std(temp_file);
 
     let mut reader = response.body.into_async_read();
     let mut writer = tokio::io::BufWriter::new(file);
@@ -180,12 +182,10 @@ pub async fn download_workspace_notebook(
     .await
     {
         Ok(()) => {
-            tokio::fs::rename(&temp_path, &dest).await?;
+            temp_path.persist(&dest).map_err(|e| e.error)?;
             Ok(notebook_name)
         }
-        Err(e) => {
-            let _ = tokio::fs::remove_file(&temp_path).await;
-            Err(e.into())
-        }
+        // Dropping `temp_path` removes the temporary file
+        Err(e) => Err(e.into()),
     }
 }
