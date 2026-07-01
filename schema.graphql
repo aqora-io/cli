@@ -671,6 +671,10 @@ type Competition implements ForumOwner & Subscribable & Node & Taggable & Reward
 	id: ID!
 	forumOwnerKind: ForumOwnerKind!
 	description: String
+	purpose: String
+	about: String
+	gettingStarted: String
+	event(slug: String!): EventCompetition!
 	isPrivate: Boolean!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	host: Entity!
@@ -700,6 +704,7 @@ type Competition implements ForumOwner & Subscribable & Node & Taggable & Reward
 	datasets(after: String, before: String, first: Int, last: Int): CompetitionDatasetConnection!
 	teamRequests(after: String, before: String, first: Int, last: Int, isOrganization: Boolean): CompetitionTeamRequestConnection!
 	rewards(after: String, before: String, first: Int, last: Int): RewardConnection!
+	audienceGroups(before: String, after: String, first: Int, last: Int): AudienceGroupConnection!
 }
 
 type CompetitionConnection {
@@ -1701,6 +1706,9 @@ type Event implements ForumOwner & Node & Taggable & Rewardable {
 	id: ID!
 	forumOwnerKind: ForumOwnerKind!
 	description: String
+	purpose: String
+	about: String
+	gettingStarted: String
 	isPrivate: Boolean!
 	agenda: JSON
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
@@ -1710,6 +1718,7 @@ type Event implements ForumOwner & Node & Taggable & Rewardable {
 	thumbnail: Url
 	timeline: Timeline
 	membership(entity: UsernameOrID): EventMembership
+	competition: EventCompetition
 	members(after: String, before: String, first: Int, last: Int, search: String): EventMembershipConnection!
 	teams(after: String, before: String, first: Int, last: Int): OrganizationConnection!
 	invitations(after: String, before: String, first: Int, last: Int): EventInvitationConnection!
@@ -2243,7 +2252,7 @@ type Mutation {
 	updateUser(id: ID!, input: UpdateUserInput!): UserEdge!
 	deleteUser(id: ID!): ID!
 	setUserIsBanned(entityId: ID!, isBanned: Boolean!): User!
-	createCompetition(input: CreateCompetitionInput!): CompetitionEdge!
+	createCompetition(eventId: ID!, input: CreateCompetitionInput!): CompetitionEdge!
 	updateCompetition(id: ID!, input: UpdateCompetitionInput!): CompetitionEdge!
 	deleteCompetition(id: ID!): ID!
 	setCompetitionOrderingPriority(id: ID!, priority: Int!): CompetitionEdge!
