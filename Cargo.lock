@@ -177,6 +177,7 @@ dependencies = [
  "pretty_assertions",
  "pyo3",
  "pyo3-async-runtimes",
+ "qio",
  "qrcode",
  "rand 0.8.5",
  "regex",
@@ -3990,6 +3991,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "qio"
+version = "0.1.0"
+source = "git+https://github.com/aqora-io/qio-rs#fd430c270607b11db413e69392974790e1d4182a"
+dependencies = [
+ "base64 0.22.1",
+ "flate2",
+ "serde",
+ "serde_json",
+ "serde_repr",
+]
+
+[[package]]
 name = "qrcode"
 version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4834,6 +4847,17 @@ checksum = "59fab13f937fa393d08645bf3a84bdfe86e296747b506ada67bb15f10f218b2a"
 dependencies = [
  "itoa",
  "serde",
+]
+
+[[package]]
+name = "serde_repr"
+version = "0.1.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "175ee3e80ae9982737ca543e96133087cbd9a485eecc3bc4de9c1a37b47ea59c"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.100",
 ]
 
 [[package]]

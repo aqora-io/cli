@@ -181,13 +181,15 @@ class QPU(BackendV2):
         return unsupported
 
     def _build_target(self) -> Target:
+        from aqora._provider.jobs import platform_matches
+
         self._graphql.ensure_authenticated()
         platforms = self._graphql.get_provider_platforms()
         if self._platform is not None:
             platforms = [
                 platform
                 for platform in platforms
-                if self._platform in (platform.get("name"), platform.get("id"))
+                if platform_matches(self._platform, platform)
             ]
             if not platforms:
                 raise LookupError(f"Provider platform {self._platform!r} was not found")
@@ -219,6 +221,7 @@ class QPU(BackendV2):
         return model.to_json_str()
 
     def _fetch_job(self, job_id: str) -> Mapping[str, Any]:
+        self._graphql.ensure_authenticated()
         return self._graphql.get_provider_job(job_id)
 
     def _fetch_job_results(
@@ -229,6 +232,7 @@ class QPU(BackendV2):
     ) -> list["ProviderJobResultItem"]:
         from .job import ProviderJobResultItem
 
+        self._graphql.ensure_authenticated()
         items = [
             ProviderJobResultItem.from_graphql(item)
             for item in self._graphql.get_provider_job_results(

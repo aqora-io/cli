@@ -71,6 +71,29 @@ class QPUJob(JobV1):
         super().__init__(backend, job_id)
         self._payload = dict(payload or {})
 
+    @classmethod
+    def from_id(
+        cls,
+        job_id: str,
+        *,
+        client=None,
+        url: str | None = None,
+        allow_insecure_host: bool | None = None,
+    ) -> "QPUJob":
+        """Load a job by id, building its `QPU` from the job's platform."""
+        from aqora._provider.jobs import _resolve_graphql, qualified_platform_name
+
+        from .backend import QPU
+
+        graphql = _resolve_graphql(client, url=url, allow_insecure_host=allow_insecure_host)
+        graphql.ensure_authenticated()
+        payload = graphql.get_provider_job(job_id)
+        backend = QPU(
+            graphql.client,
+            platform=qualified_platform_name(payload.get("platform")),
+        )
+        return cls(backend, job_id, payload=payload)
+
     def backend(self) -> "QPU":
         return self._backend  # type: ignore[return-value]
 
@@ -117,9 +140,10 @@ class QPUJob(JobV1):
         return self.backend()._fetch_job_results(self.job_id())
 
     def _job_status(self, status: str | None, error: str | None) -> JobStatus:
-        # Truthiness, not `is not None`: the server has returned `""` for
-        # healthy jobs (the field mirrors the provider's progress message).
-        if error:
+        # The server mirrors the provider's progress message into `error` for
+        # live jobs ("The job is queued.") and nulls `status` when the
+        # provider reports an error state; only that combination is a failure.
+        if status is None and error:
             return JobStatus.ERROR
         # Unknown statuses fall back to RUNNING so that `wait_for_final_state`
         # keeps polling rather than reporting a spurious ERROR if the server

@@ -298,11 +298,13 @@ class FakeClient:
             {
                 "id": "ProviderPlatform:a",
                 "name": "platform-a",
+                "provider": "SCALEWAY",
                 "meta": {"maxQubits": 3, "maxShots": 1000, "maxCircuits": 10},
             },
             {
                 "id": "ProviderPlatform:b",
                 "name": "platform-b",
+                "provider": "SCALEWAY",
                 "meta": {"maxQubits": 7, "maxShots": None, "maxCircuits": None},
             },
         ]
@@ -373,6 +375,11 @@ class FakeClient:
                     "__typename": "ProviderJob",
                     "id": variables["id"],
                     "provider": "scaleway",
+                    "platform": {
+                        "id": "ProviderPlatform:b",
+                        "name": "platform-b",
+                        "provider": "SCALEWAY",
+                    },
                     "status": self.job_status,
                     "error": self.job_error,
                     "duration": 1,
@@ -507,6 +514,31 @@ def test_qpu_run_rejects_non_integer_shots(mod):
         qpu.run(mod.QuantumCircuit(1), shots=512.5)
 
 
+def test_job_from_id_builds_backend_from_job(mod):
+    # Uses the default client (url from env) and binds the backend to the
+    # job's platform in the server's `provider:name` form.
+    job = mod.QPUJob.from_id("ProviderJob:job-1")
+
+    assert isinstance(job.backend(), mod.QPU)
+    assert job.backend().platform == "scaleway:platform-b"
+    assert job.backend().client.authenticated
+
+    result = job.result(timeout=0.01, wait=0)
+    assert result.to_dict()["job_id"] == "ProviderJob:job-1"
+
+
+def test_reattached_job_authenticates(mod):
+    # A job handle built from a stored id must authenticate on first use;
+    # only the submit path did before.
+    qpu = mod.QPU()
+    job = mod.QPUJob(qpu, "ProviderJob:job-1")
+
+    assert not qpu.client.authenticated
+    result = job.result(timeout=0.01, wait=0)
+    assert qpu.client.authenticated
+    assert result.to_dict()["job_id"] == "ProviderJob:job-1"
+
+
 def test_job_backend_is_a_method(mod):
     qpu = mod.QPU()
     job = mod.QPUJob(qpu, "ProviderJob:job-1")
@@ -583,12 +615,27 @@ def test_job_result_count_mismatch_raises(mod):
 
 
 def test_job_result_failed_job_raises_job_error(mod):
+    # The platform nulls the job status when the provider reports an error
+    # state; the error field holds the provider's message.
     qpu = mod.QPU()
+    qpu.client.job_status = None
     qpu.client.job_error = "device on fire"
     job = mod.QPUJob(qpu, "ProviderJob:job-1")
 
     with pytest.raises(mod.job.JobError, match="device on fire"):
         job.result(timeout=0.01, wait=0)
+
+
+def test_job_result_ignores_progress_message_on_live_job(mod):
+    # The error field mirrors the provider's progress message ("The job is
+    # queued.") for healthy jobs.
+    qpu = mod.QPU()
+    qpu.client.job_error = "Job has been submitted to Nexus."
+    job = mod.QPUJob(qpu, "ProviderJob:job-1")
+
+    result = job.result(timeout=0.01, wait=0)
+
+    assert result.to_dict()["job_id"] == "ProviderJob:job-1"
 
 
 def test_job_result_cancelled_job_raises_job_error(mod):
@@ -638,6 +685,14 @@ def test_target_uses_selected_platform_qubits(mod):
     assert qpu.target.num_qubits == 3
 
 
+def test_target_matches_provider_qualified_platform_name(mod):
+    # The server's ProviderPlatformNameOrID scalar requires `provider:name`
+    # for name strings, so client-side matching must accept it too.
+    qpu = mod.QPU(platform="scaleway:platform-a")
+
+    assert qpu.target.num_qubits == 3
+
+
 def test_target_selects_platform_by_id(mod):
     qpu = mod.QPU(platform="ProviderPlatform:b")
 
@@ -683,7 +738,9 @@ def test_empty_string_job_error_is_not_an_error(mod):
 
     assert job._job_status("COMPLETED", "") == JobStatus.DONE
     assert job._job_status("WAITING", "") == JobStatus.QUEUED
-    assert job._job_status("COMPLETED", "boom") == JobStatus.ERROR
+    assert job._job_status("COMPLETED", "boom") == JobStatus.DONE
+    assert job._job_status(None, "boom") == JobStatus.ERROR
+    assert job._job_status(None, "") == JobStatus.INITIALIZING
 
 
 def test_job_result_succeeds_with_empty_string_error(mod):

@@ -14,6 +14,22 @@ class LayerEvaluation:
 
 def main() -> Never: ...
 
+QIO_PROGRAM_QIR_V1: int
+QIO_PROGRAM_TKET_CIRCUIT_JSON_V1: int
+QIO_PROGRAM_HUGR_V1: int
+QIO_RESULT_PYTKET_BACKEND_RESULT_JSON_V1: int
+QIO_RESULT_QIR_LABELED_RESULT_V1: int
+QIO_RESULT_QSYS_RESULT_JSON_V1: int
+
+def qio_build_model_payload(
+    programs: list[tuple[str, int]],
+    *,
+    user_agent: str,
+    backend_name: str,
+    compress: bool,
+) -> str: ...
+def qio_parse_result_payload(payload: str) -> tuple[int, str]: ...
+
 class ClientError(Exception): ...
 
 class Client:
