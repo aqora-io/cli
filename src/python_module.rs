@@ -30,6 +30,65 @@ pub fn main(py: Python<'_>) -> PyResult<()> {
 
 import_exception!(aqora, ClientError);
 
+fn program_format(value: u16) -> PyResult<qio::QuantumProgramSerializationFormat> {
+    serde_json::from_value(value.into()).map_err(|_| {
+        PyValueError::new_err(format!(
+            "unknown quantum program serialization format: {value}"
+        ))
+    })
+}
+
+/// Build a qio `QuantumComputationModel` JSON payload from `(serialization,
+/// serialization_format)` pairs, optionally zlib+base64 compressing each
+/// program.
+#[pyfunction]
+#[pyo3(signature = (programs, *, user_agent, backend_name, compress))]
+fn qio_build_model_payload(
+    programs: Vec<(String, u16)>,
+    user_agent: String,
+    backend_name: String,
+    compress: bool,
+) -> PyResult<String> {
+    let programs = programs
+        .into_iter()
+        .map(|(serialization, format)| {
+            let program = qio::QuantumProgram::new(serialization, program_format(format)?);
+            if compress {
+                program
+                    .to_compression(qio::CompressionFormat::ZlibBase64V1)
+                    .map_err(|error| PyValueError::new_err(error.to_string()))
+            } else {
+                Ok(program)
+            }
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+    qio::QuantumComputationModel {
+        programs,
+        noise_model: None,
+        client: Some(qio::ClientData { user_agent }),
+        backend: Some(qio::BackendData {
+            name: backend_name,
+            version: None,
+            options: None,
+        }),
+    }
+    .to_json_str()
+    .map_err(|error| PyValueError::new_err(error.to_string()))
+}
+
+/// Parse a qio result payload into `(serialization_format, serialization)`,
+/// decompressing as needed. The serialization format is kept as a raw integer
+/// so formats newer than this build still pass through.
+#[pyfunction]
+fn qio_parse_result_payload(payload: &str) -> PyResult<(u16, String)> {
+    let result: qio::Serialization<u16> = qio::parse_json_str(payload)
+        .map_err(|error| PyValueError::new_err(format!("invalid result payload: {error}")))?;
+    let result = result
+        .to_compression(qio::CompressionFormat::None)
+        .map_err(|error| PyValueError::new_err(format!("invalid result compression: {error}")))?;
+    Ok((result.serialization_format, result.serialization))
+}
+
 #[pyclass(frozen, name = "Client", module = "aqora")]
 struct PyClient {
     inner: Arc<RwLock<PyClientInner>>,
@@ -262,9 +321,37 @@ impl PyClient {
 #[pymodule]
 #[pyo3(name = "_aqora")]
 pub fn aqora(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    use qio::{QuantumProgramResultSerializationFormat, QuantumProgramSerializationFormat};
+
     m.add_function(wrap_pyfunction!(main, m)?)?;
     m.add_class::<PipelineConfig>()?;
     m.add_class::<LayerEvaluation>()?;
     m.add_class::<PyClient>()?;
+    m.add_function(wrap_pyfunction!(qio_build_model_payload, m)?)?;
+    m.add_function(wrap_pyfunction!(qio_parse_result_payload, m)?)?;
+    m.add(
+        "QIO_PROGRAM_QIR_V1",
+        QuantumProgramSerializationFormat::QirV1 as u16,
+    )?;
+    m.add(
+        "QIO_PROGRAM_TKET_CIRCUIT_JSON_V1",
+        QuantumProgramSerializationFormat::TketCircuitJsonV1 as u16,
+    )?;
+    m.add(
+        "QIO_PROGRAM_HUGR_V1",
+        QuantumProgramSerializationFormat::HugrV1 as u16,
+    )?;
+    m.add(
+        "QIO_RESULT_PYTKET_BACKEND_RESULT_JSON_V1",
+        QuantumProgramResultSerializationFormat::PytketBackendResultJsonV1 as u16,
+    )?;
+    m.add(
+        "QIO_RESULT_QIR_LABELED_RESULT_V1",
+        QuantumProgramResultSerializationFormat::QirLabeledResultV1 as u16,
+    )?;
+    m.add(
+        "QIO_RESULT_QSYS_RESULT_JSON_V1",
+        QuantumProgramResultSerializationFormat::QsysResultJsonV1 as u16,
+    )?;
     Ok(())
 }
