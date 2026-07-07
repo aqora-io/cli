@@ -34,7 +34,7 @@ mutation CreateProviderModel(
 
 CREATE_PROVIDER_JOB_MUTATION = """
 mutation CreateProviderJob(
-  $providerModelId: UUID!,
+  $providerModelId: ID!,
   $shots: Int,
   $providerPlatform: ProviderPlatformNameOrID,
 ) {
@@ -91,6 +91,17 @@ query ProviderJobResults($id: ID!, $first: Int, $after: String) {
           result
         }
       }
+    }
+  }
+}
+"""
+
+PROVIDER_MODEL_QUERY = """
+query ProviderModel($id: ID!) {
+  node(id: $id) {
+    __typename
+    ... on ProviderModel {
+      downloadUrl
     }
   }
 }
@@ -222,6 +233,17 @@ class AqoraGraphQLClient:
             )
         )
         return response["createProviderModel"]
+
+    def download_provider_model(self, provider_model_id: str) -> str:
+        # `node(id:)` is non-null in the schema, so an unknown id surfaces as a
+        # GraphQL error from `send`; this guard only catches ids that point at a
+        # different node type.
+        node = _run_sync(
+            lambda: self._client.send(PROVIDER_MODEL_QUERY, id=provider_model_id)
+        )["node"]
+        if not node or node.get("__typename") != "ProviderModel":
+            raise LookupError(f"Node {provider_model_id!r} is not a provider model")
+        return self.download_text(node["downloadUrl"])
 
     def create_provider_job(
         self,
