@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.26.2 - 2026-07-07
+#### Bug Fixes
+- use lib notebook for default notebook for aqora.load - (016e569) - Julian Popescu
+
+- - -
+
 ## v0.26.1 - 2026-06-22
 #### Build system
 - (**kubimo**) upgrade marimo - (89eaf35) - Antoine Chauvin
