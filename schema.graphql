@@ -4,6 +4,7 @@ enum Action {
 	ADD_COMPETITION_MEMBER
 	ADD_EVENT_COMPETITION
 	ADD_EVENT_MEMBER
+	ADD_PROVIDER_PLATFORM_MEMBER
 	AWARD_BADGE
 	CREATE_ANNOUNCEMENT
 	CREATE_BLOG_ARTICLE
@@ -82,6 +83,7 @@ enum Action {
 	READ_PROJECT_VERSION_APPROVAL_SCORE
 	READ_PROJECT_VERSION_EVALUATION
 	READ_PROJECT_VERSION_FILE
+	READ_PROVIDER_PLATFORM_MEMBERSHIP
 	READ_SUBJECT_SUBSCRIPTION
 	READ_SUBMISSION
 	READ_TOPIC
@@ -97,6 +99,7 @@ enum Action {
 	REMOVE_EVENT_COMPETITION
 	REMOVE_EVENT_MEMBER
 	REMOVE_ORGANIZATION_MEMBER
+	REMOVE_PROVIDER_PLATFORM_MEMBER
 	SEND_COMPETITION_TEAM_REQUEST_MESSAGE
 	SET_COMPETITION_ORDERING_PRIORITY
 	SET_EVENT_ORDERING_PRIORITY
@@ -668,6 +671,7 @@ type Competition implements ForumOwner & Subscribable & Node & Taggable & Reward
 	shortDescription: String!
 	createdAt: DateTime!
 	visibility: ActivityVisibility!
+	useLegacyDescription: Boolean
 	id: ID!
 	forumOwnerKind: ForumOwnerKind!
 	description: String
@@ -1099,6 +1103,11 @@ input CreateCompetitionInput {
 	purpose: String
 	gettingStarted: String
 	audience: CreateAudienceGroupsInput
+	"""
+	Should we use the old way of representing
+	descriptions.
+	"""
+	useLegacyDescription: Boolean
 }
 
 input CreateCompetitionStageInput {
@@ -1164,6 +1173,11 @@ input CreateEventInput {
 	purpose: String
 	gettingStarted: String
 	audience: CreateAudienceGroupsInput
+	"""
+	Should we use the old way of representing
+	descriptions.
+	"""
+	useLegacyDescription: Boolean
 }
 
 input CreateForumInput {
@@ -1703,6 +1717,7 @@ type Event implements ForumOwner & Node & Taggable & Rewardable {
 	createdAt: DateTime!
 	visibility: ActivityVisibility!
 	inviteEmail: String
+	useLegacyDescription: Boolean
 	id: ID!
 	forumOwnerKind: ForumOwnerKind!
 	description: String
@@ -2325,7 +2340,9 @@ type Mutation {
 	deleteProjectVersionApproval(projectVersionApprovalId: ID!): ID!
 	uploadProviderModelPayload: UploadProviderModelPayload!
 	createProviderModel(providerModelUploadId: UUID!, etag: String!): ProviderModel!
-	createProviderJob(providerModelId: UUID!, shots: Int, providerPlatform: ProviderPlatformNameOrID): ProviderJob!
+	createProviderJob(providerModelId: ID!, shots: Int, providerPlatform: ProviderPlatformNameOrID): ProviderJob!
+	addProviderPlatformMember(providerPlatformId: ID!, entityId: ID!): ProviderPlatformMembershipConnectionEdge!
+	removeProviderPlatformMember(providerPlatformId: ID!, entityId: ID!): ID!
 	fetchWebsiteMetadata(url: Url!): WebsiteMetadata!
 	generateEventInviteCode(id: ID!): EventPublicInvite!
 	removeEventInviteCode(id: ID!): EventPublicInvite!
@@ -2888,19 +2905,32 @@ enum ProjectVersionStatus {
 
 enum Provider {
 	SCALEWAY
+	NEXUS
 }
 
 type ProviderJob implements Node {
 	id: ID!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
-	providerModelId: UUID!
+	"""
+	The model (uploaded payload) this job ran.
+	"""
+	providerModel: ProviderModel!
 	provider: String!
+	"""
+	The platform (backend) the job's session runs on.
+	"""
+	platform: ProviderPlatform
 	status: ProviderJobStatus
 	error: String
 	duration: Int
 	resultCount: Int
 	createdAt: DateTime!
 	resultUploadAttempts: Int!
+	"""
+	The workspace version the job was submitted from, if it was submitted
+	by a workspace runner.
+	"""
+	workspaceVersionId: ID
 	results(after: String, before: String, first: Int, last: Int): ProviderJobResultConnection!
 }
 
@@ -2977,9 +3007,14 @@ enum ProviderJobStatus {
 	CANCELLED
 }
 
-type ProviderModel {
-	id: UUID!
+type ProviderModel implements Node {
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	createdAt: DateTime!
+	"""
+	A presigned URL to download the uploaded model payload.
+	"""
+	downloadUrl: Url!
 }
 
 type ProviderPlatform implements Node {
@@ -2987,6 +3022,8 @@ type ProviderPlatform implements Node {
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	provider: Provider!
 	name: String!
+	private: Boolean!
+	members(after: String, before: String, first: Int, last: Int): ProviderPlatformMembershipConnection!
 	meta: ProviderPlatformMeta!
 }
 
@@ -3014,6 +3051,35 @@ type ProviderPlatformEdge {
 	The item at the end of the edge
 	"""
 	node: ProviderPlatform!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+type ProviderPlatformMembershipConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [ProviderPlatformMembershipConnectionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Entity!]!
+}
+
+"""
+An edge in a connection.
+"""
+type ProviderPlatformMembershipConnectionEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Entity!
 	"""
 	A cursor for use in pagination
 	"""
@@ -3128,6 +3194,7 @@ enum Scope {
 	READ_COMPETITION
 	READ_DATASET
 	READ_PROJECT
+	READ_WORKSPACE
 	PROVIDER
 }
 
@@ -3557,6 +3624,11 @@ input UpdateCompetitionInput {
 	purpose: String
 	gettingStarted: String
 	audience: UpdateAudienceGroupsInput
+	"""
+	Should we use the old way of representing
+	descriptions.
+	"""
+	useLegacyDescription: Boolean
 }
 
 input UpdateCompetitionMemberInput {
@@ -3637,6 +3709,11 @@ input UpdateEventInput {
 	purpose: String
 	gettingStarted: String
 	audience: UpdateAudienceGroupsInput
+	"""
+	Should we use the old way of representing
+	descriptions.
+	"""
+	useLegacyDescription: Boolean
 }
 
 input UpdateForumInput {
@@ -4030,6 +4107,11 @@ type WorkspaceRunner implements Node {
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	workspace: Workspace!
 	url(notebook: String): Url!
+	"""
+	Jobs submitted from this runner's workspace version, newest first.
+	Null for dataset/legacy runners that have no version.
+	"""
+	providerJobs(after: String, before: String, first: Int, last: Int): ProviderJobConnection
 }
 
 type WorkspaceRunnerConnection {
