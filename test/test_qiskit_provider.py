@@ -387,6 +387,13 @@ class FakeClient:
                     "createdAt": "2026-04-02T00:00:00Z",
                 }
             }
+        if "query ProviderModel" in query:
+            return {
+                "node": {
+                    "__typename": "ProviderModel",
+                    "downloadUrl": "https://example.invalid/model-download",
+                }
+            }
         raise AssertionError(f"Unexpected query: {query}")
 
 
@@ -451,6 +458,20 @@ def test_qpu_run_uploads_qio_model(mod, monkeypatch: pytest.MonkeyPatch):
             "providerPlatform": None,
         }
     ]
+
+
+def test_download_provider_model(mod):
+    fake = FakeClient()
+    fake.payloads["https://example.invalid/model-download"] = '{"programs": []}'
+    graphql = mod.client.AqoraGraphQLClient(fake)
+
+    text = graphql.download_provider_model("model-1")
+
+    assert text == '{"programs": []}'
+    model_queries = [
+        variables for query, variables in fake.calls if "query ProviderModel" in query
+    ]
+    assert model_queries == [{"id": "model-1"}]
 
 
 def test_qpu_run_passes_shots(mod):
