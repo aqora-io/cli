@@ -54,6 +54,44 @@ def _resolve_graphql(
     return AqoraGraphQLClient(client or Client(url, allow_insecure_host=allow_insecure_host))
 
 
+def is_provider_failure(status: str | None, error: str | None) -> bool:
+    """Whether a job payload's `(status, error)` signals a provider failure.
+
+    The server nulls `status` and puts the provider's message in `error` when
+    the provider reports an error state. For live jobs `error` instead mirrors
+    the provider's progress message ("The job is queued."), so a failure is
+    only the combination of a null status with a non-empty error.
+    """
+    return status is None and bool(error)
+
+
+def normalize_shots(shots: Any) -> int | None:
+    """Coerce a user-supplied shot count into a positive int, or None.
+
+    The provider API takes a single optional `shots` value shared by every
+    circuit in a job. Rejects bools and non-integral values; requires `>= 1`.
+    """
+    if shots is None:
+        return None
+    if isinstance(shots, bool):
+        raise TypeError("`shots` must be an integer")
+    try:
+        as_int = int(shots)
+    except (TypeError, ValueError) as exc:
+        raise TypeError("`shots` must be an integer") from exc
+    if as_int != shots:
+        raise TypeError("`shots` must be an integer")
+    if as_int < 1:
+        raise ValueError("`shots` must be at least 1")
+    return as_int
+
+
+def _errored_result(index: int, error: str) -> ProviderResult:
+    # An errored item carries no serialization; callers must check `.error`
+    # before reading `serialization_format`/`raw`.
+    return ProviderResult(index=index, serialization_format=-1, raw="", error=error)
+
+
 def submit_model(
     graphql: AqoraGraphQLClient,
     payload: str,
@@ -133,7 +171,14 @@ class ProviderJob:
                 )
             time.sleep(poll_interval)
 
-    def results(self) -> list[ProviderResult]:
+    def results(self, *, raise_on_item_error: bool = True) -> list[ProviderResult]:
+        """Download and decode every result payload of the job.
+
+        By default a per-item error aborts the whole call. Pass
+        `raise_on_item_error=False` to instead surface each failed item as a
+        `ProviderResult` carrying its `error`, so that a single bad result does
+        not poison the successful siblings in a multi-program job.
+        """
         self._graphql.ensure_authenticated()
         payload = self.refresh()
         self._raise_on_failure(payload)
@@ -146,21 +191,27 @@ class ProviderJob:
             )
         results = []
         for item in items:
-            if item.get("error"):
-                raise RuntimeError(
-                    f"Provider job result {item['index']} failed: {item['error']}"
-                )
+            index = int(item["index"])
+            error = item.get("error")
+            if error:
+                if raise_on_item_error:
+                    raise RuntimeError(f"Provider job result {index} failed: {error}")
+                results.append(_errored_result(index, str(error)))
+                continue
             result_url = item.get("result")
             if not result_url:
-                raise RuntimeError(
-                    f"Provider job result {item['index']} is missing a result URL"
-                )
+                if raise_on_item_error:
+                    raise RuntimeError(
+                        f"Provider job result {index} is missing a result URL"
+                    )
+                results.append(_errored_result(index, "missing a result URL"))
+                continue
             serialization_format, raw = wire.parse_result_payload(
                 self._graphql.download_text(result_url)
             )
             results.append(
                 ProviderResult(
-                    index=int(item["index"]),
+                    index=index,
                     serialization_format=serialization_format,
                     raw=raw,
                 )
@@ -169,12 +220,9 @@ class ProviderJob:
         return results
 
     def _raise_on_failure(self, payload: Mapping[str, Any]) -> None:
-        # The server mirrors the provider's progress message into `error` for
-        # live jobs ("The job is queued.") and nulls `status` when the
-        # provider reports an error state; only that combination is a failure.
         status = payload.get("status")
         error = payload.get("error")
-        if status is None and error:
+        if is_provider_failure(status, error):
             raise RuntimeError(f"aqora provider job {self.job_id!r} failed: {error}")
         if status == "CANCELLED":
             raise RuntimeError(f"aqora provider job {self.job_id!r} was cancelled")

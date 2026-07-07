@@ -6,7 +6,7 @@ from typing import Any, Sequence
 
 from aqora import Client
 from aqora._provider import jobs, wire
-from aqora._provider.client import AqoraGraphQLClient, _package_version
+from aqora._provider.client import _package_version
 
 from ._deps import (
     AutoRebase,
@@ -69,15 +69,13 @@ class QPU(Backend):
         platform: str | None = None,
         compress: bool = True,
     ) -> None:
-        if client is not None and (url is not None or allow_insecure_host is not None):
-            raise ValueError(
-                "`url` and `allow_insecure_host` cannot be combined with an explicit `client`"
-            )
-        raw_client = client or Client(url, allow_insecure_host=allow_insecure_host)
-        self._graphql = AqoraGraphQLClient(raw_client)
+        self._graphql = jobs._resolve_graphql(
+            client, url=url, allow_insecure_host=allow_insecure_host
+        )
         self._platform = platform
         self._compress = compress
         self._max_qubits: int | None = None
+        self._max_qubits_loaded = False
         self._backend_info: BackendInfo | None = None
         super().__init__()
 
@@ -108,7 +106,10 @@ class QPU(Backend):
 
     @property
     def required_predicates(self) -> list[Predicate]:
-        return [MaxNQubitsPredicate(self._platform_max_qubits())]
+        max_qubits = self._platform_max_qubits()
+        if max_qubits is None:
+            return []
+        return [MaxNQubitsPredicate(max_qubits)]
 
     def default_compilation_pass(self, optimisation_level: int = 2) -> BasePass:
         passes: list[BasePass] = [DecomposeBoxes()]
@@ -147,12 +148,9 @@ class QPU(Backend):
     def circuit_status(self, handle: ResultHandle) -> CircuitStatus:
         self._graphql.ensure_authenticated()
         payload = self._graphql.get_provider_job(str(handle[0]))
-        # The server mirrors the provider's progress message into `error` for
-        # live jobs ("The job is queued.") and nulls `status` when the
-        # provider reports an error state; only that combination is a failure.
         status = payload.get("status")
         error = payload.get("error")
-        if status is None and error:
+        if jobs.is_provider_failure(status, error):
             return CircuitStatus(StatusEnum.ERROR, error)
         # Unknown statuses fall back to RUNNING so that callers keep polling
         # rather than reporting a spurious failure if the server introduces a
@@ -185,8 +183,19 @@ class QPU(Backend):
                 )
             time.sleep(wait)
 
+        # Tolerate per-item errors so one failed circuit does not block the
+        # successful siblings sharing this job; only raise if the circuit whose
+        # result was actually requested failed.
+        requested_index = handle[1]
         job = jobs.ProviderJob(self._graphql, job_id)
-        for item in job.results():
+        for item in job.results(raise_on_item_error=False):
+            if item.error is not None:
+                if item.index == requested_index:
+                    raise RuntimeError(
+                        f"aqora provider job {job_id!r} result "
+                        f"{requested_index} failed: {item.error}"
+                    )
+                continue
             item_handle = ResultHandle(job_id, item.index)
             self._cache.setdefault(item_handle, {})["result"] = item.to_backend_result()
         return super().get_result(handle)
@@ -195,37 +204,46 @@ class QPU(Backend):
         raise NotImplementedError("The aqora provider GraphQL API does not support cancellation")
 
     def _normalize_shots(self, n_shots: int | Sequence[int] | None) -> int | None:
+        # `int` also covers `bool`, which `jobs.normalize_shots` rejects.
         if n_shots is None or isinstance(n_shots, int):
-            return n_shots
+            return jobs.normalize_shots(n_shots)
         shots = list(n_shots)
         if len(set(shots)) > 1:
             raise NotImplementedError(
                 "The aqora provider GraphQL API does not support per-circuit "
                 "shot counts; all circuits in a job share one `shots` value"
             )
-        return shots[0] if shots else None
+        return jobs.normalize_shots(shots[0]) if shots else None
 
-    def _platform_max_qubits(self) -> int:
-        if self._max_qubits is None:
-            self._graphql.ensure_authenticated()
-            platforms = self._graphql.get_provider_platforms()
-            if self._platform is not None:
-                platforms = [
-                    platform
-                    for platform in platforms
-                    if jobs.platform_matches(self._platform, platform)
-                ]
-                if not platforms:
-                    raise LookupError(f"Provider platform {self._platform!r} was not found")
-            max_qubits = [
-                platform["meta"]["maxQubits"]
-                for platform in platforms
-                if (platform.get("meta") or {}).get("maxQubits") is not None
-            ]
-            if not max_qubits:
-                raise RuntimeError(
-                    "No provider platform reported a qubit count; "
-                    "cannot build circuit predicates"
-                )
-            self._max_qubits = max(max_qubits)
+    def _platform_max_qubits(self) -> int | None:
+        # Cached; `None` is a real value ("no known qubit ceiling"), so guard on
+        # a separate loaded flag rather than on `self._max_qubits` itself.
+        if not self._max_qubits_loaded:
+            self._max_qubits = self._load_platform_max_qubits()
+            self._max_qubits_loaded = True
         return self._max_qubits
+
+    def _load_platform_max_qubits(self) -> int | None:
+        # Without a selected platform the server picks one we cannot identify
+        # here, so we cannot bound qubits client-side; defer that check to the
+        # server rather than guess from the max across all platforms.
+        if self._platform is None:
+            return None
+        self._graphql.ensure_authenticated()
+        platforms = [
+            platform
+            for platform in self._graphql.get_provider_platforms()
+            if jobs.platform_matches(self._platform, platform)
+        ]
+        if not platforms:
+            raise LookupError(f"Provider platform {self._platform!r} was not found")
+        max_qubits = [
+            platform["meta"]["maxQubits"]
+            for platform in platforms
+            if (platform.get("meta") or {}).get("maxQubits") is not None
+        ]
+        # A matched platform with no advertised qubit count: skip the predicate
+        # and let the server enforce its own limits, rather than failing here.
+        if not max_qubits:
+            return None
+        return max(max_qubits)

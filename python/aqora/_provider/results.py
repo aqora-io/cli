@@ -68,6 +68,9 @@ class ProviderResult:
     index: int
     serialization_format: int
     raw: str
+    # Set when the provider failed this individual result; `serialization_format`
+    # and `raw` are then unset (sentinel `-1`/`""`).
+    error: str | None = None
 
     def _require_format(self, expected: int, description: str) -> None:
         if self.serialization_format != expected:
