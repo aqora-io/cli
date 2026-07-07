@@ -549,6 +549,40 @@ def test_qpu_get_result_populates_cache_for_all_indices(mod):
     assert len(result_queries) == 1
 
 
+def test_qpu_get_result_tolerates_sibling_error(mod):
+    # One failed circuit must not block retrieving a successful sibling sharing
+    # the job; only requesting the failed handle raises.
+    from pytket.circuit import Circuit
+
+    qpu = mod.QPU()
+    handles = qpu.process_circuits([Circuit(1), Circuit(1)], n_shots=10)
+    qpu.client.result_pages = [
+        [
+            {"index": 0, "error": None, "result": "https://example.invalid/result-0"},
+            {"index": 1, "error": "circuit 1 failed", "result": None},
+        ]
+    ]
+
+    result_0 = qpu.get_result(handles[0], timeout=0.01, wait=0)
+    assert result_0.to_dict() == {"qubits": [["q", [0]]], "shots": [[0]]}
+
+    with pytest.raises(RuntimeError, match="circuit 1 failed"):
+        qpu.get_result(handles[1], timeout=0.01, wait=0)
+
+
+def test_qpu_rejects_non_positive_shots(mod):
+    # Shots normalization is shared with the guppy backend: bools and values
+    # below 1 are rejected consistently.
+    from pytket.circuit import Circuit
+
+    qpu = mod.QPU()
+
+    with pytest.raises(ValueError, match="at least 1"):
+        qpu.process_circuits([Circuit(1)], n_shots=0)
+    with pytest.raises(TypeError, match="integer"):
+        qpu.process_circuits([Circuit(1)], n_shots=True)
+
+
 def test_qpu_get_result_raises_on_error(mod):
     from pytket.circuit import Circuit
 
@@ -619,12 +653,29 @@ def test_qpu_required_predicates_use_selected_platform(mod):
     assert predicate.n_qubits == 26
 
 
-def test_qpu_required_predicates_use_max_platform_qubits(mod):
+def test_qpu_required_predicates_defer_when_no_platform_selected(mod):
+    # With no platform chosen the server picks one we cannot identify here, so
+    # no client-side qubit predicate is emitted; the server enforces its limits
+    # rather than the client guessing from the max across all platforms.
     qpu = mod.QPU()
 
-    (predicate,) = qpu.required_predicates
+    assert qpu.required_predicates == []
 
-    assert predicate.n_qubits == 40
+
+def test_qpu_required_predicates_skip_platform_without_qubit_count(mod):
+    # A matched, runnable platform that advertises no maxQubits must not fail
+    # predicate construction; the check is simply skipped.
+    qpu = mod.QPU(platform="Selene")
+    qpu.client.platforms = [
+        {
+            "id": "ProviderPlatform:b",
+            "name": "Selene",
+            "provider": "NEXUS",
+            "meta": {"maxQubits": None, "maxShots": None, "maxCircuits": None},
+        },
+    ]
+
+    assert qpu.required_predicates == []
 
 
 def test_qpu_matches_provider_qualified_platform_name(mod):

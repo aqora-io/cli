@@ -11,7 +11,11 @@ use clap::Args;
 use futures::{prelude::*, TryStreamExt};
 use indicatif::ProgressBar;
 use serde::Serialize;
-use std::{ops::Range, path::Path, time::Duration};
+use std::{
+    ops::Range,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio_util::io::InspectWriter;
 use url::Url;
@@ -52,6 +56,21 @@ impl<'a> DownloadInspector<'a> {
     }
 }
 
+/// Stream an S3 GET response body into `file`, driving byte progress on `pb`.
+async fn write_s3_response(
+    response: aqora_client::s3::S3GetResponse,
+    file: tokio::fs::File,
+    pb: &ProgressBar,
+) -> Result<()> {
+    let inspector = DownloadInspector::new(pb, response.content_length);
+    let mut writer = BufWriter::new(InspectWriter::new(file, move |bytes| {
+        inspector.inspect(bytes);
+    }));
+    tokio::io::copy_buf(&mut response.body.into_async_read(), &mut writer).await?;
+    writer.flush().await?;
+    Ok(())
+}
+
 pub async fn download_archive(
     client: &GraphQLClient,
     url: Url,
@@ -85,16 +104,8 @@ pub async fn download_archive(
     })?;
     let tar_path = tar_dir.path().join(filename);
 
-    let inspector = DownloadInspector::new(pb, response.content_length);
-    let mut tar_file = tokio::io::BufWriter::new(tokio_util::io::InspectWriter::new(
-        tokio::fs::File::create(&tar_path).await?,
-        move |bytes| {
-            inspector.inspect(bytes);
-        },
-    ));
-    tokio::io::copy_buf(&mut response.body.into_async_read(), &mut tar_file).await?;
-    tar_file.flush().await?;
-    drop(tar_file);
+    let tar_file = tokio::fs::File::create(&tar_path).await?;
+    write_s3_response(response, tar_file, pb).await?;
 
     decompress(tar_path, &dir, pb).await.map_err(|e| {
         error::user(
@@ -102,6 +113,41 @@ pub async fn download_archive(
             "Please make sure you have permission to create files in this directory",
         )
     })?;
+    Ok(())
+}
+
+/// Stream a presigned S3 GET straight to `output`, showing byte progress on `pb`.
+///
+/// Suitable for small single-file payloads: it issues one plain GET (no chunking
+/// or ranged retries) and atomically renames a temp file into place on success.
+pub async fn download_stream_to_file(
+    client: &GraphQLClient,
+    url: Url,
+    output: &Path,
+    pb: &ProgressBar,
+) -> Result<()> {
+    let parent = output
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    tokio::fs::create_dir_all(&parent).await?;
+
+    let response = client.s3_get(url).await?;
+
+    // Write through the temp file's existing handle (via `into_parts`) instead
+    // of reopening `temp.path()`: reopening a `NamedTempFile` fails on Windows
+    // and races the still-open handle.
+    let (temp_file, temp_path) = tempfile::NamedTempFile::new_in(&parent)?.into_parts();
+    write_s3_response(response, tokio::fs::File::from_std(temp_file), pb).await?;
+
+    temp_path.persist(output).map_err(|err| {
+        error::user(
+            &format!("Failed to save download to {}: {}", output.display(), err),
+            "Make sure you have permission to write to this location.",
+        )
+    })?;
+
     Ok(())
 }
 

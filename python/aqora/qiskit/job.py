@@ -140,10 +140,9 @@ class QPUJob(JobV1):
         return self.backend()._fetch_job_results(self.job_id())
 
     def _job_status(self, status: str | None, error: str | None) -> JobStatus:
-        # The server mirrors the provider's progress message into `error` for
-        # live jobs ("The job is queued.") and nulls `status` when the
-        # provider reports an error state; only that combination is a failure.
-        if status is None and error:
+        from aqora._provider.jobs import is_provider_failure
+
+        if is_provider_failure(status, error):
             return JobStatus.ERROR
         # Unknown statuses fall back to RUNNING so that `wait_for_final_state`
         # keeps polling rather than reporting a spurious ERROR if the server

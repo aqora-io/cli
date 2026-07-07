@@ -8,6 +8,8 @@ pub enum NodeType {
     Competition,
     Organization,
     ProjectVersionFile,
+    ProviderModel,
+    ProviderJob,
 }
 
 impl FromStr for NodeType {
@@ -19,6 +21,8 @@ impl FromStr for NodeType {
             "Competition" => Ok(NodeType::Competition),
             "Organization" => Ok(NodeType::Organization),
             "ProjectVersionFile" => Ok(NodeType::ProjectVersionFile),
+            "ProviderModel" => Ok(NodeType::ProviderModel),
+            "ProviderJob" => Ok(NodeType::ProviderJob),
             _ => Err(format!("Unknown node kind: {}", s)),
         }
     }
@@ -31,6 +35,8 @@ impl fmt::Display for NodeType {
             NodeType::Competition => write!(f, "Competition"),
             NodeType::Organization => write!(f, "Organization"),
             NodeType::ProjectVersionFile => write!(f, "ProjectVersionFile"),
+            NodeType::ProviderModel => write!(f, "ProviderModel"),
+            NodeType::ProviderJob => write!(f, "ProviderJob"),
         }
     }
 }
@@ -62,5 +68,14 @@ impl Id {
         bytes.extend_from_slice(self.ty.to_string().as_bytes());
         bytes.extend_from_slice(self.id.as_bytes());
         BASE64_URL_SAFE_NO_PAD.encode(&bytes)
+    }
+
+    /// Accept an id as either a raw UUID (wrapped into a node id of `ty`) or an
+    /// already-encoded global node id (decoded and returned as-is).
+    pub fn parse_lenient(input: &str, ty: NodeType) -> Result<Id, Box<dyn std::error::Error>> {
+        match Uuid::parse_str(input) {
+            Ok(id) => Ok(Id { id, ty }),
+            Err(_) => Id::parse_node_id(input),
+        }
     }
 }

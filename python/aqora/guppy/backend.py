@@ -6,7 +6,6 @@ from typing import Any, Mapping
 
 from aqora import Client
 from aqora._provider import jobs, wire
-from aqora._provider.client import AqoraGraphQLClient
 
 from .job import QPUJob
 
@@ -74,12 +73,9 @@ class QPU:
         platform: str | None = None,
         compress: bool = True,
     ) -> None:
-        if client is not None and (url is not None or allow_insecure_host is not None):
-            raise ValueError(
-                "`url` and `allow_insecure_host` cannot be combined with an explicit `client`"
-            )
-        raw_client = client or Client(url, allow_insecure_host=allow_insecure_host)
-        self._graphql = AqoraGraphQLClient(raw_client)
+        self._graphql = jobs._resolve_graphql(
+            client, url=url, allow_insecure_host=allow_insecure_host
+        )
         self._platform = platform
         self._compress = compress
 
@@ -97,15 +93,13 @@ class QPU:
         Only `shots` is forwarded to the provider API; any other option set to
         a non-None value is rejected.
         """
-        shots = self._effective_shots(options)
+        shots = jobs.normalize_shots(options.get("shots"))
         unsupported = self._unsupported_run_options(options)
         if unsupported:
             raise NotImplementedError(
                 "The aqora provider GraphQL API only supports `shots` as a per-run "
                 f"parameter (unsupported options: {', '.join(sorted(unsupported))})"
             )
-        if shots is not None and shots < 1:
-            raise ValueError("`shots` must be at least 1")
 
         payload = wire.build_model_payload(
             [_encode_program(program)],
@@ -118,20 +112,6 @@ class QPU:
             platform=self._platform,
         )
         return QPUJob(self, job.job_id, payload=job._payload)
-
-    def _effective_shots(self, overrides: Mapping[str, Any]) -> int | None:
-        shots = overrides.get("shots")
-        if shots is None:
-            return None
-        if isinstance(shots, bool):
-            raise TypeError("`shots` must be an integer")
-        try:
-            as_int = int(shots)
-        except (TypeError, ValueError) as exc:
-            raise TypeError("`shots` must be an integer") from exc
-        if as_int != shots:
-            raise TypeError("`shots` must be an integer")
-        return as_int
 
     def _unsupported_run_options(self, overrides: Mapping[str, Any]) -> list[str]:
         # `is not None` (not truthiness) so that falsy-but-meaningful values
