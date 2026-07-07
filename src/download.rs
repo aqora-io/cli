@@ -11,7 +11,11 @@ use clap::Args;
 use futures::{prelude::*, TryStreamExt};
 use indicatif::ProgressBar;
 use serde::Serialize;
-use std::{ops::Range, path::Path, time::Duration};
+use std::{
+    ops::Range,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio_util::io::InspectWriter;
 use url::Url;
@@ -102,6 +106,45 @@ pub async fn download_archive(
             "Please make sure you have permission to create files in this directory",
         )
     })?;
+    Ok(())
+}
+
+/// Stream a presigned S3 GET straight to `output`, showing byte progress on `pb`.
+///
+/// Suitable for small single-file payloads: it issues one plain GET (no chunking
+/// or ranged retries) and atomically renames a temp file into place on success.
+pub async fn download_stream_to_file(
+    client: &GraphQLClient,
+    url: Url,
+    output: &Path,
+    pb: &ProgressBar,
+) -> Result<()> {
+    let parent = output
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    tokio::fs::create_dir_all(&parent).await?;
+
+    let response = client.s3_get(url).await?;
+    let inspector = DownloadInspector::new(pb, response.content_length);
+
+    let temp = tempfile::NamedTempFile::new_in(&parent)?;
+    let mut writer = BufWriter::new(InspectWriter::new(
+        tokio::fs::File::create(temp.path()).await?,
+        move |bytes| inspector.inspect(bytes),
+    ));
+    tokio::io::copy_buf(&mut response.body.into_async_read(), &mut writer).await?;
+    writer.flush().await?;
+    drop(writer);
+
+    temp.persist(output).map_err(|err| {
+        error::user(
+            &format!("Failed to save download to {}: {}", output.display(), err),
+            "Make sure you have permission to write to this location.",
+        )
+    })?;
+
     Ok(())
 }
 

@@ -5,8 +5,10 @@ mod dataset;
 mod global_args;
 mod info;
 mod install;
+mod job;
 mod lab;
 mod login;
+mod model;
 mod new;
 mod python;
 mod remove;
@@ -26,8 +28,10 @@ use clean::{clean, Clean};
 use dataset::{dataset, Dataset};
 use info::{info, Info};
 use install::{install, Install};
+use job::{job, Job};
 use lab::{lab, Lab};
 use login::{login, Login};
+use model::{model, Model};
 use new::{new, New};
 use python::{python, Python};
 use remove::{remove, Remove};
@@ -63,6 +67,16 @@ pub enum Commands {
         #[command(subcommand)]
         args: Dataset,
     },
+    /// Inspect and download provider models
+    Model {
+        #[command(subcommand)]
+        args: Model,
+    },
+    /// Download payloads from provider jobs
+    Job {
+        #[command(subcommand)]
+        args: Job,
+    },
     Login(Login),
     Auth {
         #[command(subcommand)]
@@ -94,6 +108,8 @@ impl Cli {
                 Commands::Install(args) => install(args, global).await,
                 Commands::New { args } => new(args, global).await,
                 Commands::Dataset { args } => dataset(args, global).await,
+                Commands::Model { args } => model(args, global).await,
+                Commands::Job { args } => job(args, global).await,
                 Commands::Login(args) => login(args, global).await,
                 Commands::Auth { args } => auth(args, global).await,
                 Commands::Python(args) => python(args, global).await,

@@ -1,0 +1,10 @@
+query ProviderModelInfo($id: ID!) {
+  node(id: $id) {
+    __typename
+    ... on ProviderModel {
+      id
+      createdAt
+      downloadUrl
+    }
+  }
+}
