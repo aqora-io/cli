@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
-import importlib.metadata
 import threading
 import urllib.parse
 from typing import Any, Awaitable, Callable, Mapping
 
 from aqora import Client
+
+from .wire import _package_version  # noqa: F401  (re-exported for existing importers)
 
 UPLOAD_PROVIDER_MODEL_PAYLOAD_MUTATION = """
 mutation UploadProviderModelPayload {
@@ -174,13 +175,6 @@ def _run_sync(
         raise TimeoutError(
             f"aqora client call did not complete within {timeout} seconds"
         ) from None
-
-
-def _package_version() -> str:
-    try:
-        return importlib.metadata.version("aqora")
-    except importlib.metadata.PackageNotFoundError:
-        return "unknown"
 
 
 def _require_http_scheme(url: str) -> None:

@@ -47,8 +47,11 @@ def load_guppy_module(fake_client_cls: type):
     hugr_qsystem_result = types.ModuleType("hugr.qsystem.result")
 
     class QsysResult:
-        def __init__(self, shots) -> None:
-            self.shots = shots
+        # Mirrors hugr.qsystem.result.QsysResult, which exposes the decoded
+        # shots as `.results` (the attribute `job.py._decode` feeds and callers
+        # read), not `.shots`.
+        def __init__(self, results=None) -> None:
+            self.results = list(results or [])
 
     hugr_qsystem_result.QsysResult = QsysResult
     sys.modules["hugr.qsystem.result"] = hugr_qsystem_result
@@ -488,7 +491,7 @@ def test_job_result_decodes_qsys_result(mod):
     from hugr.qsystem.result import QsysResult
 
     assert isinstance(result, QsysResult)
-    assert result.shots == QSYS_SHOTS
+    assert result.results == QSYS_SHOTS
 
 
 def test_job_result_decodes_qir_labeled_result(mod):
@@ -543,7 +546,7 @@ def test_job_result_ignores_progress_message_on_live_job(mod):
 
     result = job.result(timeout=0.01, wait=0)
 
-    assert result.shots == QSYS_SHOTS
+    assert result.results == QSYS_SHOTS
 
 
 def test_job_wait_keeps_polling_null_status_without_error(mod):
@@ -580,7 +583,7 @@ def test_job_result_empty_string_error_is_not_an_error(mod):
 
     result = job.result(timeout=0.01, wait=0)
 
-    assert result.shots == QSYS_SHOTS
+    assert result.results == QSYS_SHOTS
 
 
 def test_job_result_with_multiple_items_raises(mod):
@@ -657,7 +660,7 @@ def test_job_from_id_builds_backend_from_job(mod):
     assert job.status() == "COMPLETED"
 
     result = job.result(timeout=0.01, wait=0)
-    assert result.shots == QSYS_SHOTS
+    assert result.results == QSYS_SHOTS
 
 
 def test_job_from_id_accepts_explicit_client(mod):
