@@ -2,7 +2,7 @@ use base64::prelude::*;
 use std::{fmt, str::FromStr};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeType {
     User,
     Competition,
@@ -75,7 +75,13 @@ impl Id {
     pub fn parse_lenient(input: &str, ty: NodeType) -> Result<Id, Box<dyn std::error::Error>> {
         match Uuid::parse_str(input) {
             Ok(id) => Ok(Id { id, ty }),
-            Err(_) => Id::parse_node_id(input),
+            Err(_) => {
+                let parsed = Id::parse_node_id(input)?;
+                if parsed.ty != ty {
+                    return Err(format!("Expected a {} id but got a {} id", ty, parsed.ty).into());
+                }
+                Ok(parsed)
+            }
         }
     }
 }

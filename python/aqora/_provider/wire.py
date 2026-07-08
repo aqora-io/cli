@@ -8,6 +8,8 @@ single source of truth shared with the platform.
 
 from __future__ import annotations
 
+import importlib.metadata
+
 from aqora._aqora import (
     QIO_PROGRAM_HUGR_V1,
     QIO_PROGRAM_QIR_V1,
@@ -19,7 +21,13 @@ from aqora._aqora import (
     qio_parse_result_payload,
 )
 
-from .client import _package_version
+
+def _package_version() -> str:
+    try:
+        return importlib.metadata.version("aqora")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
+
 
 PROGRAM_QIR_V1 = QIO_PROGRAM_QIR_V1
 PROGRAM_TKET_CIRCUIT_JSON_V1 = QIO_PROGRAM_TKET_CIRCUIT_JSON_V1

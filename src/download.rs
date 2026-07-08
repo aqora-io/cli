@@ -131,14 +131,34 @@ pub async fn download_stream_to_file(
         .filter(|parent| !parent.as_os_str().is_empty())
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
-    tokio::fs::create_dir_all(&parent).await?;
+    tokio::fs::create_dir_all(&parent).await.map_err(|e| {
+        error::user(
+            &format!(
+                "Failed to prepare download directory {}: {}",
+                parent.display(),
+                e
+            ),
+            "Please make sure you have permission to create directories in this location",
+        )
+    })?;
 
     let response = client.s3_get(url).await?;
 
     // Write through the temp file's existing handle (via `into_parts`) instead
     // of reopening `temp.path()`: reopening a `NamedTempFile` fails on Windows
     // and races the still-open handle.
-    let (temp_file, temp_path) = tempfile::NamedTempFile::new_in(&parent)?.into_parts();
+    let (temp_file, temp_path) = tempfile::NamedTempFile::new_in(&parent)
+        .map_err(|e| {
+            error::user(
+                &format!(
+                    "Failed to create a temporary file in {}: {}",
+                    parent.display(),
+                    e
+                ),
+                "Please make sure you have permission to write here and enough free disk space",
+            )
+        })?
+        .into_parts();
     write_s3_response(response, tokio::fs::File::from_std(temp_file), pb).await?;
 
     temp_path.persist(output).map_err(|err| {
