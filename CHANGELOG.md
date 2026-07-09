@@ -2,6 +2,19 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.27.0 - 2026-07-09
+#### Bug Fixes
+- review comments - (a312bd8) - Julian Popescu
+- adapt provider client to ProviderModel node ids - (8ab5aa1) - Julian Popescu
+- fix IO issue with aq.load - (a621ed3) - Julian Popescu
+#### Features
+- add aqora model and job commands - (d0a6962) - Julian Popescu
+- add pytket and guppy providers for tket, hugr and qir programs - (88270f3) - Julian Popescu
+#### Miscellaneous Chores
+- update schema - (0db6d46) - Julian Popescu
+
+- - -
+
 ## v0.26.2 - 2026-07-07
 #### Bug Fixes
 - use lib notebook for default notebook for aqora.load - (016e569) - Julian Popescu
