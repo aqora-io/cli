@@ -1,15 +1,8 @@
 [project]
-name = "{{ name }}"
+name = "{{ slug }}"
 version = "0.1.0"
 requires-python = ">={{ python_version }}"
-{{#if hosted}}
 dependencies = []
-{{else}}
-dependencies = [
-  "marimo[recommended,lsp]>={{ marimo_version }}",
-  "aqora[pyarrow]>={{ cli_version }}",
-]
-{{/if}}
 
 [dependency-groups]
 dev = [
@@ -25,11 +18,9 @@ dev = [
 [build-system]
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
-{{#if hosted}}
 
 [tool.marimo.venv]
-path = "{{ venv_path }}"
+path = "/home/me/venv"
 # marimo is already installed here; setting this true reinstalls it on every
 # kernel start. `uv add` works either way.
 writable = false
-{{/if}}

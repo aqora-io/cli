@@ -70,3 +70,26 @@ pub fn assert_no_control_chars(string: &str) -> Result<(), String> {
     }
     Ok(())
 }
+
+/// Rejects text that cannot be embedded in a Python raw triple-quoted string.
+///
+/// Free-text display names are interpolated into `mo.md(r"""…""")` in the generated
+/// `readme.py`, and the registry renders with `no_escape`, so the value reaches the file
+/// verbatim. A `"""` closes the literal early; a trailing backslash escapes the closing
+/// quote even in a raw string. Either produces a `readme.py` that is a Python syntax
+/// error — and since that is the workspace's landing notebook, the workspace would be
+/// born unopenable.
+pub fn assert_python_raw_string_safe(string: &str) -> Result<(), String> {
+    assert_no_control_chars(string)?;
+    if string.contains("\"\"\"") {
+        return Err(format!(
+            "String contains a triple quote, which would end the generated Python string: {string}"
+        ));
+    }
+    if string.ends_with('\\') {
+        return Err(format!(
+            "String ends with a backslash, which would escape the closing quote: {string}"
+        ));
+    }
+    Ok(())
+}
