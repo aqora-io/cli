@@ -329,29 +329,77 @@ pub fn aqora(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyClient>()?;
     m.add_function(wrap_pyfunction!(qio_build_model_payload, m)?)?;
     m.add_function(wrap_pyfunction!(qio_parse_result_payload, m)?)?;
-    m.add(
-        "QIO_PROGRAM_QIR_V1",
-        QuantumProgramSerializationFormat::QirV1 as u16,
-    )?;
-    m.add(
-        "QIO_PROGRAM_TKET_CIRCUIT_JSON_V1",
-        QuantumProgramSerializationFormat::TketCircuitJsonV1 as u16,
-    )?;
-    m.add(
-        "QIO_PROGRAM_HUGR_V1",
-        QuantumProgramSerializationFormat::HugrV1 as u16,
-    )?;
-    m.add(
-        "QIO_RESULT_PYTKET_BACKEND_RESULT_JSON_V1",
-        QuantumProgramResultSerializationFormat::PytketBackendResultJsonV1 as u16,
-    )?;
-    m.add(
-        "QIO_RESULT_QIR_LABELED_RESULT_V1",
-        QuantumProgramResultSerializationFormat::QirLabeledResultV1 as u16,
-    )?;
-    m.add(
-        "QIO_RESULT_QSYS_RESULT_JSON_V1",
-        QuantumProgramResultSerializationFormat::QsysResultJsonV1 as u16,
-    )?;
+    for (name, format) in [
+        (
+            "QIO_PROGRAM_UNKNOWN_SERIALIZATION_FORMAT",
+            QuantumProgramSerializationFormat::UnknownSerializationFormat,
+        ),
+        (
+            "QIO_PROGRAM_QASM_V1",
+            QuantumProgramSerializationFormat::QasmV1,
+        ),
+        (
+            "QIO_PROGRAM_QASM_V2",
+            QuantumProgramSerializationFormat::QasmV2,
+        ),
+        (
+            "QIO_PROGRAM_QASM_V3",
+            QuantumProgramSerializationFormat::QasmV3,
+        ),
+        (
+            "QIO_PROGRAM_QIR_V1",
+            QuantumProgramSerializationFormat::QirV1,
+        ),
+        (
+            "QIO_PROGRAM_CIRQ_CIRCUIT_JSON_V1",
+            QuantumProgramSerializationFormat::CirqCircuitJsonV1,
+        ),
+        (
+            "QIO_PROGRAM_PERCEVAL_CIRCUIT_JSON_V1",
+            QuantumProgramSerializationFormat::PercevalCircuitJsonV1,
+        ),
+        (
+            "QIO_PROGRAM_PULSER_SEQUENCE_JSON_V1",
+            QuantumProgramSerializationFormat::PulserSequenceJsonV1,
+        ),
+        (
+            "QIO_PROGRAM_TKET_CIRCUIT_JSON_V1",
+            QuantumProgramSerializationFormat::TketCircuitJsonV1,
+        ),
+        (
+            "QIO_PROGRAM_HUGR_V1",
+            QuantumProgramSerializationFormat::HugrV1,
+        ),
+    ] {
+        m.add(name, format as u16)?;
+    }
+    for (name, format) in [
+        (
+            "QIO_RESULT_CIRQ_RESULT_JSON_V1",
+            QuantumProgramResultSerializationFormat::CirqResultJsonV1,
+        ),
+        (
+            "QIO_RESULT_QISKIT_RESULT_JSON_V1",
+            QuantumProgramResultSerializationFormat::QiskitResultJsonV1,
+        ),
+        (
+            "QIO_RESULT_CUDAQ_SAMPLE_RESULT_JSON_V1",
+            QuantumProgramResultSerializationFormat::CudaqSampleResultJsonV1,
+        ),
+        (
+            "QIO_RESULT_PYTKET_BACKEND_RESULT_JSON_V1",
+            QuantumProgramResultSerializationFormat::PytketBackendResultJsonV1,
+        ),
+        (
+            "QIO_RESULT_QIR_LABELED_RESULT_V1",
+            QuantumProgramResultSerializationFormat::QirLabeledResultV1,
+        ),
+        (
+            "QIO_RESULT_QSYS_RESULT_JSON_V1",
+            QuantumProgramResultSerializationFormat::QsysResultJsonV1,
+        ),
+    ] {
+        m.add(name, format as u16)?;
+    }
     Ok(())
 }
