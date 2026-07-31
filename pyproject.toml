@@ -34,6 +34,13 @@ pyarrow = ["fsspec>=2025.3.0", "pyarrow>=17.0.0"]
 qiskit = ["qio>=0.2.2", "qiskit>=2.3.1"]
 pytket = ["pytket>=1.30"]
 guppy = ["guppylang>=0.21"]
+cirq = ["cirq-core>=1.4"]
+# Cross-framework hops for the universal `aqora.QPU`. Each one only widens the
+# set of formats a program can be encoded into; negotiation skips the hops whose
+# extra is not installed.
+qiskit-tket = ["pytket-qiskit>=0.77"]
+pytket-qir = ["pytket-qir>=2.0"]
+guppy-qir = ["hugr-qir>=0.1.2"]
 iceberg = [
   "fsspec[http]>=2025.3.0",
   # 0.11.0 is the first release defining `pyiceberg.catalog.rest.auth`

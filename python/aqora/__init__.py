@@ -8,6 +8,7 @@ from aqora._aqora import *  # pyright: ignore[reportAssignmentType, reportWildca
 # which the native module binds above.
 from ._provider.jobs import ProviderJob
 from ._provider.results import ProviderResult
+from .qpu import QPU, QPUJob
 
 
 class GraphQLError(TypedDict):

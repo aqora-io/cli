@@ -13,6 +13,8 @@ enum Action {
 	CREATE_COMPETITION_RULE_AGREEMENT
 	CREATE_COMPETITION_TEAM_REQUEST
 	CREATE_COMPETITION_STAGE
+	CREATE_DATA_CATALOG
+	CREATE_DATA_CATALOG_DATASET
 	CREATE_DATASET
 	CREATE_DATASET_COMPETITION
 	CREATE_DATASET_MEMBER
@@ -34,6 +36,8 @@ enum Action {
 	DELETE_COMMENT
 	DELETE_COMPETITION
 	DELETE_COMPETITION_TEAM_REQUEST
+	DELETE_DATA_CATALOG
+	DELETE_DATA_CATALOG_DATASET
 	DELETE_DATASET
 	DELETE_DATASET_COMPETITION
 	DELETE_DATASET_MEMBER
@@ -55,6 +59,7 @@ enum Action {
 	JOIN_EVENT
 	MANAGE_ENTITY_BAN
 	MANAGE_EVENT_INVITE_CODE
+	PIN_EVENT_COMPETITION
 	PUBLISH_DATASET_VERSION
 	PUBLISH_VOTE
 	PUBLISH_WORKSPACE_VERSION
@@ -66,6 +71,7 @@ enum Action {
 	READ_COMPETITION_RULE
 	READ_COMPETITION_RULE_AGREEMENT
 	READ_COMPETITION_SCORING_CRITERION
+	READ_DATA_CATALOG
 	READ_DATASET
 	READ_DATASET_MEMBER
 	READ_DATASET_VERSION
@@ -83,7 +89,9 @@ enum Action {
 	READ_PROJECT_VERSION_APPROVAL_SCORE
 	READ_PROJECT_VERSION_EVALUATION
 	READ_PROJECT_VERSION_FILE
+	READ_PROVIDER_JOB
 	READ_PROVIDER_PLATFORM_MEMBERSHIP
+	READ_RESOURCE_USAGE
 	READ_SUBJECT_SUBSCRIPTION
 	READ_SUBMISSION
 	READ_TOPIC
@@ -108,6 +116,7 @@ enum Action {
 	TRANSFER_DATASET_OWNERSHIP
 	TRANSFER_EVENT_OWNERSHIP
 	TRANSFER_ORGANIZATION_OWNERSHIP
+	TRANSFER_WORKSPACE_OWNERSHIP
 	UPDATE_AGENDA
 	UPDATE_BLOG_ARTICLE
 	UPDATE_COMMENT
@@ -115,6 +124,7 @@ enum Action {
 	UPDATE_COMPETITION_MEMBER
 	UPDATE_COMPETITION_TEAM_REQUEST
 	UPDATE_COMPETITION_STAGE
+	UPDATE_DATA_CATALOG
 	UPDATE_DATASET
 	UPDATE_DATASET_MEMBER
 	UPDATE_DATASET_VERSION
@@ -618,6 +628,35 @@ type BlogArticleEdge {
 	cursor: String!
 }
 
+input CloneWorkspaceVersionInput {
+	"""
+	Target workspace slug; defaults to the source workspace's slug. The
+	workspace is created (copying the source workspace's metadata) if the
+	target owner has no workspace with this slug.
+	"""
+	slug: String
+	"""
+	SemVer of the new version; defaults to the source version's. Must be
+	strictly greater than the target workspace's highest existing version,
+	so cloning into the same workspace requires an explicit version.
+	"""
+	version: Semver
+	"""
+	Clone as a starting point for this competition (track). The source must
+	be one of the track's templates (or itself derive from one), the viewer
+	must be a member of the track, and the clone's owner is forced to the
+	viewer's team for the track — `asEntity` must be omitted.
+	"""
+	competitionId: ID
+	"""
+	Visibility for the target workspace when it is *created* (the target
+	owner has no workspace with the target slug). Ignored when cloning into
+	an existing workspace, whose own visibility is preserved. Defaults to
+	the source workspace's visibility.
+	"""
+	private: Boolean
+}
+
 type Comment implements Votable & Node {
 	votes: Int!
 	createdAt: DateTime!
@@ -706,6 +745,19 @@ type Competition implements ForumOwner & Subscribable & Node & Taggable & Reward
 	entitySubscription(entity: UsernameOrID): SubjectSubscription
 	jury(after: String, before: String, first: Int, last: Int): CompetitionJuryConnection!
 	datasets(after: String, before: String, first: Int, last: Int): CompetitionDatasetConnection!
+	"""
+	Published workspace versions participants clone to get started.
+	"""
+	templates(after: String, before: String, first: Int, last: Int): CompetitionTemplateConnection!
+	"""
+	The events (challenges) this competition belongs to.
+	"""
+	events(after: String, before: String, first: Int, last: Int): EventCompetitionConnection!
+	"""
+	The viewer's team's most recent workspace cloned from this track's
+	templates.
+	"""
+	viewerWorkspace: Workspace
 	teamRequests(after: String, before: String, first: Int, last: Int, isOrganization: Boolean): CompetitionTeamRequestConnection!
 	rewards(after: String, before: String, first: Int, last: Int): RewardConnection!
 	audienceGroups(before: String, after: String, first: Int, last: Int): AudienceGroupConnection!
@@ -948,6 +1000,7 @@ type CompetitionStage implements Node {
 	hasLeaderboard: Boolean!
 	isActive: Boolean!
 	competition: Competition!
+	events(after: String, before: String, first: Int, last: Int): EventCompetitionConnection!
 	submissionPreamble: String
 	leaderboard(after: String, before: String, first: Int, last: Int): SubmissionRankingConnection!
 	submissions(after: String, before: String, first: Int, last: Int): SubmissionConnection!
@@ -1030,6 +1083,35 @@ type CompetitionTeamRequestEdge {
 	The item at the end of the edge
 	"""
 	node: CompetitionTeamRequest!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+type CompetitionTemplateConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [CompetitionTemplateConnectionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [WorkspaceVersion!]!
+}
+
+"""
+An edge in a connection.
+"""
+type CompetitionTemplateConnectionEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: WorkspaceVersion!
 	"""
 	A cursor for use in pagination
 	"""
@@ -1142,6 +1224,11 @@ input CreateCompetitionTeamRequestInput {
 	skills: String!
 	needs: String!
 	timezone: TimeZone!
+}
+
+input CreateDataCatalogInput {
+	localSlug: String!
+	private: Boolean!
 }
 
 input CreateDatasetInput {
@@ -1259,6 +1346,75 @@ type DOI {
 	full: String!
 	short: String
 	url: Url!
+}
+
+type DataCatalog implements Node {
+	localSlug: String!
+	private: Boolean!
+	createdAt: DateTime!
+	id: ID!
+	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	owner: Entity!
+	slug: String!
+	datasets(after: String, before: String, first: Int, last: Int, search: String): DataCatalogDatasetConnection!
+}
+
+type DataCatalogConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [DataCatalogEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [DataCatalog!]!
+}
+
+type DataCatalogDatasetConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [DataCatalogDatasetConnectionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Dataset!]!
+}
+
+"""
+An edge in a connection.
+"""
+type DataCatalogDatasetConnectionEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Dataset!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+"""
+An edge in a connection.
+"""
+type DataCatalogEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: DataCatalog!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
 }
 
 type Dataset implements Votable & ForumOwner & Node & Taggable {
@@ -1624,8 +1780,11 @@ interface Entity {
 	competitions(after: String, before: String, first: Int, last: Int, filters: CompetitionQueryFilters): CompetitionConnection!
 	events(after: String, before: String, first: Int, last: Int, filters: EventQueryFilters): EventConnection!
 	datasets(after: String, before: String, first: Int, last: Int, filters: DatasetQueryFilters): DatasetConnection!
+	dataCatalogs(after: String, before: String, first: Int, last: Int): DataCatalogConnection!
 	workspaces(after: String, before: String, first: Int, last: Int, filters: WorkspaceConnectionFilters): WorkspaceConnection!
 	providerJobs(after: String, before: String, first: Int, last: Int): ProviderJobConnection!
+	storageUsage: StorageUsage
+	activeRunners(first: Int, after: String): WorkspaceRunnerConnection
 }
 
 enum EntityActivitiesConnectionKind {
@@ -2278,6 +2437,13 @@ type Mutation {
 	competitions.
 	"""
 	uploadNoCodeSubmissionVersion(competitionId: ID!, input: UploadNoCodeSubmissionInput!, asEntity: UsernameOrID): ProjectVersionEdge!
+	"""
+	Replace the set of published workspace versions linked to the viewer's
+	(team's) submission for a simple/no-code competition. The submission (and
+	an empty placeholder version) is created if it doesn't exist yet, so a
+	link-only submission still surfaces in the leaderboard/approval flows.
+	"""
+	setSubmissionWorkspaceVersions(competitionId: ID!, workspaceVersionIds: [ID!]!, asEntity: UsernameOrID): Submission!
 	createTopic(forumId: ID!, input: CreateTopicInput!): TopicEdge!
 	updateTopic(id: ID!, input: UpdateTopicInput!): Topic!
 	deleteTopic(id: ID!): ID!
@@ -2321,6 +2487,7 @@ type Mutation {
 	transferEventOwnership(eventId: ID!, toEntityId: ID!): [EventMembershipEdge!]!
 	addEventCompetition(eventId: ID!, competitionId: ID!): EventCompetitionEdge!
 	removeEventCompetition(id: ID!): ID!
+	pinEventCompetition(eventId: ID!, competitionId: ID!): EventCompetitionEdge!
 	createProjectVersionFileMultipartUpload(id: ID!, chunks: [Int!]! = [] @deprecated, contentType: String = null @deprecated): CreateMultipartUploadResponse!
 	uploadProjectVersionFilePart(id: ID!, uploadId: String!, chunk: Int!, chunkLen: Int!): Url!
 	completeProjectVersionFileMultipartUpload(id: ID!, uploadId: String!, eTags: [String!]!): ProjectVersionFile!
@@ -2381,6 +2548,11 @@ type Mutation {
 	updateDataset(datasetId: ID!, input: UpdateDatasetInput!): Dataset!
 	deleteDataset(datasetId: ID!): ID!
 	transferDatasetOwnership(datasetId: ID!, newOwner: UsernameOrID!): Dataset!
+	createDataCatalog(input: CreateDataCatalogInput!, asEntity: UsernameOrID): DataCatalog!
+	updateDataCatalog(dataCatalogId: ID!, input: UpdateDataCatalogInput!): DataCatalog!
+	deleteDataCatalog(dataCatalogId: ID!): ID!
+	addDataCatalogDataset(dataCatalogId: ID!, datasetId: ID!): DataCatalogDatasetConnectionEdge!
+	removeDataCatalogDataset(dataCatalogId: ID!, datasetId: ID!): Dataset!
 	addDatasetCompetition(datasetId: ID!, competitionId: ID!): DatasetCompetitionConnectionEdge!
 	removeDatasetCompetition(datasetId: ID!, competitionId: ID!): Competition!
 	addDatasetMember(datasetId: ID!, entityId: ID!): DatasetMembershipConnectionEdge!
@@ -2419,7 +2591,19 @@ type Mutation {
 	createWorkspace(input: CreateWorkspaceInput!, asEntity: UsernameOrID): Workspace!
 	updateWorkspace(id: ID!, input: UpdateWorkspaceInput!): Workspace!
 	deleteWorkspace(id: ID!): ID!
+	transferWorkspaceOwnership(id: ID!, newOwner: UsernameOrID!): Workspace!
 	createWorkspaceVersion(id: ID!, input: CreateWorkspaceVersionInput!): WorkspaceVersion!
+	"""
+	Clones a workspace version into another (possibly new) workspace by
+	restoring the source version's indexer archive from S3. Defaults to a
+	workspace with the source's slug owned by `asEntity` (the viewer when
+	omitted), created if absent, and to the source version's SemVer.
+	
+	Permissions are checked in the resolver: the viewer must be able to
+	read the source version, and to create a version on the target
+	workspace (or create a workspace when the target doesn't exist).
+	"""
+	cloneWorkspaceVersion(id: ID!, input: CloneWorkspaceVersionInput!, asEntity: UsernameOrID): WorkspaceVersion!
 	updateWorkspaceVersion(id: ID!, input: UpdateWorkspaceVersionInput!): WorkspaceVersion!
 	publishWorkspaceVersion(id: ID!): WorkspaceVersion!
 	deleteWorkspaceVersion(id: ID!): ID!
@@ -2621,8 +2805,11 @@ type Organization implements Entity & Node {
 	competitions(after: String, before: String, first: Int, last: Int, filters: CompetitionQueryFilters): CompetitionConnection!
 	events(after: String, before: String, first: Int, last: Int, filters: EventQueryFilters): EventConnection!
 	datasets(after: String, before: String, first: Int, last: Int, filters: DatasetQueryFilters): DatasetConnection!
+	dataCatalogs(after: String, before: String, first: Int, last: Int): DataCatalogConnection!
 	workspaces(after: String, before: String, first: Int, last: Int, filters: WorkspaceConnectionFilters): WorkspaceConnection!
 	providerJobs(after: String, before: String, first: Int, last: Int): ProviderJobConnection!
+	storageUsage: StorageUsage
+	activeRunners(first: Int, after: String): WorkspaceRunnerConnection
 }
 
 type OrganizationConnection {
@@ -2915,6 +3102,10 @@ type ProviderJob implements Node {
 	The model (uploaded payload) this job ran.
 	"""
 	providerModel: ProviderModel!
+	"""
+	The entity (user or organization) that submitted this job.
+	"""
+	entity: Entity!
 	provider: String!
 	"""
 	The platform (backend) the job's session runs on.
@@ -3090,9 +3281,31 @@ type ProviderPlatformMeta {
 	maxQubits: Int
 	maxShots: Int
 	maxCircuits: Int
+	"""
+	Program serialization formats this platform accepts, most preferred
+	first. Empty when the platform advertises none, or when its metadata
+	could not be fetched.
+	"""
+	inputFormats: [QuantumProgramFormat!]!
 }
 
 scalar ProviderPlatformNameOrID
+
+"""
+How a quantum program is serialized when it is submitted to a platform.
+"""
+enum QuantumProgramFormat {
+	UNKNOWN_SERIALIZATION_FORMAT
+	QASM_V1
+	QASM_V2
+	QASM_V3
+	QIR_V1
+	CIRQ_CIRCUIT_JSON_V1
+	PERCEVAL_CIRCUIT_JSON_V1
+	PULSER_SEQUENCE_JSON_V1
+	TKET_CIRCUIT_JSON_V1
+	HUGR_V1
+}
 
 type Query {
 	node(id: ID!): Node!
@@ -3104,6 +3317,7 @@ type Query {
 	viewer: Entity!
 	events(after: String, before: String, first: Int, last: Int, filters: EventQueryFilters): EventConnection!
 	eventBySlug(slug: String!): Event
+	eventCompetitionPinned: EventCompetition
 	version: Version!
 	tags(after: String, before: String, first: Int, last: Int, filters: TagQueryFilters): TagConnection!
 	forums(after: String, before: String, first: Int, last: Int, search: String): ForumConnection!
@@ -3115,6 +3329,12 @@ type Query {
 	oauth2Authorize(input: Oauth2AuthorizeInput!): Oauth2PreGrant
 	datasets(after: String, before: String, first: Int, last: Int, filters: DatasetQueryFilters): DatasetConnection!
 	datasetBySlug(owner: String!, localSlug: String!): Dataset
+	dataCatalogBySlug(owner: String!, localSlug: String!): DataCatalog
+	"""
+	Every provider job the current viewer can see: their own jobs plus jobs
+	owned by organizations they belong to; system admins see all jobs.
+	"""
+	providerJobs(after: String, before: String, first: Int, last: Int): ProviderJobConnection!
 	providerPlatforms(after: String, before: String, first: Int, last: Int): ProviderPlatformConnection!
 	workspaces(after: String, before: String, first: Int, last: Int, filters: WorkspaceConnectionFilters): WorkspaceConnection!
 	workspaceBySlug(owner: String!, slug: String!): Workspace
@@ -3125,6 +3345,16 @@ type Query {
 input ResetPasswordInput {
 	secret: String!
 	password: String!
+}
+
+"""
+A single compute resource's request/limit (k8s `requests`/`limits`), rendered
+as quantity strings (e.g. `"250m"`, `"512Mi"`). This is the runner's
+configured allotment, not live usage — there is no usage metric.
+"""
+type ResourceRequirement {
+	request: String
+	limit: String
 }
 
 type Reward {
@@ -3225,6 +3455,31 @@ input SignupUserInput {
 	subscribePromotionalNewsletter: Boolean
 }
 
+"""
+Disk usage for a workspace volume, in bytes. The `used`/`capacity`/`available`
+fields are `null` until the kubimo controller reports them in the Workspace CR
+status; `requested` is the size asked for in the CR spec (`spec.storage.min`)
+and is available before any status is reported (populated for a runner's
+backing volume, `null` on `Workspace.storageStatus`).
+"""
+type StorageStatus {
+	used: Int
+	capacity: Int
+	available: Int
+	requested: Int
+}
+
+"""
+An entity's aggregate storage: bytes currently used across its workspaces
+versus its configured budget. Both are byte counts; `used` is `null` until
+the kubimo controller first reports it, `limit` is `null` when there is no
+cap.
+"""
+type StorageUsage {
+	used: Int
+	limit: Int
+}
+
 enum SubjectKind {
 	TOPIC
 	FORUM
@@ -3275,9 +3530,16 @@ type Submission implements Project & Node {
 	latest: ProjectVersion
 	version(version: Semver): ProjectVersion
 	versions(after: String, before: String, first: Int, last: Int): ProjectVersionConnection!
+	"""
+	Published workspace versions linked to this submission as supporting
+	evidence. The link persists across submission versions. The track's jury
+	can read these versions even when the workspace is private.
+	"""
+	workspaceVersions(after: String, before: String, first: Int, last: Int): SubmissionWorkspaceVersionConnection!
 	maxEvaluation: ProjectVersionEvaluation
 	stage: CompetitionStage!
 	competition: Competition!
+	events(after: String, before: String, first: Int, last: Int): EventCompetitionConnection!
 	entity: Entity!
 	name: String!
 }
@@ -3349,6 +3611,35 @@ type SubmissionRankingSubmissionEdge {
 	cursor: String!
 }
 
+type SubmissionWorkspaceVersionConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [SubmissionWorkspaceVersionConnectionEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [WorkspaceVersion!]!
+}
+
+"""
+An edge in a connection.
+"""
+type SubmissionWorkspaceVersionConnectionEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: WorkspaceVersion!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
 interface Subscribable {
 	id: ID!
 	entitySubscription(entity: UsernameOrID): SubjectSubscription
@@ -3363,6 +3654,13 @@ type Subscription {
 	projectVersionStatusUpdate(competitionId: ID, entityId: ID, projectId: ID, projectVersionId: ID): ProjectVersion!
 	updatedEntity(id: ID): Entity!
 	oauth2Redirect(input: Oauth2RedirectInput!): Oauth2AuthorizationCode!
+	"""
+	New jobs, scoped either to an entity (defaults to the viewer) or to a
+	workspace version. The workspace-version scope authorizes via
+	`ReadWorkspaceVersion`, so org members — who can read a workspace's jobs
+	but don't share its owner entity — get live updates too.
+	"""
+	newProviderJobs(entityId: ID, workspaceVersionId: ID): ProviderJob!
 	workspaceRunnerStatus(id: ID!): WorkspaceRunner!
 }
 
@@ -3629,6 +3927,11 @@ input UpdateCompetitionInput {
 	descriptions.
 	"""
 	useLegacyDescription: Boolean
+	"""
+	Published workspace versions participants clone to get started.
+	Replaces the full set; omit to leave unchanged.
+	"""
+	templateWorkspaceVersionIds: [ID!]
 }
 
 input UpdateCompetitionMemberInput {
@@ -3675,6 +3978,11 @@ input UpdateCompetitionTeamRequestInput {
 	skills: String
 	needs: String
 	timezone: TimeZone
+}
+
+input UpdateDataCatalogInput {
+	localSlug: String
+	private: Boolean
 }
 
 input UpdateDatasetInput {
@@ -3882,8 +4190,11 @@ type User implements Entity & Node {
 	competitions(after: String, before: String, first: Int, last: Int, filters: CompetitionQueryFilters): CompetitionConnection!
 	events(after: String, before: String, first: Int, last: Int, filters: EventQueryFilters): EventConnection!
 	datasets(after: String, before: String, first: Int, last: Int, filters: DatasetQueryFilters): DatasetConnection!
+	dataCatalogs(after: String, before: String, first: Int, last: Int): DataCatalogConnection!
 	workspaces(after: String, before: String, first: Int, last: Int, filters: WorkspaceConnectionFilters): WorkspaceConnection!
 	providerJobs(after: String, before: String, first: Int, last: Int): ProviderJobConnection!
+	storageUsage: StorageUsage
+	activeRunners(first: Int, after: String): WorkspaceRunnerConnection
 }
 
 """
@@ -4013,6 +4324,14 @@ type Workspace implements Votable & ForumOwner & Node & Taggable {
 	viewer: WorkspaceRunner
 	renderer: WorkspaceRunner
 	runners(first: Int, after: String): WorkspaceRunnerConnection!
+	"""
+	Actual disk usage for this workspace's volume(s), as reported by the
+	kubimo controller. Read from the workspace's own CR when it has one
+	(dataset and legacy workspaces); for versioned workspaces, aggregated
+	across the live per-version CRs instead. Null when no live volume
+	reports storage (e.g. all versions are published and archived).
+	"""
+	storageStatus: StorageStatus
 	forum: Forum!
 	forumOwnerKind: ForumOwnerKind!
 	slug: String!
@@ -4020,11 +4339,21 @@ type Workspace implements Votable & ForumOwner & Node & Taggable {
 	voterCount: Int!
 	voters(after: String, before: String, first: Int, last: Int): VotersConnection!
 	tags(after: String, before: String, first: Int, last: Int): TaggableConnection!
+	"""
+	The competition (track) this workspace derives from, if any: the track
+	of its most recently created track-linked version.
+	"""
+	fromCompetition: Competition
 	overviewNotebook: String
 	libNotebook: String
 	versions(after: String, before: String, first: Int, last: Int, filters: WorkspaceVersionQueryFilters): WorkspaceVersionConnection!
 	version(version: Semver!): WorkspaceVersion
 	latestVersion: WorkspaceVersion
+	"""
+	Submissions (across any competition/stage) that link a version of this
+	workspace, filtered to submissions the viewer is allowed to read.
+	"""
+	submissions(after: String, before: String, first: Int, last: Int): SubmissionConnection!
 }
 
 type WorkspaceConnection {
@@ -4046,6 +4375,11 @@ type WorkspaceConnection {
 input WorkspaceConnectionFilters {
 	search: String
 	tags: [String!]
+	"""
+	Only workspaces that have (true) or lack (false) at least one published
+	version. Omit for no filter.
+	"""
+	hasPublishedVersion: Boolean
 	order: WorkspaceConnectionOrder! = CREATED_AT
 	sortDirection: WorkspaceConnectionSortDirection! = DESCENDING
 }
@@ -4103,10 +4437,35 @@ type WorkspaceFile implements WorkspaceEntry {
 type WorkspaceRunner implements Node {
 	command: RunnerCommand!
 	phase: WorkspaceRunnerPhase!
+	"""
+	Allotted CPU (k8s request/limit) for this runner's pod. Not live usage.
+	"""
+	cpu: ResourceRequirement!
+	"""
+	Allotted memory (k8s request/limit) for this runner's pod. Not live usage.
+	"""
+	memory: ResourceRequirement!
 	id: ID!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	workspace: Workspace!
+	"""
+	Disk usage for this runner's backing volume, read live from the kubimo
+	Workspace CR the runner mounts — the per-version CR for versioned
+	workspaces, otherwise the workspace CR. `used`/`capacity`/`available` are
+	null until the controller reports them; `requested` (the workspace's
+	allotment — `spec.storage.min` when Dedicated, the slot quota `max` when
+	Pooled) is available as soon as the CR exists, so callers can
+	show the requested allotment before usage is reported. The whole object is
+	null only when the backing CR is absent. Unlike `workspace.storageStatus`,
+	this is populated for versioned workspaces (whose parent has no live CR).
+	"""
+	storage: StorageStatus
 	url(notebook: String): Url!
+	"""
+	The workspace version this runner belongs to, if any. Null for
+	dataset/legacy runners. Used to scope the new-jobs subscription.
+	"""
+	workspaceVersionId: ID
 	"""
 	Jobs submitted from this runner's workspace version, newest first.
 	Null for dataset/legacy runners that have no version.
@@ -4174,6 +4533,22 @@ type WorkspaceVersion implements Node {
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	workspace: Workspace!
 	entity: Entity!
+	"""
+	Submissions (visible to the viewer) that link this workspace version.
+	"""
+	submissions(after: String, before: String, first: Int, last: Int): SubmissionConnection!
+	"""
+	The version this one was cloned/restored from, if any. Null when the
+	version wasn't cloned, the source version has been deleted, or the
+	viewer cannot read the source.
+	"""
+	clonedFrom: WorkspaceVersion
+	"""
+	The competition (track) whose template this version derives from, if
+	any. Null when the version has no track provenance or the track has
+	been deleted.
+	"""
+	fromCompetition: Competition
 	"""
 	Only draft (unpublished) versions are editable; the editor runner edits
 	the version's own storage.

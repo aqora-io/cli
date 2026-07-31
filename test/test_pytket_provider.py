@@ -93,6 +93,10 @@ def load_pytket_module(fake_client_cls: type):
             unexpected = set(payload) - allowed
             if unexpected:
                 raise KeyError(f"Unexpected keys: {sorted(unexpected)}")
+            # Real pytket keys on presence, not truthiness: `counts: []` still
+            # becomes a `Counter()` and trips the mutual exclusion with shots.
+            if "counts" in payload and "shots" in payload:
+                raise ValueError("Provide either counts or shots, both is not valid.")
             return cls(payload)
 
         def to_dict(self) -> dict[str, object]:
@@ -745,6 +749,32 @@ def test_provider_result_to_backend_result_filters_extra_keys(mod):
     backend_result = result.to_backend_result()
 
     assert backend_result.to_dict() == {"qubits": [["q", [0]]], "shots": [[0]]}
+
+
+def test_provider_result_to_backend_result_drops_empty_slots(mod):
+    # The provider emits every result slot and leaves the unused ones empty: a
+    # shots job carries `counts: []` and `qubits: []` beside the real shots.
+    result = mod.ProviderResult(
+        index=0,
+        serialization_format=1000,
+        raw=json.dumps(
+            {
+                "bits": [["c", [0]], ["c", [1]]],
+                "shots": {"width": 2, "array": [[192], [0]]},
+                "counts": [],
+                "qubits": [],
+                "counts_formatted": {},
+                "timestamps": {},
+            }
+        ),
+    )
+
+    backend_result = result.to_backend_result()
+
+    assert backend_result.to_dict() == {
+        "bits": [["c", [0]], ["c", [1]]],
+        "shots": {"width": 2, "array": [[192], [0]]},
+    }
 
 
 def test_provider_result_to_backend_result_wrong_format_raises(mod):

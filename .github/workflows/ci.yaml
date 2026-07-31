@@ -36,7 +36,7 @@ jobs:
       - name: Python tests
         run: |
           uv sync
-          uv run --no-sync pytest test/test_qiskit_provider.py test/test_pytket_provider.py test/test_guppy_provider.py test/test_exports.py
+          uv run --no-sync pytest test/test_qiskit_provider.py test/test_pytket_provider.py test/test_guppy_provider.py test/test_universal_qpu.py test/test_exports.py
 
   check-wasm:
     name: Check WASM

@@ -123,6 +123,7 @@ query ProviderPlatforms($first: Int, $after: String) {
         maxQubits
         maxShots
         maxCircuits
+        inputFormats
       }
     }
   }
