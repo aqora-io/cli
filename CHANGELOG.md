@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.28.0 - 2026-08-03
+#### Features
+- (**pair**) open the editor and launch an agent - (24e0217) - Julian Popescu
+- (**template**) add a workspace scaffold and a hosted variant - (d7fa459) - Julian Popescu
+- add AqoraCatalog for reading data catalogs via Iceberg - (356447b) - Julian Popescu
+
+- - -
+
 ## v0.27.0 - 2026-07-09
 #### Bug Fixes
 - review comments - (a312bd8) - Julian Popescu
