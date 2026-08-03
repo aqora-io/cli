@@ -1,0 +1,26 @@
+query DatasetVersionPairEditor(
+  $owner: String!
+  $localSlug: String!
+  $major: Int!
+  $minor: Int!
+  $patch: Int!
+  $notebook: String
+) {
+  datasetBySlug(owner: $owner, localSlug: $localSlug) {
+    id
+    version(major: $major, minor: $minor, patch: $patch) {
+      id
+      version
+      publishedAt
+      workspace {
+        id
+        viewerCanEdit: viewerCan(action: UPDATE_WORKSPACE)
+        editor {
+          id
+          phase
+          url(notebook: $notebook)
+        }
+      }
+    }
+  }
+}

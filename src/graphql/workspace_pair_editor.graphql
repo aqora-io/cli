@@ -1,0 +1,17 @@
+query WorkspacePairEditor($owner: String!, $slug: String!, $notebook: String) {
+  workspaceBySlug(owner: $owner, slug: $slug) {
+    id
+    versions(first: 1, filters: { published: false }) {
+      nodes {
+        id
+        version
+        viewerCanEdit: viewerCan(action: UPDATE_WORKSPACE_VERSION)
+        editor {
+          id
+          phase
+          url(notebook: $notebook)
+        }
+      }
+    }
+  }
+}
