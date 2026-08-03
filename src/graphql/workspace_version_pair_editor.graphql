@@ -1,0 +1,21 @@
+query WorkspaceVersionPairEditor(
+  $owner: String!
+  $slug: String!
+  $version: Semver!
+  $notebook: String
+) {
+  workspaceBySlug(owner: $owner, slug: $slug) {
+    id
+    version(version: $version) {
+      id
+      version
+      publishedAt
+      viewerCanEdit: viewerCan(action: UPDATE_WORKSPACE_VERSION)
+      editor {
+        id
+        phase
+        url(notebook: $notebook)
+      }
+    }
+  }
+}

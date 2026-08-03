@@ -1,0 +1,20 @@
+query DatasetPairEditor($owner: String!, $localSlug: String!, $notebook: String) {
+  datasetBySlug(owner: $owner, localSlug: $localSlug) {
+    id
+    versions(first: 1, filters: { published: false }) {
+      nodes {
+        id
+        version
+        workspace {
+          id
+          viewerCanEdit: viewerCan(action: UPDATE_WORKSPACE)
+          editor {
+            id
+            phase
+            url(notebook: $notebook)
+          }
+        }
+      }
+    }
+  }
+}

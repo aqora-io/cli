@@ -10,6 +10,7 @@ mod lab;
 mod login;
 mod model;
 mod new;
+mod pair;
 mod python;
 mod remove;
 mod shell;
@@ -33,6 +34,7 @@ use lab::{lab, Lab};
 use login::{login, Login};
 use model::{model, Model};
 use new::{new, New};
+use pair::{pair, Pair};
 use python::{python, Python};
 use remove::{remove, Remove};
 use shell::{shell, Shell};
@@ -77,6 +79,7 @@ pub enum Commands {
         #[command(subcommand)]
         args: Job,
     },
+    Pair(Pair),
     Login(Login),
     Auth {
         #[command(subcommand)]
@@ -110,6 +113,7 @@ impl Cli {
                 Commands::Dataset { args } => dataset(args, global).await,
                 Commands::Model { args } => model(args, global).await,
                 Commands::Job { args } => job(args, global).await,
+                Commands::Pair(args) => pair(args, global).await,
                 Commands::Login(args) => login(args, global).await,
                 Commands::Auth { args } => auth(args, global).await,
                 Commands::Python(args) => python(args, global).await,
