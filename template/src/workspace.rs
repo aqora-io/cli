@@ -43,6 +43,10 @@ impl WorkspaceTemplate {
     pub fn render(&self, out: impl AsRef<Path>) -> Result<(), RenderError> {
         REGISTRY.render_all("workspace", self, out)
     }
+
+    pub fn render_conda(&self, out: impl AsRef<Path>) -> Result<(), RenderError> {
+        REGISTRY.render_all("conda_workspace", self, out)
+    }
 }
 
 impl WorkspaceTemplateBuilder {
@@ -73,6 +77,12 @@ impl WorkspaceTemplateBuilder {
         self.build()
             .map_err(|e| RenderErrorReason::Other(e.to_string()))?
             .render(out)
+    }
+
+    pub fn render_conda(&self, out: impl AsRef<Path>) -> Result<(), RenderError> {
+        self.build()
+            .map_err(|e| RenderErrorReason::Other(e.to_string()))?
+            .render_conda(out)
     }
 }
 
