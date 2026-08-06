@@ -1,0 +1,29 @@
+import marimo
+
+__generated_with = "{{ marimo_version }}"
+app = marimo.App(width="full", auto_download=["html", "markdown", "ipynb"])
+
+
+@app.cell
+def _():
+    import marimo as mo
+
+    return (mo,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    # {{ name }} v{{ version }}
+
+    This notebook has been successfully created and is ready for you to start working.
+    To learn how to edit and run it, check out the [marimo documentation](https://docs.marimo.io/guides/).
+
+    Whether you're analyzing data, testing algorithms, or exploring new ideas, this is your space.
+    Once you're done, don't forget to click the **Publish** button to share your work. Happy coding! 🚀
+    """)
+    return
+
+
+if __name__ == "__main__":
+    app.run()
