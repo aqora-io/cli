@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.29.0 - 2026-08-06
+#### Features
+- universal QPU - (0810702) - Julian Popescu
+
+- - -
+
 ## v0.28.0 - 2026-08-03
 #### Features
 - (**pair**) open the editor and launch an agent - (24e0217) - Julian Popescu
