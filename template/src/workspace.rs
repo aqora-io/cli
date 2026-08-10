@@ -102,11 +102,33 @@ mod tests {
     }
 
     #[test]
-    fn renders_the_three_starter_files() {
+    fn renders_the_starter_files() {
         let (_dir, out) = rendered();
-        for file in ["readme.py", "pyproject.toml", ".gitignore"] {
+        for file in ["readme.py", "pyproject.toml", ".ignore", ".secrets"] {
             assert!(out.join(file).is_file(), "missing {file}");
         }
+        // `.ignore`, not `.gitignore`: a hosted workspace has no git, and the
+        // indexer owns the exclusions.
+        assert!(!out.join(".gitignore").exists());
+    }
+
+    /// The scaffolded dotfiles document behavior without enacting any: an
+    /// active pattern in `.secrets` would silently divert user files into the
+    /// secrets side-channel from day one.
+    #[test]
+    fn the_secrets_file_ships_comments_only() {
+        let (_dir, out) = rendered();
+        let secrets = std::fs::read_to_string(out.join(".secrets")).unwrap();
+        assert!(
+            secrets
+                .lines()
+                .all(|line| line.trim().is_empty() || line.starts_with('#')),
+            "{secrets}"
+        );
+        // The exclusions, by contrast, are live — the venv must never be
+        // archived.
+        let ignore = std::fs::read_to_string(out.join(".ignore")).unwrap();
+        assert!(ignore.lines().any(|line| line == ".venv"), "{ignore}");
     }
 
     /// `readme.py` is not merely cosmetic: the platform picks it as a

@@ -102,6 +102,31 @@ mod tests {
         std::fs::read_to_string(out.join("pyproject.toml")).unwrap()
     }
 
+    /// Unlike the hosted-only workspace template, this scaffold is dual-use:
+    /// `aqora new dataset-marimo` lands on a user's own machine, where git
+    /// hygiene needs `.gitignore` — and the hosted indexer honours it just the
+    /// same. `.secrets` documents the hosted secret handling either way.
+    #[test]
+    fn the_scaffold_keeps_gitignore_and_gains_secrets() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("ws");
+        DatasetMarimoTemplate::builder()
+            .name("my-dataset")
+            .owner("someone")
+            .local_slug("a-dataset")
+            .version("0.1.0")
+            .render(&out)
+            .expect("render");
+        assert!(out.join(".gitignore").is_file());
+        let secrets = std::fs::read_to_string(out.join(".secrets")).unwrap();
+        assert!(
+            secrets
+                .lines()
+                .all(|line| line.trim().is_empty() || line.starts_with('#')),
+            "{secrets}"
+        );
+    }
+
     /// `aqora new dataset-marimo` runs on a user's own machine, where nothing
     /// else installs marimo. The generated project has to declare it, or the
     /// workspace has no marimo at all.

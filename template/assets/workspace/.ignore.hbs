@@ -1,0 +1,27 @@
+# Files matched here are left out of the workspace archive: they are never
+# synced, never listed, and never carried into clones or restores. Gitignore
+# syntax, but read by the workspace indexer rather than git, so it works
+# without a git repository.
+#
+# Don't use this to hide secrets — an ignored file simply stops being backed
+# up. List secret files in .secrets instead, and keep secret environment
+# variables in .env (marimo's Secrets panel writes there).
+
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+.pdm-build/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Marimo
+__marimo__/
+
+# aqora
+.aqora
+__aqora__/
