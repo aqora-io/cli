@@ -2,6 +2,13 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.30.0 - 2026-08-12
+#### Features
+- (**template**) indexer-owned .ignore and a .secrets example for workspaces - (74dcca3) - Julian Popescu
+- (**template**) add conda workspace - (514b16d) - Antoine Chauvin
+
+- - -
+
 ## v0.29.0 - 2026-08-06
 #### Features
 - universal QPU - (0810702) - Julian Popescu
