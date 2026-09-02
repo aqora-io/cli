@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.31.0 - 2026-09-02
+#### Features
+- add extra options to aqora pair - (0f7a93a) - Julian Popescu
+
+- - -
+
 ## v0.30.0 - 2026-08-12
 #### Features
 - (**template**) indexer-owned .ignore and a .secrets example for workspaces - (74dcca3) - Julian Popescu
