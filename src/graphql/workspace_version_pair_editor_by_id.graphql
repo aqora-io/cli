@@ -1,0 +1,15 @@
+query WorkspaceVersionPairEditorById($id: ID!, $notebook: String) {
+  node(id: $id) {
+    __typename
+    ... on WorkspaceVersion {
+      id
+      publishedAt
+      viewerCanEdit: viewerCan(action: UPDATE_WORKSPACE_VERSION)
+      editor {
+        id
+        phase
+        url(notebook: $notebook)
+      }
+    }
+  }
+}

@@ -41,20 +41,20 @@ impl Sessions {
         })
     }
 
-    /// Whether a session is live right now. A runner that is still starting
+    /// The ids of the sessions live right now. A runner that is still starting
     /// refuses connections and answers errors, so anything that is not a clear
-    /// "yes" counts as "not yet" — the caller decides how long to keep asking.
-    pub async fn is_ready(&self) -> bool {
+    /// answer counts as "none yet" — the caller decides how long to keep asking.
+    pub async fn live(&self) -> Vec<String> {
         match self.query().await {
-            Ok(ready) => ready,
+            Ok(live) => live,
             Err(err) => {
                 tracing::debug!("Could not read sessions from {}: {err}", self.url);
-                false
+                Vec::new()
             }
         }
     }
 
-    async fn query(&self) -> Result<bool> {
+    async fn query(&self) -> Result<Vec<String>> {
         let response = self
             .client
             .get(self.url.clone())
@@ -62,15 +62,16 @@ impl Sessions {
             .send()
             .await?
             .error_for_status()?;
-        has_session(&response.bytes().await?)
+        session_ids(&response.bytes().await?)
     }
 
     /// Poll until the notebook connects, or give up.
-    pub async fn wait(&self, pb: &ProgressBar, editor_page: &Url) -> Result<()> {
+    pub async fn wait(&self, pb: &ProgressBar, editor_page: &Url) -> Result<Vec<String>> {
         let deadline = tokio::time::Instant::now() + TIMEOUT;
         loop {
-            if self.is_ready().await {
-                return Ok(());
+            let live = self.live().await;
+            if !live.is_empty() {
+                return Ok(live);
             }
             // Give up rather than sleeping through the deadline first.
             if tokio::time::Instant::now() + POLL_INTERVAL >= deadline {
@@ -91,9 +92,28 @@ impl Sessions {
 
 /// `/api/sessions` answers an object keyed by session id, so an empty object
 /// means no notebook is open.
-fn has_session(body: &[u8]) -> Result<bool> {
+fn session_ids(body: &[u8]) -> Result<Vec<String>> {
     let sessions: serde_json::Map<String, serde_json::Value> = serde_json::from_slice(body)?;
-    Ok(!sessions.is_empty())
+    Ok(sessions.into_iter().map(|(id, _)| id).collect())
+}
+
+/// The session the prompt targets: the one asked for, so long as it is live,
+/// else the one live session. Several live and none asked for means the
+/// notebook is open in more than one tab with no telling which the user means,
+/// so the agent picks.
+pub fn choose<'a>(asked: Option<&'a str>, live: &'a [String]) -> Result<Option<&'a str>> {
+    match (asked, live) {
+        (Some(id), _) if live.iter().any(|s| s == id) => Ok(Some(id)),
+        (Some(id), _) => Err(error::user(
+            &format!("Session {id} is not open on the runner"),
+            &format!(
+                "The live sessions are: {}. Pass one of those, or drop --session.",
+                live.join(", ")
+            ),
+        )),
+        (None, [only]) => Ok(Some(only)),
+        (None, _) => Ok(None),
+    }
 }
 
 #[cfg(test)]
@@ -147,7 +167,7 @@ mod tests {
         let (url, served) = serve_once(r#"{"s_1": {"path": "overview.py"}}"#).await;
         let sessions = Sessions::new(&editor(url), false).unwrap();
 
-        assert!(sessions.is_ready().await);
+        assert_eq!(sessions.live().await, ["s_1"]);
 
         let request = served.await.unwrap().to_lowercase();
         assert!(
@@ -178,34 +198,60 @@ mod tests {
         });
         let sessions = Sessions::new(&editor(url), false).unwrap();
 
-        let ready = tokio::time::timeout(Duration::from_secs(15), sessions.is_ready())
+        let live = tokio::time::timeout(Duration::from_secs(15), sessions.live())
             .await
-            .expect("is_ready never gave up");
+            .expect("live never gave up");
 
-        assert!(!ready);
+        assert!(live.is_empty());
     }
 
     #[tokio::test]
-    async fn is_not_ready_when_the_runner_reports_no_sessions() {
+    async fn nothing_is_live_when_the_runner_reports_no_sessions() {
         let (url, _served) = serve_once("{}").await;
         let sessions = Sessions::new(&editor(url), false).unwrap();
 
-        assert!(!sessions.is_ready().await);
+        assert!(sessions.live().await.is_empty());
     }
 
     #[test]
-    fn no_session_when_the_map_is_empty() {
-        assert!(!has_session(b"{}").unwrap());
+    fn no_session_ids_when_the_map_is_empty() {
+        assert!(session_ids(b"{}").unwrap().is_empty());
     }
 
     #[test]
-    fn a_session_is_ready_when_the_map_has_an_entry() {
+    fn session_ids_are_the_maps_keys() {
         let body = br#"{"s_1234": {"path": "/notebooks/overview.py"}}"#;
-        assert!(has_session(body).unwrap());
+        assert_eq!(session_ids(body).unwrap(), ["s_1234"]);
     }
 
     #[test]
     fn errors_on_a_body_that_is_not_json() {
-        assert!(has_session(b"<html>not marimo</html>").is_err());
+        assert!(session_ids(b"<html>not marimo</html>").is_err());
+    }
+
+    #[test]
+    fn the_session_is_known_when_exactly_one_is_live() {
+        assert_eq!(choose(None, &["s_1".to_string()]).unwrap(), Some("s_1"));
+    }
+
+    #[test]
+    fn no_session_is_known_with_none_or_several_live() {
+        assert_eq!(choose(None, &[]).unwrap(), None);
+        let two = ["s_1".to_string(), "s_2".to_string()];
+        assert_eq!(choose(None, &two).unwrap(), None);
+    }
+
+    #[test]
+    fn an_asked_for_session_is_used_when_it_is_live() {
+        let two = ["s_1".to_string(), "s_2".to_string()];
+        assert_eq!(choose(Some("s_2"), &two).unwrap(), Some("s_2"));
+    }
+
+    #[test]
+    fn an_asked_for_session_that_is_not_live_is_an_error() {
+        let err = choose(Some("s_9"), &["s_1".to_string()]).unwrap_err();
+        assert!(err.is_user());
+        assert!(err.to_string().contains("s_9"), "{err}");
+        assert!(err.to_string().contains("s_1"), "{err}");
     }
 }

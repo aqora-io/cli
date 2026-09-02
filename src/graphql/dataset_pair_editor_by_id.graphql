@@ -1,0 +1,21 @@
+query DatasetPairEditorById($id: ID!, $notebook: String) {
+  node(id: $id) {
+    __typename
+    ... on Dataset {
+      versions(first: 1, filters: { published: false }) {
+        nodes {
+          id
+          workspace {
+            id
+            viewerCanEdit: viewerCan(action: UPDATE_WORKSPACE)
+            editor {
+              id
+              phase
+              url(notebook: $notebook)
+            }
+          }
+        }
+      }
+    }
+  }
+}

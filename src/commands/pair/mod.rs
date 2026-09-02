@@ -3,6 +3,8 @@ mod prompt;
 mod session;
 mod target;
 
+use std::ffi::OsString;
+
 use clap::Args;
 use serde::Serialize;
 
@@ -12,14 +14,14 @@ use crate::error::Result;
 use agent::{select, Agent};
 use prompt::{build_prompt, write_token};
 use session::Sessions;
-use target::{resolve_dataset_editor, resolve_editor, PairTarget};
+use target::{resolve, PairTarget};
 
 #[derive(Args, Debug, Serialize)]
 #[command(about = "Pair an agent CLI with a workspace's marimo notebook")]
 pub struct Pair {
     /// The workspace, or dataset with --dataset, to pair on, as
-    /// "{owner}/{slug}" with an optional "@{version}". Defaults to the newest
-    /// draft version.
+    /// "{owner}/{slug}" with an optional "@{version}", or a workspace version,
+    /// dataset or runner id. Defaults to the newest draft version.
     target: String,
     /// Pair on a dataset's notebook instead of a workspace's
     #[arg(long)]
@@ -27,6 +29,9 @@ pub struct Pair {
     /// The notebook to open, defaulting to the workspace's overview notebook
     #[arg(long)]
     notebook: Option<String>,
+    /// The marimo session to target, defaulting to the one live session
+    #[arg(long)]
+    session: Option<String>,
     /// Pair with Claude Code instead of the first agent found
     #[arg(long, group = "agent")]
     claude: bool,
@@ -42,6 +47,19 @@ pub struct Pair {
     /// Print the prompt instead of launching an agent
     #[arg(long, conflicts_with = "agent")]
     prompt_only: bool,
+    /// Extra arguments passed through to the agent command
+    #[arg(last = true, conflicts_with = "prompt_only")]
+    #[serde(serialize_with = "lossy_strings")]
+    agent_args: Vec<OsString>,
+}
+
+/// An `OsString` serializes as platform-tagged bytes, which is noise in the
+/// command context sent to Sentry; the text is what anyone reading it wants.
+fn lossy_strings<S: serde::Serializer>(
+    args: &[OsString],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(args.iter().map(|arg| arg.to_string_lossy()))
 }
 
 impl Pair {
@@ -70,11 +88,7 @@ pub async fn pair(args: Pair, global: GlobalArgs) -> Result<()> {
         .spinner()
         .with_message(format!("Resolving the editor for {target}"));
     let client = global.graphql_client().await?;
-    let editor = if args.dataset {
-        resolve_dataset_editor(&client, &target, args.notebook).await?
-    } else {
-        resolve_editor(&client, &target, args.notebook).await?
-    };
+    let editor = resolve(&client, &target, args.dataset, args.notebook).await?;
     pb.set_message(format!("Editor for {target} is {}", editor.phase));
 
     let (token_dir, token_path) = write_token(&editor.token)?;
@@ -85,7 +99,8 @@ pub async fn pair(args: Pair, global: GlobalArgs) -> Result<()> {
     // A session only exists while the notebook is open in a browser, so open it
     // — but not if the user already has it open.
     let sessions = Sessions::new(&editor, global.allow_insecure_host)?;
-    if !sessions.is_ready().await {
+    let mut live = sessions.live().await;
+    if live.is_empty() {
         if args.no_open {
             pb.println(format!("Please open {editor_page} to start the notebook"));
         } else {
@@ -97,14 +112,19 @@ pub async fn pair(args: Pair, global: GlobalArgs) -> Result<()> {
             }
         }
         pb.set_message("Waiting for the notebook to connect");
-        sessions.wait(&pb, &editor_page).await?;
+        live = sessions.wait(&pb, &editor_page).await?;
     }
 
-    let prompt = build_prompt(&editor, &token_path, &editor_page);
+    let session = session::choose(args.session.as_deref(), &live)?;
+    let prompt = build_prompt(&editor, &token_path, &editor_page, session);
     match agent {
         Some(agent) => {
             pb.finish_with_message(format!("Launching {}", agent.display_name()));
-            agent.command(&prompt).spawn()?.wait().await?;
+            agent
+                .command(&prompt, &args.agent_args)
+                .spawn()?
+                .wait()
+                .await?;
             // The agent is done with the token now.
             drop(token_dir);
         }
@@ -143,6 +163,27 @@ mod tests {
         assert_eq!(args.agent(), None);
         assert!(!args.no_open);
         assert!(!args.prompt_only);
+        assert!(args.agent_args.is_empty());
+    }
+
+    #[test]
+    fn parses_extra_agent_args_after_a_double_dash() {
+        let args = parse(&["alice/ws", "--", "--model", "opus"]).unwrap();
+        assert_eq!(args.agent_args, ["--model", "opus"]);
+    }
+
+    /// The command is sent to Sentry as JSON; an `OsString` would arrive as
+    /// platform-tagged bytes rather than the text it holds.
+    #[test]
+    fn agent_args_serialize_as_strings() {
+        let args = parse(&["alice/ws", "--", "--model", "opus"]).unwrap();
+        let json = serde_json::to_value(&args).unwrap();
+        assert_eq!(json["agent_args"], serde_json::json!(["--model", "opus"]));
+    }
+
+    #[test]
+    fn rejects_extra_agent_args_with_prompt_only() {
+        assert!(parse(&["alice/ws", "--prompt-only", "--", "--model", "opus"]).is_err());
     }
 
     #[test]
@@ -156,6 +197,12 @@ mod tests {
     #[test]
     fn parses_the_dataset_flag() {
         assert!(parse(&["alice/ds", "--dataset"]).unwrap().dataset);
+    }
+
+    #[test]
+    fn parses_the_session_flag() {
+        let args = parse(&["alice/ws", "--session", "s_1"]).unwrap();
+        assert_eq!(args.session.as_deref(), Some("s_1"));
     }
 
     #[test]
