@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::path::PathBuf;
 
 use crate::error::{self, Result};
@@ -49,9 +50,11 @@ impl Agent {
     }
 
     /// The prompt goes in as a single argument. It carries no token — only the
-    /// path to one — so it is safe in `ps` and in shell history.
-    pub fn command(&self, prompt: &str) -> tokio::process::Command {
+    /// path to one — so it is safe in `ps` and in shell history. Extra args go
+    /// in front of it, matching the agents' `[options] [prompt]` grammar.
+    pub fn command(&self, prompt: &str, extra_args: &[OsString]) -> tokio::process::Command {
         let mut command = tokio::process::Command::new(self.binary());
+        command.args(extra_args);
         match self {
             Agent::Claude | Agent::Codex => command.arg(prompt),
             Agent::Opencode => command.args(["--prompt", prompt]),
@@ -205,8 +208,9 @@ mod tests {
     }
 
     /// The prompt is one argv element, never split and never a shell string.
-    fn argv(agent: Agent) -> Vec<String> {
-        let command = agent.command("pair with me");
+    fn argv(agent: Agent, extra_args: &[&str]) -> Vec<String> {
+        let extra_args: Vec<OsString> = extra_args.iter().map(OsString::from).collect();
+        let command = agent.command("pair with me", &extra_args);
         std::iter::once(command.as_std().get_program())
             .chain(command.as_std().get_args())
             .map(|arg| arg.to_string_lossy().into_owned())
@@ -215,15 +219,31 @@ mod tests {
 
     #[test]
     fn claude_and_codex_take_the_prompt_as_their_first_argument() {
-        assert_eq!(argv(Agent::Claude), ["claude", "pair with me"]);
-        assert_eq!(argv(Agent::Codex), ["codex", "pair with me"]);
+        assert_eq!(argv(Agent::Claude, &[]), ["claude", "pair with me"]);
+        assert_eq!(argv(Agent::Codex, &[]), ["codex", "pair with me"]);
     }
 
     #[test]
     fn opencode_takes_the_prompt_behind_its_prompt_flag() {
         assert_eq!(
-            argv(Agent::Opencode),
+            argv(Agent::Opencode, &[]),
             ["opencode", "--prompt", "pair with me"]
+        );
+    }
+
+    #[test]
+    fn extra_args_go_before_the_prompt() {
+        assert_eq!(
+            argv(Agent::Claude, &["--model", "opus"]),
+            ["claude", "--model", "opus", "pair with me"]
+        );
+        assert_eq!(
+            argv(Agent::Codex, &["--model", "opus"]),
+            ["codex", "--model", "opus", "pair with me"]
+        );
+        assert_eq!(
+            argv(Agent::Opencode, &["--model", "opus"]),
+            ["opencode", "--model", "opus", "--prompt", "pair with me"]
         );
     }
 

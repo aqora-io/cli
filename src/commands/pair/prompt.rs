@@ -14,25 +14,44 @@ fn quote(value: impl std::fmt::Display) -> String {
     format!("'{}'", value.to_string().replace('\'', r"'\''"))
 }
 
-pub fn build_prompt(editor: &PairEditor, token_path: &Path, editor_page: &Url) -> String {
+/// `session` is the one session to target, when there is exactly one; the
+/// scripts resolve it themselves otherwise.
+pub fn build_prompt(
+    editor: &PairEditor,
+    token_path: &Path,
+    editor_page: &Url,
+    session: Option<&str>,
+) -> String {
+    let session_flag = session
+        .map(|id| format!(" --session {}", quote(id)))
+        .unwrap_or_default();
+    let execute_cmd = format!(
+        "execute-code.sh --url {}{session_flag}",
+        quote(&editor.base_url)
+    );
+    // The id is current now, but marimo renames a session when the browser
+    // reconnects, so the agent needs a way out.
+    let session_hint = if session.is_some() {
+        " If the script reports the session id is stale, drop --session and try again."
+    } else {
+        ""
+    };
     format!(
         "Use the /marimo-pair skill to pair-program on a running marimo notebook.
 
 Connect to the notebook at: {base_url}
 
-Use `execute-code.sh --url {quoted_url}` from the marimo-pair skill to execute code in the \
-notebook.
+Use `{execute_cmd}` from the marimo-pair skill to execute code in the notebook.
 
-An auth token is stored at {token_path}. Pass it via `execute-code.sh --url {quoted_url} \
+An auth token is stored at {token_path}. Pass it via `{execute_cmd} \
 --token \"$(cat {quoted_token_path})\"`.
 
 The notebook must be open in a browser for a session to exist. If the server reports no \
-active sessions, ask the user to open {editor_page} and then try again.
+active sessions, ask the user to open {editor_page} and then try again.{session_hint}
 
 Once you are connected, send a fun toast (mo.status.toast(...)) to the user inside marimo \
 letting them know you're ready to pair.",
         base_url = editor.base_url,
-        quoted_url = quote(&editor.base_url),
         token_path = token_path.display(),
         quoted_token_path = quote(token_path.display()),
         editor_page = editor_page,
@@ -96,17 +115,27 @@ fn open_private(path: &Path) -> Result<std::fs::File> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn commands_carry_a_quoted_url_and_token_path() {
-        let editor = PairEditor {
-            base_url: Url::parse("http://host/runner/it's/").unwrap(),
+    fn editor(base_url: &str) -> PairEditor {
+        PairEditor {
+            base_url: Url::parse(base_url).unwrap(),
             token: "unused".into(),
             phase: "READY".into(),
             editor_page_id: "workspace-id".into(),
-        };
-        let editor_page = Url::parse("https://aqora.io/workspaces/workspace-id/edit").unwrap();
+        }
+    }
 
-        let prompt = build_prompt(&editor, Path::new("/tmp/it's dir/token.txt"), &editor_page);
+    fn editor_page() -> Url {
+        Url::parse("https://aqora.io/workspaces/workspace-id/edit").unwrap()
+    }
+
+    #[test]
+    fn commands_carry_a_quoted_url_and_token_path() {
+        let prompt = build_prompt(
+            &editor("http://host/runner/it's/"),
+            Path::new("/tmp/it's dir/token.txt"),
+            &editor_page(),
+            None,
+        );
 
         assert!(
             prompt.contains(r#"--url 'http://host/runner/it'\''s/'"#),
@@ -116,6 +145,21 @@ mod tests {
             prompt.contains(r#"cat '/tmp/it'\''s dir/token.txt'"#),
             "{prompt}"
         );
+        assert!(!prompt.contains("--session"), "{prompt}");
+    }
+
+    #[test]
+    fn commands_carry_the_session_when_it_is_known() {
+        let prompt = build_prompt(
+            &editor("http://host/runner/abc/"),
+            Path::new("/tmp/token.txt"),
+            &editor_page(),
+            Some("s_1"),
+        );
+
+        // Both the bare command and the one with the token target the session.
+        assert_eq!(prompt.matches("--session 's_1'").count(), 2, "{prompt}");
+        assert!(prompt.contains("stale"), "{prompt}");
     }
 
     #[test]

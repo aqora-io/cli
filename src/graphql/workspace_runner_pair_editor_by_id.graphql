@@ -1,0 +1,15 @@
+query WorkspaceRunnerPairEditorById($id: ID!, $notebook: String) {
+  node(id: $id) {
+    __typename
+    ... on WorkspaceRunner {
+      id
+      command
+      phase
+      url(notebook: $notebook)
+      workspaceVersionId
+      workspace {
+        id
+      }
+    }
+  }
+}

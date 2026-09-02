@@ -10,6 +10,9 @@ pub enum NodeType {
     ProjectVersionFile,
     ProviderModel,
     ProviderJob,
+    WorkspaceVersion,
+    Dataset,
+    WorkspaceRunner,
 }
 
 impl FromStr for NodeType {
@@ -23,6 +26,9 @@ impl FromStr for NodeType {
             "ProjectVersionFile" => Ok(NodeType::ProjectVersionFile),
             "ProviderModel" => Ok(NodeType::ProviderModel),
             "ProviderJob" => Ok(NodeType::ProviderJob),
+            "WorkspaceVersion" => Ok(NodeType::WorkspaceVersion),
+            "Dataset" => Ok(NodeType::Dataset),
+            "WorkspaceRunner" => Ok(NodeType::WorkspaceRunner),
             _ => Err(format!("Unknown node kind: {}", s)),
         }
     }
@@ -37,6 +43,9 @@ impl fmt::Display for NodeType {
             NodeType::ProjectVersionFile => write!(f, "ProjectVersionFile"),
             NodeType::ProviderModel => write!(f, "ProviderModel"),
             NodeType::ProviderJob => write!(f, "ProviderJob"),
+            NodeType::WorkspaceVersion => write!(f, "WorkspaceVersion"),
+            NodeType::Dataset => write!(f, "Dataset"),
+            NodeType::WorkspaceRunner => write!(f, "WorkspaceRunner"),
         }
     }
 }
