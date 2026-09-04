@@ -1,10 +1,10 @@
 use crate::{
     error::Result,
     fs_lock::{ExclusiveLock, LockedFile, SharedLock},
-    oauth2::{oauth2_refresh_mutation, Oauth2RefreshMutation},
+    oauth2::{expires_at, is_expired, oauth2_refresh_mutation, Oauth2RefreshMutation},
 };
 use aqora_client::error::MiddlewareError;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use futures::{future::BoxFuture, prelude::*};
 use reqwest::header::{HeaderValue, AUTHORIZATION};
 use serde::{Deserialize, Serialize};
@@ -20,8 +20,6 @@ use tokio::{
 };
 use url::Url;
 
-const EXPIRATION_PADDING_SEC: i64 = 60;
-
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
 pub struct Credentials {
     pub client_id: String,
@@ -33,7 +31,7 @@ pub struct Credentials {
 
 impl Credentials {
     fn is_expired(&self) -> bool {
-        (self.expires_at - Duration::try_seconds(EXPIRATION_PADDING_SEC).unwrap()) <= Utc::now()
+        is_expired(self.expires_at)
     }
 }
 
@@ -131,7 +129,7 @@ async fn refresh_credentials(
             client_secret: credentials.client_secret,
             access_token: issued.access_token,
             refresh_token: issued.refresh_token,
-            expires_at: Utc::now() + Duration::try_seconds(issued.expires_in).unwrap(),
+            expires_at: expires_at(issued.expires_in),
         },
     );
     write_file(&mut file, &credentials_file).await?;

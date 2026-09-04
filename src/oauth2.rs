@@ -11,6 +11,14 @@ use url::Url;
 
 const EXPIRATION_PADDING_SEC: i64 = 60;
 
+pub(crate) fn expires_at(expires_in: i64) -> DateTime<Utc> {
+    Utc::now() + Duration::try_seconds(expires_in).unwrap()
+}
+
+pub(crate) fn is_expired(expires_at: DateTime<Utc>) -> bool {
+    (expires_at - Duration::try_seconds(EXPIRATION_PADDING_SEC).unwrap()) <= Utc::now()
+}
+
 #[derive(GraphQLQuery)]
 #[graphql(
     query_path = "src/graphql/oauth2_redirect_subscription.graphql",
@@ -135,12 +143,12 @@ impl IssuedTokens {
         Self {
             access_token,
             refresh_token,
-            expires_at: Utc::now() + Duration::try_seconds(expires_in).unwrap(),
+            expires_at: expires_at(expires_in),
         }
     }
 
     fn is_expired(&self) -> bool {
-        (self.expires_at - Duration::try_seconds(EXPIRATION_PADDING_SEC).unwrap()) <= Utc::now()
+        is_expired(self.expires_at)
     }
 }
 
@@ -381,6 +389,26 @@ mod tests {
             Some("access".to_string())
         );
         assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn viewer_credentials_refreshes_within_the_expiry_padding() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let credentials = ViewerCredentials::new(
+            stub_client(REFRESHED, calls.clone()),
+            "workspace-1".to_string(),
+            IssuedTokens {
+                access_token: "access".to_string(),
+                refresh_token: "refresh".to_string(),
+                expires_at: Utc::now() + Duration::try_seconds(30).unwrap(),
+            },
+        );
+
+        assert_eq!(
+            credentials.bearer_token().await.unwrap(),
+            Some("refreshed-access".to_string())
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
