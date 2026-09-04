@@ -6,7 +6,7 @@ use chrono::{DateTime, Duration, Utc};
 use futures::{prelude::*, stream::BoxStream};
 use graphql_client::GraphQLQuery;
 use ring::signature::KeyPair;
-use tokio::sync::RwLock;
+use tokio::{sync::RwLock, task::JoinHandle};
 use url::Url;
 
 const EXPIRATION_PADDING_SEC: i64 = 60;
@@ -129,6 +129,18 @@ pub(crate) async fn subscribe_code(
         .await?
         .map(|item| Ok(item?.oauth2_redirect.code))
         .boxed())
+}
+
+/// Poll the code subscription from its own task.
+///
+/// `graphql-ws-client` only puts the `Subscribe` frame on the wire (and only
+/// keeps the connection's keepalive pings flowing) while the stream is polled,
+/// so an authorization stream must not sit idle while the viewer decides.
+#[cfg_attr(not(feature = "extension-module"), allow(dead_code))]
+pub(crate) fn spawn_first_code(
+    mut stream: BoxStream<'static, Result<String>>,
+) -> JoinHandle<Option<Result<String>>> {
+    tokio::spawn(async move { stream.next().await })
 }
 
 #[derive(Debug, Clone)]
@@ -353,6 +365,32 @@ mod tests {
         ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, public_key)
             .verify(req.authorize_url.as_str().as_bytes(), &signature)
             .expect("signature verifies");
+    }
+
+    #[tokio::test]
+    async fn spawn_first_code_polls_the_stream_before_the_handle_is_awaited() {
+        let polls = Arc::new(AtomicUsize::new(0));
+        let counted = polls.clone();
+        let handle = spawn_first_code(
+            stream::once(async move {
+                counted.fetch_add(1, Ordering::SeqCst);
+                Ok("code".to_string())
+            })
+            .boxed(),
+        );
+
+        // Nobody is awaiting the handle: the stream is only driven if the
+        // spawned task polls it on its own.
+        for _ in 0..3 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(polls.load(Ordering::SeqCst), 1);
+        assert!(handle.is_finished());
+
+        assert_eq!(
+            handle.await.unwrap().transpose().unwrap(),
+            Some("code".to_string())
+        );
     }
 
     fn stub_client(body: &'static str, calls: Arc<AtomicUsize>) -> aqora_client::Client {

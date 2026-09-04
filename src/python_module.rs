@@ -6,7 +6,6 @@ use aqora_client::{
     Client, ClientOptions,
 };
 use aqora_runner::pipeline::{LayerEvaluation, PipelineConfig};
-use futures::{prelude::*, stream::BoxStream};
 use pyo3::{
     exceptions::PyValueError,
     import_exception,
@@ -14,15 +13,18 @@ use pyo3::{
     types::{PyBytes, PyDict, PyString},
 };
 use pyo3_async_runtimes::tokio::future_into_py;
-use tokio::sync::{Mutex, RwLock};
+use tokio::{
+    sync::{Mutex, RwLock},
+    task::JoinHandle,
+};
 use url::Url;
 
 use crate::{
     dirs::config_home,
     graphql_client::{authenticate_client, unauthenticated_client},
     oauth2::{
-        exchange_code, new_authorization_request, oauth2_workspace_client_query, subscribe_code,
-        AuthorizationRequest, Oauth2WorkspaceClientQuery, ViewerCredentials,
+        exchange_code, new_authorization_request, oauth2_workspace_client_query, spawn_first_code,
+        subscribe_code, AuthorizationRequest, Oauth2WorkspaceClientQuery, ViewerCredentials,
     },
     workspace::download_workspace_notebook,
 };
@@ -222,14 +224,16 @@ impl PyClient {
                 scope.map(|scope| scope.join(" ")).as_deref(),
             )
             .map_err(client_error)?;
-            // Subscribe before handing out the URL so the code cannot be
-            // redirected back before anyone is listening for it.
+            // Subscribe before handing out the URL, and keep the subscription
+            // polled from its own task: the `Subscribe` frame only reaches the
+            // server while the stream is driven, so waiting for `wait()` would
+            // start listening after the viewer has already consented.
             let stream = subscribe_code(&base, &request)
                 .await
                 .map_err(client_error)?;
             Ok(PyViewerAuthorization {
                 request: Arc::new(request),
-                stream: Arc::new(Mutex::new(Some(stream))),
+                first_code: Arc::new(Mutex::new(Some(spawn_first_code(stream)))),
                 base,
                 url,
                 options,
@@ -401,7 +405,8 @@ impl PyClient {
 #[pyclass(frozen, name = "ViewerAuthorization", module = "aqora")]
 struct PyViewerAuthorization {
     request: Arc<AuthorizationRequest>,
-    stream: Arc<Mutex<Option<BoxStream<'static, crate::error::Result<String>>>>>,
+    /// The task draining the code subscription, taken by the first `wait`.
+    first_code: Arc<Mutex<Option<JoinHandle<Option<crate::error::Result<String>>>>>>,
     /// The client the authorization was started with. It sends no
     /// `Authorization` header, so viewer tokens are refreshed through it.
     base: Client,
@@ -426,26 +431,39 @@ impl PyViewerAuthorization {
     #[pyo3(signature = (*, timeout=None))]
     fn wait<'py>(&self, py: Python<'py>, timeout: Option<f64>) -> PyResult<Bound<'py, PyAny>> {
         let request = Arc::clone(&self.request);
-        let stream = Arc::clone(&self.stream);
+        let first_code = Arc::clone(&self.first_code);
         let base = self.base.clone();
         let url = self.url.clone();
         let options = self.options.clone();
         future_into_py(py, async move {
-            let mut stream = stream
+            let mut first_code = first_code
                 .lock()
                 .await
                 .take()
                 .ok_or_else(|| ClientError::new_err(("authorization already completed",)))?;
-            let code = tokio::time::timeout(
+            let code = match tokio::time::timeout(
                 Duration::from_secs_f64(timeout.unwrap_or(DEFAULT_AUTHORIZATION_TIMEOUT_SEC)),
-                stream.next(),
+                &mut first_code,
             )
             .await
-            .map_err(|_| ClientError::new_err(("timed out waiting for authorization",)))?
-            .ok_or_else(|| {
-                ClientError::new_err(("authorization closed before the viewer signed in",))
-            })?
-            .map_err(client_error)?;
+            {
+                Err(_) => {
+                    first_code.abort();
+                    return Err(ClientError::new_err((
+                        "timed out waiting for authorization",
+                    )));
+                }
+                Ok(joined) => joined
+                    .map_err(|error| {
+                        ClientError::new_err(
+                            (format!("waiting for authorization failed: {error}"),),
+                        )
+                    })?
+                    .ok_or_else(|| {
+                        ClientError::new_err(("authorization closed before the viewer signed in",))
+                    })?
+                    .map_err(client_error)?,
+            };
             let tokens = exchange_code(&base, &request, &code)
                 .await
                 .map_err(client_error)?;
