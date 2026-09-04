@@ -55,7 +55,9 @@ impl Client {
         let (service, mut receiver) = self.ws_service();
         let _ = service.oneshot(request).await?;
         let websocket = receiver.next().await.ok_or_else(|| Error::WsClosed)?;
+        // Intermediaries (nginx, ingress) drop idle connections at 60s, and the aqora server answers pings.
         Ok(graphql_ws_client::Client::build(websocket)
+            .keep_alive_interval(std::time::Duration::from_secs(30))
             .subscribe(graphql_ws_client::graphql::StreamingOperation::<Q>::new(
                 variables,
             ))
