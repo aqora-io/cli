@@ -279,10 +279,11 @@ impl CredentialsProvider for ViewerCredentials {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aqora_client::credentials::CredentialsLayer;
     use aqora_client::http::{Body, HttpBoxService, Request, Response};
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc,
+        Arc, Mutex,
     };
 
     fn authorize_base() -> Url {
@@ -477,5 +478,51 @@ mod tests {
             Some("refreshed-access".to_string())
         );
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn viewer_credentials_authorize_client_requests_and_refresh_once() {
+        let refreshes = Arc::new(AtomicUsize::new(0));
+        let sent: Arc<Mutex<Vec<Option<String>>>> = Arc::new(Mutex::new(Vec::new()));
+
+        let mut client = aqora_client::Client::new("https://aqora.io/graphql".parse().unwrap());
+        let captured = sent.clone();
+        client.graphql_layer(tower::layer::layer_fn(move |_: HttpBoxService| {
+            let captured = captured.clone();
+            tower::service_fn(move |req: Request| {
+                captured.lock().unwrap().push(
+                    req.headers()
+                        .get(reqwest::header::AUTHORIZATION)
+                        .map(|value| value.to_str().unwrap().to_string()),
+                );
+                async move {
+                    Ok::<_, std::convert::Infallible>(Response::new(Body::from(
+                        r#"{"data":{}}"#.to_string(),
+                    )))
+                }
+            })
+        }));
+        client.graphql_layer(CredentialsLayer::new(ViewerCredentials::new(
+            stub_client(REFRESHED, refreshes.clone()),
+            "workspace-1".to_string(),
+            IssuedTokens {
+                access_token: "access".to_string(),
+                refresh_token: "refresh".to_string(),
+                expires_at: Utc::now() + Duration::try_seconds(30).unwrap(),
+            },
+        )));
+
+        client.send_raw("{}".to_string()).await.unwrap();
+        client.send_raw("{}".to_string()).await.unwrap();
+
+        assert_eq!(
+            *sent.lock().unwrap(),
+            vec![
+                Some("Bearer refreshed-access".to_string()),
+                Some("Bearer refreshed-access".to_string()),
+            ]
+        );
+        // The second request reuses the token stored by the first refresh.
+        assert_eq!(refreshes.load(Ordering::SeqCst), 1);
     }
 }
