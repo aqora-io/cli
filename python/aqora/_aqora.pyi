@@ -1,7 +1,7 @@
 # pyright: reportExplicitAny=false, reportAny=false
 
 from pathlib import Path
-from typing_extensions import Any, Never
+from typing_extensions import Any, Never, Sequence
 
 class PipelineConfig:
     data: Path
@@ -54,3 +54,12 @@ class Client:
         version: str | None = None,
         force: bool = False,
     ) -> str: ...
+    def with_token(self, token: str) -> Client: ...
+    async def authorize_viewer(
+        self, scope: Sequence[str] | None = None
+    ) -> ViewerAuthorization: ...
+
+class ViewerAuthorization:
+    url: str
+    client_id: str
+    async def wait(self, *, timeout: float | None = None) -> Client: ...

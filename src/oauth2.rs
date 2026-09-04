@@ -50,7 +50,7 @@ pub(crate) struct Oauth2RefreshMutation;
     response_derives = "Debug"
 )]
 // Used by the workspace app authorization flow, exposed through the python module
-#[allow(dead_code)]
+#[cfg_attr(not(feature = "extension-module"), allow(dead_code))]
 pub(crate) struct Oauth2WorkspaceClientQuery;
 
 pub(crate) fn sub_redirect_uri(pubkey: &str) -> Result<Url> {
@@ -228,14 +228,14 @@ pub(crate) async fn refresh_tokens(
 /// Viewer tokens obtained through a workspace runner: refreshes through
 /// `base` (which sends no Authorization header, so the runner sidecar
 /// authenticates the client) 60 s before expiry.
-#[allow(dead_code)]
+#[cfg_attr(not(feature = "extension-module"), allow(dead_code))]
 pub(crate) struct ViewerCredentials {
     base: aqora_client::Client,
     client_id: String,
     tokens: RwLock<IssuedTokens>,
 }
 
-#[allow(dead_code)]
+#[cfg_attr(not(feature = "extension-module"), allow(dead_code))]
 impl ViewerCredentials {
     pub(crate) fn new(base: aqora_client::Client, client_id: String, tokens: IssuedTokens) -> Self {
         Self {

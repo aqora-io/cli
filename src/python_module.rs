@@ -1,7 +1,12 @@
-use std::{borrow::Cow, ffi::OsString, sync::Arc};
+use std::{borrow::Cow, ffi::OsString, sync::Arc, time::Duration};
 
-use aqora_client::{s3::S3Range, Client, ClientOptions};
+use aqora_client::{
+    credentials::{BearerToken, CredentialsLayer},
+    s3::S3Range,
+    Client, ClientOptions,
+};
 use aqora_runner::pipeline::{LayerEvaluation, PipelineConfig};
+use futures::{prelude::*, stream::BoxStream};
 use pyo3::{
     exceptions::PyValueError,
     import_exception,
@@ -9,12 +14,16 @@ use pyo3::{
     types::{PyBytes, PyDict, PyString},
 };
 use pyo3_async_runtimes::tokio::future_into_py;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use url::Url;
 
 use crate::{
     dirs::config_home,
     graphql_client::{authenticate_client, unauthenticated_client},
+    oauth2::{
+        exchange_code, new_authorization_request, oauth2_workspace_client_query, subscribe_code,
+        AuthorizationRequest, Oauth2WorkspaceClientQuery, ViewerCredentials,
+    },
     workspace::download_workspace_notebook,
 };
 
@@ -29,6 +38,13 @@ pub fn main(py: Python<'_>) -> PyResult<()> {
 }
 
 import_exception!(aqora, ClientError);
+
+/// How long `ViewerAuthorization.wait` waits for the viewer to sign in by default.
+const DEFAULT_AUTHORIZATION_TIMEOUT_SEC: f64 = 600.0;
+
+fn client_error(error: crate::error::Error) -> PyErr {
+    ClientError::new_err((error.message(),))
+}
 
 fn program_format(value: u16) -> PyResult<qio::QuantumProgramSerializationFormat> {
     serde_json::from_value(value.into()).map_err(|_| {
@@ -91,6 +107,8 @@ fn qio_parse_result_payload(payload: &str) -> PyResult<(u16, String)> {
 
 #[pyclass(frozen, name = "Client", module = "aqora")]
 struct PyClient {
+    url: Url,
+    options: ClientOptions,
     inner: Arc<RwLock<PyClientInner>>,
 }
 
@@ -144,18 +162,78 @@ impl PyClient {
             },
             |allow_insecure_host| Ok(allow_insecure_host),
         )?;
-        let client = unauthenticated_client(
-            url,
-            ClientOptions {
-                allow_insecure_host,
-            },
-        )
-        .map_err(|error| ClientError::new_err((error.message(),)))?;
+        let options = ClientOptions {
+            allow_insecure_host,
+        };
+        let client = unauthenticated_client(url.clone(), options.clone()).map_err(client_error)?;
         Ok(Self {
+            url,
+            options,
             inner: Arc::new(RwLock::new(PyClientInner {
                 client,
                 authenticated: false,
             })),
+        })
+    }
+
+    /// A client authenticating every GraphQL request with `token`.
+    fn with_token(&self, token: String) -> PyResult<Self> {
+        let mut client =
+            unauthenticated_client(self.url.clone(), self.options.clone()).map_err(client_error)?;
+        client.graphql_layer(CredentialsLayer::new(BearerToken(token)));
+        Ok(Self {
+            url: self.url.clone(),
+            options: self.options.clone(),
+            inner: Arc::new(RwLock::new(PyClientInner {
+                client,
+                authenticated: true,
+            })),
+        })
+    }
+
+    /// Start an OAuth2 authorization for the viewer of this workspace app.
+    ///
+    /// Only works inside an aqora workspace runner, where requests without an
+    /// `Authorization` header are authenticated as the workspace.
+    #[pyo3(signature = (scope=None))]
+    fn authorize_viewer<'py>(
+        &self,
+        py: Python<'py>,
+        scope: Option<Vec<String>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let inner = Arc::clone(&self.inner);
+        let url = self.url.clone();
+        let options = self.options.clone();
+        future_into_py(py, async move {
+            let base = inner.read().await.client.clone();
+            let workspace_client = base
+                .send::<Oauth2WorkspaceClientQuery>(oauth2_workspace_client_query::Variables)
+                .await
+                .map_err(|error| client_error(error.into()))?
+                .oauth2_workspace_client
+                .ok_or_else(|| {
+                    ClientError::new_err((
+                        "viewer login is only available inside an aqora workspace runner",
+                    ))
+                })?;
+            let request = new_authorization_request(
+                &workspace_client.authorize_url,
+                &workspace_client.client_id,
+                scope.map(|scope| scope.join(" ")).as_deref(),
+            )
+            .map_err(client_error)?;
+            // Subscribe before handing out the URL so the code cannot be
+            // redirected back before anyone is listening for it.
+            let stream = subscribe_code(&base, &request)
+                .await
+                .map_err(client_error)?;
+            Ok(PyViewerAuthorization {
+                request: Arc::new(request),
+                stream: Arc::new(Mutex::new(Some(stream))),
+                base,
+                url,
+                options,
+            })
         })
     }
 
@@ -318,6 +396,78 @@ impl PyClient {
     }
 }
 
+/// A pending viewer authorization: send the viewer to `url` and `wait` for
+/// them to approve it.
+#[pyclass(frozen, name = "ViewerAuthorization", module = "aqora")]
+struct PyViewerAuthorization {
+    request: Arc<AuthorizationRequest>,
+    stream: Arc<Mutex<Option<BoxStream<'static, crate::error::Result<String>>>>>,
+    /// The client the authorization was started with. It sends no
+    /// `Authorization` header, so viewer tokens are refreshed through it.
+    base: Client,
+    url: Url,
+    options: ClientOptions,
+}
+
+#[pymethods]
+impl PyViewerAuthorization {
+    #[getter]
+    fn url(&self) -> String {
+        self.request.authorize_url.to_string()
+    }
+
+    #[getter]
+    fn client_id(&self) -> &str {
+        &self.request.client_id
+    }
+
+    /// Wait for the viewer to approve the authorization and return a client
+    /// authenticated as them.
+    #[pyo3(signature = (*, timeout=None))]
+    fn wait<'py>(&self, py: Python<'py>, timeout: Option<f64>) -> PyResult<Bound<'py, PyAny>> {
+        let request = Arc::clone(&self.request);
+        let stream = Arc::clone(&self.stream);
+        let base = self.base.clone();
+        let url = self.url.clone();
+        let options = self.options.clone();
+        future_into_py(py, async move {
+            let mut stream = stream
+                .lock()
+                .await
+                .take()
+                .ok_or_else(|| ClientError::new_err(("authorization already completed",)))?;
+            let code = tokio::time::timeout(
+                Duration::from_secs_f64(timeout.unwrap_or(DEFAULT_AUTHORIZATION_TIMEOUT_SEC)),
+                stream.next(),
+            )
+            .await
+            .map_err(|_| ClientError::new_err(("timed out waiting for authorization",)))?
+            .ok_or_else(|| {
+                ClientError::new_err(("authorization closed before the viewer signed in",))
+            })?
+            .map_err(client_error)?;
+            let tokens = exchange_code(&base, &request, &code)
+                .await
+                .map_err(client_error)?;
+            let mut client =
+                unauthenticated_client(url.clone(), options.clone()).map_err(client_error)?;
+            client.graphql_layer(CredentialsLayer::new(ViewerCredentials::new(
+                base,
+                request.client_id.clone(),
+                tokens,
+            )));
+            Ok(PyClient {
+                url,
+                options,
+                inner: Arc::new(RwLock::new(PyClientInner {
+                    client,
+                    authenticated: true,
+                })),
+            })
+        })
+    }
+}
+
 #[pymodule]
 #[pyo3(name = "_aqora")]
 pub fn aqora(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -327,6 +477,7 @@ pub fn aqora(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PipelineConfig>()?;
     m.add_class::<LayerEvaluation>()?;
     m.add_class::<PyClient>()?;
+    m.add_class::<PyViewerAuthorization>()?;
     m.add_function(wrap_pyfunction!(qio_build_model_payload, m)?)?;
     m.add_function(wrap_pyfunction!(qio_parse_result_payload, m)?)?;
     for (name, format) in [
