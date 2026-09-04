@@ -2,6 +2,13 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.31.1 - 2026-09-04
+#### Bug Fixes
+- retry and sleep inmprovements - (9012ebc) - Julian Popescu
+- limit retry storm - (9ae4d9f) - Julian Popescu
+
+- - -
+
 ## v0.31.0 - 2026-09-02
 #### Features
 - add extra options to aqora pair - (0f7a93a) - Julian Popescu
