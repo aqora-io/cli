@@ -2761,6 +2761,10 @@ type Oauth2PreGrant {
 	The name a dynamically registered client gave itself.
 	"""
 	clientName: String
+	"""
+	The workspace app requesting access, for `workspace-` client ids.
+	"""
+	workspace: Workspace
 }
 
 enum Oauth2Provider {
@@ -2819,6 +2823,11 @@ type Oauth2UserInfo {
 	username: String
 	avatarUrl: Url
 	bio: String
+}
+
+type Oauth2WorkspaceClient {
+	clientId: String!
+	authorizeUrl: Url!
 }
 
 type Organization implements Entity & Node {
@@ -3373,6 +3382,11 @@ type Query {
 	oauth2Providers: [Oauth2Provider!]!
 	oauth2Configs(after: String, before: String, first: Int, last: Int): Oauth2ConfigConnection!
 	oauth2Authorize(input: Oauth2AuthorizeInput!): Oauth2PreGrant
+	"""
+	The OAuth2 client identity of the calling workspace runner, or null when
+	the request was not made with a runner api key.
+	"""
+	oauth2WorkspaceClient: Oauth2WorkspaceClient
 	datasets(after: String, before: String, first: Int, last: Int, filters: DatasetQueryFilters): DatasetConnection!
 	datasetBySlug(owner: String!, localSlug: String!): Dataset
 	dataCatalogBySlug(owner: String!, localSlug: String!): DataCatalog

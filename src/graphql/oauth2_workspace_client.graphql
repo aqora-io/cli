@@ -1,0 +1,6 @@
+query Oauth2WorkspaceClientQuery {
+  oauth2WorkspaceClient {
+    clientId
+    authorizeUrl
+  }
+}

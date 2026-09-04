@@ -3,14 +3,17 @@ use crate::{
     credentials::{insert_credentials, load_credentials, Credentials},
     dirs::credentials_path,
     error::{self, Result},
+    graphql_client::GraphQLClient,
+    oauth2::{
+        exchange_authorization_code, exchange_code, new_authorization_request, subscribe_code,
+        AuthorizationRequest,
+    },
 };
 use base64::prelude::*;
-use chrono::{Duration, Utc};
 use clap::Args;
 use futures::prelude::*;
 use graphql_client::GraphQLQuery;
 use indicatif::{MultiProgress, ProgressBar};
-use ring::signature::KeyPair;
 use serde::Serialize;
 use std::io::{BufRead, Write};
 use url::Url;
@@ -32,56 +35,15 @@ fn client_id() -> String {
     format!("{CLIENT_ID_PREFIX}{hostname}")
 }
 
-impl GlobalArgs {
-    fn authorize_url(&self, client_id: &str, redirect_uri: &Url, state: &str) -> Result<Url> {
-        let mut url = self.aqora_url()?.join("/oauth2/authorize")?;
-        url.query_pairs_mut()
-            .append_pair("client_id", client_id)
-            .append_pair("state", state)
-            .append_pair("redirect_uri", redirect_uri.as_ref())
-            .finish();
-        Ok(url)
-    }
-}
-
-#[derive(GraphQLQuery)]
-#[graphql(
-    query_path = "src/graphql/oauth2_redirect_subscription.graphql",
-    schema_path = "schema.graphql",
-    response_derives = "Debug"
-)]
-pub struct Oauth2RedirectSubscription;
-
 async fn get_oauth_code(
-    global: &GlobalArgs,
-    client_id: &str,
+    client: &GraphQLClient,
+    req: &AuthorizationRequest,
     progress: &ProgressBar,
-) -> Result<Option<(Url, String)>> {
-    let rng = ring::rand::SystemRandom::new();
-    let keypair = ring::signature::Ed25519KeyPair::from_seed_unchecked(
-        &ring::rand::generate::<[u8; 32]>(&rng).unwrap().expose(),
-    )
-    .unwrap();
-    let state_bytes = ring::rand::generate::<[u8; 16]>(&rng).unwrap().expose();
-
-    let state = BASE64_URL_SAFE_NO_PAD.encode(state_bytes);
-    let public_key = BASE64_URL_SAFE_NO_PAD.encode(keypair.public_key().as_ref());
-
-    let redirect_uri = Url::parse(&format!("https://aqora.io/oauth2/sub/{public_key}"))?;
-    let authorize_url = global.authorize_url(client_id, &redirect_uri, &state)?;
-
-    let signature_bytes = keypair.sign(authorize_url.as_str().as_bytes());
-    let signature = BASE64_URL_SAFE_NO_PAD.encode(signature_bytes.as_ref());
-
-    let mut subscription = global
-        .unauthenticated_graphql_client()?
-        .subscribe::<Oauth2RedirectSubscription>(oauth2_redirect_subscription::Variables {
-            auth_url: authorize_url.clone(),
-            signature,
-        })
-        .await?;
+) -> Result<Option<String>> {
+    let mut subscription = subscribe_code(client, req).await?;
 
     let cloned_progress = progress.clone();
+    let authorize_url = req.authorize_url.clone();
     let opener = tokio::spawn(async move {
         cloned_progress.set_message("Opening browser and waiting for response...");
 
@@ -115,7 +77,7 @@ you can instead run the following command:
         }
     });
 
-    let Some(item) = subscription.next().await.transpose()? else {
+    let Some(code) = subscription.next().await.transpose()? else {
         return Err(error::system(
             "No response from server",
             "Please retry again",
@@ -123,7 +85,7 @@ you can instead run the following command:
     };
     opener.abort();
 
-    Ok(Some((redirect_uri, item.oauth2_redirect.code)))
+    Ok(Some(code))
 }
 
 fn prompt_line(prompt: Option<impl AsRef<str>>) -> std::io::Result<String> {
@@ -277,49 +239,33 @@ async fn login_interactive(
     Ok(Some((redirect_uri, oauth_token)))
 }
 
-#[derive(GraphQLQuery)]
-#[graphql(
-    query_path = "src/graphql/oauth2_token.graphql",
-    schema_path = "schema.graphql",
-    response_derives = "Debug"
-)]
-pub struct Oauth2TokenMutation;
-
 async fn do_login(args: Login, global: GlobalArgs, progress: ProgressBar) -> Result<()> {
     progress.set_message("Logging in...");
     let path = credentials_path(global.config_home().await?);
     let url = global.aqora_url()?;
     let client_id = client_id();
-    let Some((redirect_uri, code)) = (if args.interactive {
-        login_interactive(&global, &client_id, &progress).await?
+    let client = global.unauthenticated_graphql_client()?;
+    let issued = if args.interactive {
+        let Some((redirect_uri, code)) = login_interactive(&global, &client_id, &progress).await?
+        else {
+            // cancelled
+            return Ok(());
+        };
+        exchange_authorization_code(&client, &client_id, &redirect_uri, &code).await?
     } else {
-        get_oauth_code(&global, &client_id, &progress).await?
-    }) else {
-        // cancelled
-        return Ok(());
-    };
-    let Some(issued) = global
-        .unauthenticated_graphql_client()?
-        .send::<Oauth2TokenMutation>(oauth2_token_mutation::Variables {
-            client_id: client_id.clone(),
-            code,
-            redirect_uri,
-        })
-        .await?
-        .oauth2_token
-        .issued
-    else {
-        return Err(error::system(
-            "GraphQL response missing issued",
-            "This is a bug, please report it",
-        ));
+        let req = new_authorization_request(&url.join("/oauth2/authorize")?, &client_id, None)?;
+        let Some(code) = get_oauth_code(&client, &req, &progress).await? else {
+            // cancelled
+            return Ok(());
+        };
+        exchange_code(&client, &req, &code).await?
     };
     let credentials = Credentials {
         client_id,
         client_secret: None,
         access_token: issued.access_token,
         refresh_token: issued.refresh_token,
-        expires_at: Utc::now() + Duration::try_seconds(issued.expires_in).unwrap(),
+        expires_at: issued.expires_at,
     };
     insert_credentials(&path, &url, credentials)
         .await

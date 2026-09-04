@@ -1,11 +1,11 @@
 use crate::{
     error::Result,
     fs_lock::{ExclusiveLock, LockedFile, SharedLock},
+    oauth2::{oauth2_refresh_mutation, Oauth2RefreshMutation},
 };
 use aqora_client::error::MiddlewareError;
 use chrono::{DateTime, Duration, Utc};
 use futures::{future::BoxFuture, prelude::*};
-use graphql_client::GraphQLQuery;
 use reqwest::header::{HeaderValue, AUTHORIZATION};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -91,14 +91,6 @@ pub async fn load_credentials(path: &Path, url: &Url) -> io::Result<LoadCredenti
         .remove(&base_url(url));
     Ok(credentials.map(|credentials| (file, credentials)))
 }
-
-#[derive(GraphQLQuery)]
-#[graphql(
-    query_path = "src/graphql/oauth2_refresh.graphql",
-    schema_path = "schema.graphql",
-    response_derives = "Debug"
-)]
-pub struct Oauth2RefreshMutation;
 
 async fn refresh_credentials(
     path: &Path,
