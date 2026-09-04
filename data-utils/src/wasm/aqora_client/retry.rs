@@ -93,17 +93,37 @@ impl<'de> DeserializeTagged<'de> for JsBackoff {
     }
 }
 
-#[derive(TS, Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+#[derive(TS, Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[ts(export)]
 pub struct ExponentialBackoffOptions {
     start_delay_ms: usize,
     factor: f64,
-    #[serde(default)]
+    #[serde(default = "default_max_delay_ms")]
     #[ts(optional)]
     max_delay_ms: Option<usize>,
-    #[serde(default)]
+    #[serde(default = "default_max_retries")]
     #[ts(optional)]
     max_retries: Option<usize>,
+}
+
+impl Default for ExponentialBackoffOptions {
+    fn default() -> Self {
+        let defaults = ExponentialBackoffBuilder::default();
+        Self {
+            start_delay_ms: defaults.start_delay.as_millis() as usize,
+            factor: defaults.factor,
+            max_delay_ms: defaults.max_delay.map(|delay| delay.as_millis() as usize),
+            max_retries: defaults.max_retries,
+        }
+    }
+}
+
+fn default_max_delay_ms() -> Option<usize> {
+    ExponentialBackoffOptions::default().max_delay_ms
+}
+
+fn default_max_retries() -> Option<usize> {
+    ExponentialBackoffOptions::default().max_retries
 }
 
 impl From<ExponentialBackoffOptions> for ExponentialBackoffBuilder {

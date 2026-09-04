@@ -46,18 +46,11 @@ impl Iterator for ExponentialBackoff {
             return None;
         }
         self.retries += 1;
-        let next = Duration::from_secs_f64(self.secs);
-        self.secs *= self.factor;
-        if let Some(max_secs) = self.max_secs {
-            if self
-                .secs
-                .partial_cmp(&max_secs)
-                .is_none_or(|ordering| ordering.is_gt())
-            {
-                self.secs = max_secs
-            }
-        }
-        Some(next)
+        let secs = self
+            .max_secs
+            .map_or(self.secs, |max_secs| self.secs.min(max_secs));
+        self.secs = secs * self.factor;
+        Some(Duration::from_secs_f64(secs))
     }
 }
 
@@ -320,5 +313,51 @@ mod tests {
                 Duration::from_secs(4),
             ]
         );
+    }
+
+    #[test]
+    fn exponential_backoff_clamps_growth_to_max_delay() {
+        let backoff = ExponentialBackoffBuilder {
+            max_delay: Some(Duration::from_secs(3)),
+            max_retries: Some(4),
+            ..Default::default()
+        }
+        .build();
+        let delays: Vec<_> = backoff.collect();
+        assert_eq!(
+            delays,
+            vec![
+                Duration::from_secs(1),
+                Duration::from_secs(2),
+                Duration::from_secs(3),
+                Duration::from_secs(3),
+            ]
+        );
+    }
+
+    #[test]
+    fn exponential_backoff_caps_first_delay_at_max_delay() {
+        let backoff = ExponentialBackoffBuilder {
+            start_delay: Duration::from_secs(300),
+            max_delay: Some(Duration::from_secs(60)),
+            max_retries: Some(2),
+            ..Default::default()
+        }
+        .build();
+        let delays: Vec<_> = backoff.collect();
+        assert_eq!(
+            delays,
+            vec![Duration::from_secs(60), Duration::from_secs(60)]
+        );
+    }
+
+    #[test]
+    fn exponential_backoff_without_max_retries_is_unbounded() {
+        let backoff = ExponentialBackoffBuilder {
+            max_retries: None,
+            ..Default::default()
+        }
+        .build();
+        assert_eq!(backoff.take(10).count(), 10);
     }
 }

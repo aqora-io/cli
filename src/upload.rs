@@ -260,6 +260,9 @@ where
             });
             Some(next)
         } else {
+            self.pb.suspend(|| {
+                tracing::warn!("An error occurred, no retries remaining");
+            });
             None
         }
     }

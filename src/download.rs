@@ -257,8 +257,9 @@ where
         inspector: &DownloadInspector<'_>,
         path: &Path,
     ) -> Result<()> {
-        for delay in self.backoff_builder.build() {
-            match self
+        let mut backoff = self.backoff_builder.build();
+        loop {
+            let failure = match self
                 .client
                 .s3_get_range(url.clone(), range.start as usize..range.end as usize)
                 .await
@@ -275,16 +276,20 @@ where
                     writer.flush().await?;
                     return Ok(());
                 }
-                Err(err) => {
-                    if !self.retry_classifier.should_retry(&Err(err.into())) {
-                        return Err(crate::error::system("S3 range", "non-retryable error"));
-                    }
-                    tokio::time::sleep(delay).await;
-                }
+                Err(err) => Err(err.into()),
+            };
+            if !self.retry_classifier.should_retry(&failure) {
+                return failure.map(|_| ()).map_err(|err| {
+                    error::system_with_cause("S3 range failed with a non-retryable error", "", err)
+                });
             }
+            let Some(delay) = backoff.next() else {
+                return failure.map(|_| ()).map_err(|err| {
+                    error::system_with_cause("S3 range exhausted retries", "", err)
+                });
+            };
+            tokio::time::sleep(delay).await;
         }
-
-        Err(crate::error::system("S3 range", "exhausted retries"))
     }
 }
 
@@ -329,4 +334,56 @@ pub async fn multipart_download(
         .await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aqora_client::{
+        error::BoxError,
+        http::{HttpBoxService, Request, Response},
+    };
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    use tower::{layer::layer_fn, service_fn};
+
+    #[tokio::test]
+    async fn retry_range_retries_max_retries_times_and_keeps_last_error() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let counter = attempts.clone();
+        let mut client = GraphQLClient::new("https://example.com/graphql".parse().unwrap());
+        client.s3_layer(layer_fn(move |_inner: HttpBoxService| {
+            let counter = counter.clone();
+            service_fn(move |_req: Request| {
+                counter.fetch_add(1, Ordering::SeqCst);
+                async { Err::<Response, BoxError>("boom".into()) }
+            })
+        }));
+        let downloader = RangeDownloader {
+            client,
+            retry_classifier: RetryStatusCodeRange::for_client_and_server_errors(),
+            backoff_builder: ExponentialBackoffBuilder {
+                start_delay: Duration::from_millis(1),
+                max_retries: Some(3),
+                ..Default::default()
+            },
+        };
+        let pb = ProgressBar::hidden();
+        let inspector = DownloadInspector::new(&pb, None);
+
+        let err = downloader
+            .retry_range(
+                &"https://example.com/file".parse().unwrap(),
+                0..1,
+                &inspector,
+                Path::new("unused"),
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(attempts.load(Ordering::SeqCst), 4);
+        assert!(err.to_string().contains("boom"), "{err}");
+    }
 }

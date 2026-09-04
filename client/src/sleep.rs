@@ -16,27 +16,51 @@ mod wasm_impl {
     use super::*;
     use crate::wasm::global;
 
-    use futures::future::{FutureExt, Map};
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::task::{ready, Context, Poll};
+
     use wasm_bindgen_futures::JsFuture;
     use web_sys::{
         js_sys::{Function, Promise},
         wasm_bindgen::{JsValue, UnwrapThrowExt},
     };
 
-    fn throw(result: Result<JsValue, JsValue>) {
-        result.unwrap_throw();
+    pub struct Sleep {
+        future: JsFuture,
+        timeout: Option<i32>,
     }
 
-    pub type Sleep = Map<JsFuture, fn(Result<JsValue, JsValue>) -> ()>;
+    impl Future for Sleep {
+        type Output = ();
+        fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            let result = ready!(Pin::new(&mut self.future).poll(cx));
+            self.timeout = None;
+            result.unwrap_throw();
+            Poll::Ready(())
+        }
+    }
+
+    impl Drop for Sleep {
+        fn drop(&mut self) {
+            if let Some(timeout) = self.timeout.take() {
+                global().clear_timeout(timeout);
+            }
+        }
+    }
 
     pub fn sleep(duration: Duration) -> Sleep {
-        let millis = duration.as_millis() as i32;
-        let mut cb = |resolve: Function, reject: Function| {
-            if let Err(err) = global().set_timeout(&resolve, millis) {
-                let _ = reject.call1(&JsValue::NULL, &err);
-            }
-        };
-        JsFuture::from(Promise::new(&mut cb)).map(throw)
+        let millis = duration.as_millis().min(i32::MAX as u128) as i32;
+        let mut timeout = None;
+        let mut cb =
+            |resolve: Function, reject: Function| match global().set_timeout(&resolve, millis) {
+                Ok(handle) => timeout = Some(handle),
+                Err(err) => {
+                    let _ = reject.call1(&JsValue::NULL, &err);
+                }
+            };
+        let future = JsFuture::from(Promise::new(&mut cb));
+        Sleep { future, timeout }
     }
 }
 
