@@ -32,10 +32,9 @@ mod wasm_impl {
     pub fn sleep(duration: Duration) -> Sleep {
         let millis = duration.as_millis() as i32;
         let mut cb = |resolve: Function, reject: Function| {
-            let _ = match global().set_timeout(&resolve, millis) {
-                Ok(i32) => resolve.call1(&JsValue::NULL, &i32.into()),
-                Err(err) => reject.call1(&JsValue::NULL, &err),
-            };
+            if let Err(err) = global().set_timeout(&resolve, millis) {
+                let _ = reject.call1(&JsValue::NULL, &err);
+            }
         };
         JsFuture::from(Promise::new(&mut cb)).map(throw)
     }
