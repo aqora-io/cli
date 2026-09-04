@@ -31,4 +31,12 @@ impl GlobalScope {
             }
         }
     }
+
+    #[cfg(feature = "wasm-time")]
+    pub fn clear_timeout(&self, handle: i32) {
+        match self {
+            Self::Window(window) => window.clear_timeout_with_handle(handle),
+            Self::Worker(worker) => worker.clear_timeout_with_handle(handle),
+        }
+    }
 }

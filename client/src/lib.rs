@@ -13,7 +13,7 @@ pub mod retry;
 #[cfg(feature = "s3")]
 pub mod s3;
 #[cfg(feature = "retry")]
-mod sleep;
+pub mod sleep;
 pub mod tower_util;
 #[cfg(feature = "trace")]
 pub mod trace;
