@@ -45,6 +45,7 @@ impl Iterator for ExponentialBackoff {
         {
             return None;
         }
+        self.retries += 1;
         let next = Duration::from_secs_f64(self.secs);
         self.secs *= self.factor;
         if let Some(max_secs) = self.max_secs {
@@ -294,5 +295,30 @@ where
             BackoffPolicy::new_arc(self.retry_classifier.clone(), backoff),
             inner,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exponential_backoff_stops_after_max_retries() {
+        let backoff = ExponentialBackoffBuilder {
+            start_delay: Duration::from_secs(1),
+            factor: 2.,
+            max_delay: Some(Duration::from_secs(60)),
+            max_retries: Some(3),
+        }
+        .build();
+        let delays: Vec<_> = backoff.take(10).collect();
+        assert_eq!(
+            delays,
+            vec![
+                Duration::from_secs(1),
+                Duration::from_secs(2),
+                Duration::from_secs(4),
+            ]
+        );
     }
 }
