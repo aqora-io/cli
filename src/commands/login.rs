@@ -223,6 +223,10 @@ async fn login_interactive(
                     redirect_uri: Some(redirect_uri.clone()),
                     state: Some(BASE64_URL_SAFE_NO_PAD.encode(rand::random::<[u8; 16]>())),
                     scope: None,
+                    // The interactive fallback exchanges credentials directly
+                    // and does not use PKCE.
+                    code_challenge: None,
+                    code_challenge_method: None,
                 },
             });
         let response = client

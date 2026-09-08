@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence
 
 from aqora import Client
 
+from aqora._provider import jobs
+
 from . import client as client_ops
 from ._deps import (
     BackendData,
@@ -39,6 +41,10 @@ class QPU(BackendV2):
     `platform` selects the provider platform jobs are submitted to, by name or
     id (the schema's `ProviderPlatformNameOrID`). When omitted, the server
     chooses its default platform.
+
+    `as_entity` is the username or id of an organization you belong to; jobs
+    are attributed to it, which is how provider quota is tracked per team. When
+    it is omitted jobs are attributed to you personally.
     """
 
     def __init__(
@@ -48,6 +54,7 @@ class QPU(BackendV2):
         url: str | None = None,
         allow_insecure_host: bool | None = None,
         platform: str | None = None,
+        as_entity: str | None = None,
     ) -> None:
         if client is not None and (url is not None or allow_insecure_host is not None):
             raise ValueError(
@@ -56,6 +63,7 @@ class QPU(BackendV2):
         raw_client = client or Client(url, allow_insecure_host=allow_insecure_host)
         self._graphql = client_ops.AqoraGraphQLClient(raw_client)
         self._platform = platform
+        self._as_entity = as_entity
         self._target: Target | None = None
         super().__init__(provider=None, name="aqora-qpu")
 
@@ -73,6 +81,10 @@ class QPU(BackendV2):
     @property
     def platform(self) -> str | None:
         return self._platform
+
+    @property
+    def as_entity(self) -> str | None:
+        return self._as_entity
 
     @property
     def target(self) -> Target:
@@ -114,13 +126,10 @@ class QPU(BackendV2):
                 "The aqora provider GraphQL API only supports `shots` as a per-run "
                 f"parameter (unsupported options: {', '.join(sorted(unsupported))})"
             )
-        if shots is not None and shots < 1:
-            raise ValueError("`shots` must be at least 1")
-
         self._graphql.ensure_authenticated()
 
         model_payload = self._build_model_payload(circuits)
-        upload_info = self._graphql.start_provider_model_upload()
+        upload_info = self._graphql.start_provider_model_upload(as_entity=self._as_entity)
         etag = self._graphql.upload_payload(upload_info["uploadUrl"], model_payload)
 
         model = self._graphql.create_provider_model(
@@ -131,6 +140,7 @@ class QPU(BackendV2):
             provider_model_id=model["id"],
             shots=shots,
             provider_platform=self._platform,
+            as_entity=self._as_entity,
         )
         return QPUJob(self, str(job["id"]), payload=job)
 
@@ -154,19 +164,10 @@ class QPU(BackendV2):
             raise TypeError("aqora QPU only accepts qiskit.QuantumCircuit inputs")
         return circuits
 
-    def _effective_shots(self, overrides: Mapping[str, Any]) -> int | None:
-        shots = overrides.get("shots", getattr(self.options, "shots", None))
-        if shots is None:
-            return None
-        if isinstance(shots, bool):
-            raise TypeError("`shots` must be an integer")
-        try:
-            as_int = int(shots)
-        except (TypeError, ValueError) as exc:
-            raise TypeError("`shots` must be an integer") from exc
-        if as_int != shots:
-            raise TypeError("`shots` must be an integer")
-        return as_int
+    def _effective_shots(self, overrides: Mapping[str, Any]) -> int:
+        # Required: the backend's default `shots` option is None on purpose,
+        # so a run that sets neither the option nor the argument fails here.
+        return jobs.normalize_shots(overrides.get("shots", getattr(self.options, "shots", None)))
 
     def _unsupported_run_options(self, overrides: Mapping[str, Any]) -> list[str]:
         # `is not None` (not truthiness) so that falsy-but-meaningful values

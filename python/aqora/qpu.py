@@ -37,6 +37,10 @@ class QPU:
     `ProviderPlatformNameOrID`). When it is omitted the server chooses a default
     platform that this client cannot identify, so there is nothing to negotiate
     against and programs are submitted in their native format.
+
+    `as_entity` is the username or id of an organization you belong to; jobs
+    are attributed to it, which is how provider quota is tracked per team. When
+    it is omitted jobs are attributed to you personally.
     """
 
     def __init__(
@@ -46,12 +50,14 @@ class QPU:
         url: str | None = None,
         allow_insecure_host: bool | None = None,
         platform: str | None = None,
+        as_entity: str | None = None,
         compress: bool = True,
     ) -> None:
         self._graphql = _resolve_graphql(
             client, url=url, allow_insecure_host=allow_insecure_host
         )
         self._platform = platform
+        self._as_entity = as_entity
         self._compress = compress
         self._input_formats: list[int] | None = None
 
@@ -62,6 +68,10 @@ class QPU:
     @property
     def platform(self) -> str | None:
         return self._platform
+
+    @property
+    def as_entity(self) -> str | None:
+        return self._as_entity
 
     @property
     def input_formats(self) -> list[int]:
@@ -77,8 +87,10 @@ class QPU:
             self._input_formats = self._load_input_formats()
         return self._input_formats
 
-    def run(self, programs: Any, *, shots: int | None = None) -> "QPUJob":
+    def run(self, programs: Any, *, shots: int) -> "QPUJob":
         """Submit one or more programs as a provider job.
+
+        `shots` is required: every program in the job runs that many times.
 
         `programs` is a single program, or a list or tuple of them. Accepted
         programs are qiskit `QuantumCircuit`s, pytket `Circuit`s,
@@ -88,13 +100,15 @@ class QPU:
         Every program in a job shares one serialization format: the first the
         platform accepts that all of them can produce.
         """
+        shots = jobs.normalize_shots(shots)
         sources = [formats.detect(program) for program in _as_programs(programs)]
         encoded, serialization_format = formats.encode(sources, self.input_formats)
         job = jobs.submit_model(
             self._graphql,
             wire.build_model_payload(encoded, compress=self._compress),
-            shots=jobs.normalize_shots(shots),
+            shots=shots,
             platform=self._platform,
+            as_entity=self._as_entity,
         )
         return QPUJob(
             self,

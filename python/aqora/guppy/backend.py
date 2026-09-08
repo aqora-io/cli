@@ -62,6 +62,10 @@ class QPU:
     `platform` selects the provider platform jobs are submitted to, by name or
     id (the schema's `ProviderPlatformNameOrID`). When omitted, the server
     chooses its default platform.
+
+    `as_entity` is the username or id of an organization you belong to; jobs
+    are attributed to it, which is how provider quota is tracked per team. When
+    it is omitted jobs are attributed to you personally.
     """
 
     def __init__(
@@ -71,12 +75,14 @@ class QPU:
         url: str | None = None,
         allow_insecure_host: bool | None = None,
         platform: str | None = None,
+        as_entity: str | None = None,
         compress: bool = True,
     ) -> None:
         self._graphql = jobs._resolve_graphql(
             client, url=url, allow_insecure_host=allow_insecure_host
         )
         self._platform = platform
+        self._as_entity = as_entity
         self._compress = compress
 
     @property
@@ -86,6 +92,10 @@ class QPU:
     @property
     def platform(self) -> str | None:
         return self._platform
+
+    @property
+    def as_entity(self) -> str | None:
+        return self._as_entity
 
     def run(self, program: Any, **options: Any) -> QPUJob:
         """Submit a guppy program as a provider job.
@@ -110,6 +120,7 @@ class QPU:
             payload,
             shots=shots,
             platform=self._platform,
+            as_entity=self._as_entity,
         )
         return QPUJob(self, job.job_id, payload=job._payload)
 

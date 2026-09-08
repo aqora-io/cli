@@ -1331,6 +1331,7 @@ input CreateWorkspaceInput {
 	name: String!
 	private: Boolean!
 	shortDescription: String
+	pythonRuntime: WorkspacePythonRuntime
 }
 
 input CreateWorkspaceVersionInput {
@@ -1959,6 +1960,16 @@ type EventConnection {
 	totalCount: Int!
 }
 
+enum EventConnectionOrder {
+	ORDERING_PRIORITY
+	CREATED_AT
+}
+
+enum EventConnectionSortDirection {
+	ASCENDING
+	DESCENDING
+}
+
 """
 An edge in a connection.
 """
@@ -2126,6 +2137,8 @@ input EventQueryFilters {
 	Filter events by their associated tags.
 	"""
 	tags: [String!]
+	order: EventConnectionOrder! = ORDERING_PRIORITY
+	sortDirection: EventConnectionSortDirection! = DESCENDING
 }
 
 type EventRule implements Node {
@@ -2475,6 +2488,12 @@ type Mutation {
 	unsubscribeFromAllNotifications: UserEdge!
 	unsubscribeNotificationForToken(token: String!): NotificationKind
 	createEvent(input: CreateEventInput!): EventEdge!
+	"""
+	Create an event (challenge) from a competition (track)
+	It's derive all competition (track) metadata to properlly
+	create an event (challenge)
+	"""
+	createEventFromCompetition(competitionId: ID!): EventEdge!
 	updateEvent(id: ID!, input: UpdateEventInput!): EventEdge!
 	deleteEvent(id: ID!): ID!
 	updateEventAgenda(input: UpdateAgendaInput!, eventId: ID!): EventEdge!
@@ -2505,9 +2524,29 @@ type Mutation {
 	createProjectVersionApproval(projectVersionId: ID!, input: ProjectVersionApprovalInput!): ProjectVersionApprovalEdge!
 	updateProjectVersionApproval(projectVersionApprovalId: ID!, input: ProjectVersionApprovalInput!): ProjectVersionApprovalEdge!
 	deleteProjectVersionApproval(projectVersionApprovalId: ID!): ID!
-	uploadProviderModelPayload: UploadProviderModelPayload!
+	"""
+	Reserves a provider model upload and returns a presigned URL for it.
+	The upload is owned by `asEntity` (the viewer when omitted) and jobs
+	created from it are attributed to that same entity. Acting for an
+	organization requires being one of its Owners or Admins.
+	"""
+	uploadProviderModelPayload(asEntity: UsernameOrID): UploadProviderModelPayload!
+	"""
+	Finalizes a provider model upload. The viewer must be allowed to act
+	as the entity the upload belongs to (the `asEntity` it was reserved
+	with).
+	"""
 	createProviderModel(providerModelUploadId: UUID!, etag: String!): ProviderModel!
-	createProviderJob(providerModelId: ID!, shots: Int, providerPlatform: ProviderPlatformNameOrID): ProviderJob!
+	"""
+	Submits `providerModelId` to `providerPlatform` (the configured default
+	when omitted) on behalf of `asEntity` (the viewer when omitted). The
+	job, its price and the provider-side quota are attributed to that
+	entity, which must own the provider model. On a private platform that
+	entity itself must be a member: a viewer whose organization is the
+	member must pass the organization as `asEntity`, which requires being
+	one of its Owners or Admins.
+	"""
+	createProviderJob(providerModelId: ID!, shots: Int, providerPlatform: ProviderPlatformNameOrID, asEntity: UsernameOrID): ProviderJob!
 	addProviderPlatformMember(providerPlatformId: ID!, entityId: ID!): ProviderPlatformMembershipConnectionEdge!
 	removeProviderPlatformMember(providerPlatformId: ID!, entityId: ID!): ID!
 	fetchWebsiteMetadata(url: Url!): WebsiteMetadata!
@@ -2657,6 +2696,8 @@ input Oauth2AuthorizeInput {
 	state: String
 	redirectUri: Url
 	scope: String
+	codeChallenge: String
+	codeChallengeMethod: String
 }
 
 type Oauth2AuthorizeOutput {
@@ -2716,6 +2757,10 @@ type Oauth2PreGrant {
 	state: String
 	valid: Boolean!
 	oauth2Config: Oauth2Config
+	"""
+	The name a dynamically registered client gave itself.
+	"""
+	clientName: String
 }
 
 enum Oauth2Provider {
@@ -2759,6 +2804,7 @@ input Oauth2TokenInput {
 	clientId: String!
 	redirectUri: Url!
 	code: String!
+	codeVerifier: String
 }
 
 type Oauth2TokenOutput {
@@ -3458,7 +3504,7 @@ input SignupUserInput {
 """
 Disk usage for a workspace volume, in bytes. The `used`/`capacity`/`available`
 fields are `null` until the kubimo controller reports them in the Workspace CR
-status; `requested` is the size asked for in the CR spec (`spec.storage.min`)
+status; `requested` is the workspace's allotment (`spec.storage.max`, its slot quota)
 and is available before any status is reported (populated for a runner's
 backing volume, `null` on `Workspace.storageStatus`).
 """
@@ -4434,6 +4480,11 @@ type WorkspaceFile implements WorkspaceEntry {
 	downloadUrl: Url
 }
 
+enum WorkspacePythonRuntime {
+	UV
+	CONDA
+}
+
 type WorkspaceRunner implements Node {
 	command: RunnerCommand!
 	phase: WorkspaceRunnerPhase!
@@ -4453,8 +4504,8 @@ type WorkspaceRunner implements Node {
 	Workspace CR the runner mounts — the per-version CR for versioned
 	workspaces, otherwise the workspace CR. `used`/`capacity`/`available` are
 	null until the controller reports them; `requested` (the workspace's
-	allotment — `spec.storage.min` when Dedicated, the slot quota `max` when
-	Pooled) is available as soon as the CR exists, so callers can
+	allotment — its slot quota, `spec.storage.max`) is available as soon as
+	the CR exists, so callers can
 	show the requested allotment before usage is reported. The whole object is
 	null only when the backing CR is absent. Unlike `workspace.storageStatus`,
 	this is populated for versioned workspaces (whose parent has no live CR).

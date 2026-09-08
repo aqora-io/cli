@@ -419,7 +419,7 @@ def test_qpu_run_uploads_qio_model(mod, monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(mod.client, "_package_version", lambda: "9.9.9")
 
-    job = qpu.run(circuit)
+    job = qpu.run(circuit, shots=100)
 
     assert qpu.client.authenticated
     assert job.job_id() == "ProviderJob:job-1"
@@ -454,8 +454,9 @@ def test_qpu_run_uploads_qio_model(mod, monkeypatch: pytest.MonkeyPatch):
     assert create_provider_job_calls == [
         {
             "providerModelId": "model-1",
-            "shots": None,
+            "shots": 100,
             "providerPlatform": None,
+            "asEntity": None,
         }
     ]
 
@@ -490,7 +491,7 @@ def test_qpu_run_passes_shots(mod):
 def test_qpu_run_passes_provider_platform(mod):
     qpu = mod.QPU(platform="platform-b")
 
-    qpu.run(mod.QuantumCircuit(1))
+    qpu.run(mod.QuantumCircuit(1), shots=100)
 
     create_provider_job_calls = [
         variables
@@ -498,6 +499,37 @@ def test_qpu_run_passes_provider_platform(mod):
         if "createProviderJob" in query
     ]
     assert create_provider_job_calls[-1]["providerPlatform"] == "platform-b"
+
+
+def test_qpu_run_requires_shots(mod):
+    qpu = mod.QPU()
+
+    with pytest.raises(ValueError, match="`shots` is required"):
+        qpu.run(mod.QuantumCircuit(1))
+    with pytest.raises(ValueError, match="`shots` is required"):
+        qpu.run(mod.QuantumCircuit(1), shots=None)
+    assert qpu.client.calls == []
+
+
+def test_qpu_run_passes_as_entity_to_upload_and_job(mod):
+    qpu = mod.QPU(as_entity="my-team")
+
+    qpu.run(mod.QuantumCircuit(1), shots=100)
+
+    upload_calls = [
+        variables
+        for query, variables in qpu.client.calls
+        if "uploadProviderModelPayload" in query
+    ]
+    create_provider_job_calls = [
+        variables
+        for query, variables in qpu.client.calls
+        if "createProviderJob" in query
+    ]
+    # The backend rejects a job whose model is owned by a different entity, so
+    # both mutations must carry the same value.
+    assert upload_calls == [{"asEntity": "my-team"}]
+    assert create_provider_job_calls[-1]["asEntity"] == "my-team"
 
 
 def test_qpu_run_accepts_sampler_run_options(mod):
@@ -514,16 +546,16 @@ def test_qpu_run_rejects_unsupported_run_options(mod):
     qpu = mod.QPU()
 
     with pytest.raises(NotImplementedError, match="seed_simulator"):
-        qpu.run(mod.QuantumCircuit(1), seed_simulator=1234)
+        qpu.run(mod.QuantumCircuit(1), seed_simulator=1234, shots=100)
 
 
 def test_qpu_run_rejects_falsy_unsupported_options(mod):
     qpu = mod.QPU()
 
     with pytest.raises(NotImplementedError, match="seed_simulator"):
-        qpu.run(mod.QuantumCircuit(1), seed_simulator=0)
+        qpu.run(mod.QuantumCircuit(1), seed_simulator=0, shots=100)
     with pytest.raises(NotImplementedError, match="rep_delay"):
-        qpu.run(mod.QuantumCircuit(1), rep_delay=0.0)
+        qpu.run(mod.QuantumCircuit(1), rep_delay=0.0, shots=100)
 
 
 def test_qpu_run_rejects_non_integer_shots(mod):

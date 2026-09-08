@@ -54,6 +54,10 @@ class QPU(Backend):
     `platform` selects the provider platform jobs are submitted to, by name or
     id (the schema's `ProviderPlatformNameOrID`). When omitted, the server
     chooses its default platform.
+
+    `as_entity` is the username or id of an organization you belong to; jobs
+    are attributed to it, which is how provider quota is tracked per team. When
+    it is omitted jobs are attributed to you personally.
     """
 
     _supports_shots = True
@@ -67,12 +71,14 @@ class QPU(Backend):
         url: str | None = None,
         allow_insecure_host: bool | None = None,
         platform: str | None = None,
+        as_entity: str | None = None,
         compress: bool = True,
     ) -> None:
         self._graphql = jobs._resolve_graphql(
             client, url=url, allow_insecure_host=allow_insecure_host
         )
         self._platform = platform
+        self._as_entity = as_entity
         self._compress = compress
         self._max_qubits: int | None = None
         self._max_qubits_loaded = False
@@ -86,6 +92,10 @@ class QPU(Backend):
     @property
     def platform(self) -> str | None:
         return self._platform
+
+    @property
+    def as_entity(self) -> str | None:
+        return self._as_entity
 
     @property
     def _result_id_type(self) -> tuple[type, ...]:
@@ -142,6 +152,7 @@ class QPU(Backend):
             wire.build_model_payload(programs, compress=self._compress),
             shots=shots,
             platform=self._platform,
+            as_entity=self._as_entity,
         )
         return [ResultHandle(job.job_id, index) for index in range(len(circuits))]
 
@@ -203,7 +214,7 @@ class QPU(Backend):
     def cancel(self, handle: ResultHandle) -> None:
         raise NotImplementedError("The aqora provider GraphQL API does not support cancellation")
 
-    def _normalize_shots(self, n_shots: int | Sequence[int] | None) -> int | None:
+    def _normalize_shots(self, n_shots: int | Sequence[int] | None) -> int:
         # `int` also covers `bool`, which `jobs.normalize_shots` rejects.
         if n_shots is None or isinstance(n_shots, int):
             return jobs.normalize_shots(n_shots)
@@ -213,7 +224,7 @@ class QPU(Backend):
                 "The aqora provider GraphQL API does not support per-circuit "
                 "shot counts; all circuits in a job share one `shots` value"
             )
-        return jobs.normalize_shots(shots[0]) if shots else None
+        return jobs.normalize_shots(shots[0] if shots else None)
 
     def _platform_max_qubits(self) -> int | None:
         # Cached; `None` is a real value ("no known qubit ceiling"), so guard on

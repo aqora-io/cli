@@ -393,14 +393,38 @@ def test_qpu_run_uploads_hugr_from_guppy_function(mod, monkeypatch: pytest.Monke
             "providerModelId": "model-1",
             "shots": 100,
             "providerPlatform": "Selene",
+            "asEntity": None,
         }
     ]
+
+
+def test_qpu_run_requires_shots(mod):
+    qpu = mod.QPU(platform="Selene")
+
+    with pytest.raises(ValueError, match="`shots` is required"):
+        qpu.run(FakeGuppyFunction())
+    assert qpu.client.calls == []
+
+
+def test_qpu_run_passes_as_entity_to_upload_and_job(mod):
+    qpu = mod.QPU(platform="Selene", as_entity="my-team")
+
+    qpu.run(FakeGuppyFunction(), shots=100)
+
+    upload_calls = [
+        variables for query, variables in qpu.client.calls if "uploadProviderModelPayload" in query
+    ]
+    create_provider_job_calls = [
+        variables for query, variables in qpu.client.calls if "createProviderJob" in query
+    ]
+    assert upload_calls == [{"asEntity": "my-team"}]
+    assert create_provider_job_calls[-1]["asEntity"] == "my-team"
 
 
 def test_qpu_run_accepts_hugr_package(mod):
     qpu = mod.QPU()
 
-    qpu.run(FakePackage())
+    qpu.run(FakePackage(), shots=100)
 
     program = _uploaded_program(qpu)
     assert program["serialization_format"] == 1001
@@ -410,7 +434,7 @@ def test_qpu_run_accepts_hugr_package(mod):
 def test_qpu_run_accepts_hugr_envelope_bytes(mod):
     qpu = mod.QPU()
 
-    qpu.run(HUGR_ENVELOPE)
+    qpu.run(HUGR_ENVELOPE, shots=100)
 
     program = _uploaded_program(qpu)
     assert program["serialization_format"] == 1001
@@ -428,11 +452,11 @@ def test_qpu_run_accepts_qir_bitcode_bytes(mod):
 
 def test_qpu_run_accepts_base64_strings(mod):
     qpu = mod.QPU()
-    qpu.run(base64.b64encode(HUGR_ENVELOPE).decode("ascii"))
+    qpu.run(base64.b64encode(HUGR_ENVELOPE).decode("ascii"), shots=100)
     assert _uploaded_program(qpu)["serialization_format"] == 1001
 
     qpu = mod.QPU()
-    qpu.run(base64.b64encode(QIR_BITCODE).decode("ascii"))
+    qpu.run(base64.b64encode(QIR_BITCODE).decode("ascii"), shots=100)
     assert _uploaded_program(qpu)["serialization_format"] == 4
 
 
@@ -440,14 +464,14 @@ def test_qpu_run_rejects_unrecognized_bytes(mod):
     qpu = mod.QPU()
 
     with pytest.raises(ValueError, match="HUGR"):
-        qpu.run(b"ELF\x00not-a-program")
+        qpu.run(b"ELF\x00not-a-program", shots=100)
 
 
 def test_qpu_run_rejects_non_base64_string(mod):
     qpu = mod.QPU()
 
     with pytest.raises(ValueError, match="base64"):
-        qpu.run("not base64!!!")
+        qpu.run("not base64!!!", shots=100)
 
 
 def test_qpu_run_rejects_non_program_input(mod):
@@ -455,14 +479,14 @@ def test_qpu_run_rejects_non_program_input(mod):
 
     # `int` has a builtin `to_bytes()`; it must not be treated as a package.
     with pytest.raises(TypeError, match="guppy"):
-        qpu.run(12345)
+        qpu.run(12345, shots=100)
 
 
 def test_qpu_run_rejects_unsupported_options(mod):
     qpu = mod.QPU()
 
     with pytest.raises(NotImplementedError, match="seed"):
-        qpu.run(HUGR_ENVELOPE, seed=42)
+        qpu.run(HUGR_ENVELOPE, seed=42, shots=100)
 
 
 def test_qpu_run_rejects_non_integer_shots(mod):
@@ -499,7 +523,7 @@ def test_job_result_decodes_qir_labeled_result(mod):
     qpu.client.payloads["https://example.invalid/result-0"] = _result_payload(
         QIR_LABELED_FIXTURE, 1001, compression_format=2
     )
-    job = qpu.run(QIR_BITCODE)
+    job = qpu.run(QIR_BITCODE, shots=100)
 
     result = job.result(timeout=0.01, wait=0)
 
@@ -519,7 +543,7 @@ def test_job_result_rejects_unexpected_format(mod):
     qpu.client.payloads["https://example.invalid/result-0"] = _result_payload(
         "{}", 1000
     )
-    job = qpu.run(HUGR_ENVELOPE)
+    job = qpu.run(HUGR_ENVELOPE, shots=100)
 
     with pytest.raises(ValueError, match="1000"):
         job.result(timeout=0.01, wait=0)
@@ -529,7 +553,7 @@ def test_job_result_raises_on_error(mod):
     # The platform nulls the job status when the provider reports an error
     # state; the error field holds the provider's message.
     qpu = mod.QPU()
-    job = qpu.run(HUGR_ENVELOPE)
+    job = qpu.run(HUGR_ENVELOPE, shots=100)
     qpu.client.job_status = None
     qpu.client.job_error = "device on fire"
 
@@ -541,7 +565,7 @@ def test_job_result_ignores_progress_message_on_live_job(mod):
     # The error field mirrors the provider's progress message ("The job is
     # queued.", "Job has been submitted to Nexus.") for healthy jobs.
     qpu = mod.QPU()
-    job = qpu.run(HUGR_ENVELOPE)
+    job = qpu.run(HUGR_ENVELOPE, shots=100)
     qpu.client.job_error = "Job has been submitted to Nexus."
 
     result = job.result(timeout=0.01, wait=0)
@@ -551,7 +575,7 @@ def test_job_result_ignores_progress_message_on_live_job(mod):
 
 def test_job_wait_keeps_polling_null_status_without_error(mod):
     qpu = mod.QPU()
-    job = qpu.run(HUGR_ENVELOPE)
+    job = qpu.run(HUGR_ENVELOPE, shots=100)
     qpu.client.job_status = None
 
     with pytest.raises(TimeoutError):
@@ -560,7 +584,7 @@ def test_job_wait_keeps_polling_null_status_without_error(mod):
 
 def test_job_result_raises_on_cancelled(mod):
     qpu = mod.QPU()
-    job = qpu.run(HUGR_ENVELOPE)
+    job = qpu.run(HUGR_ENVELOPE, shots=100)
     qpu.client.job_status = "CANCELLED"
 
     with pytest.raises(RuntimeError, match="cancelled"):
@@ -569,7 +593,7 @@ def test_job_result_raises_on_cancelled(mod):
 
 def test_job_result_times_out(mod):
     qpu = mod.QPU()
-    job = qpu.run(HUGR_ENVELOPE)
+    job = qpu.run(HUGR_ENVELOPE, shots=100)
     qpu.client.job_status = "RUNNING"
 
     with pytest.raises(TimeoutError):
@@ -578,7 +602,7 @@ def test_job_result_times_out(mod):
 
 def test_job_result_empty_string_error_is_not_an_error(mod):
     qpu = mod.QPU()
-    job = qpu.run(HUGR_ENVELOPE)
+    job = qpu.run(HUGR_ENVELOPE, shots=100)
     qpu.client.job_error = ""
 
     result = job.result(timeout=0.01, wait=0)
@@ -588,7 +612,7 @@ def test_job_result_empty_string_error_is_not_an_error(mod):
 
 def test_job_result_with_multiple_items_raises(mod):
     qpu = mod.QPU()
-    job = qpu.run(HUGR_ENVELOPE)
+    job = qpu.run(HUGR_ENVELOPE, shots=100)
     qpu.client.result_pages = [
         [
             {"index": 0, "error": None, "result": "https://example.invalid/result-0"},
@@ -602,7 +626,7 @@ def test_job_result_with_multiple_items_raises(mod):
 
 def test_job_result_items_paginates_and_sorts(mod):
     qpu = mod.QPU()
-    job = qpu.run(HUGR_ENVELOPE)
+    job = qpu.run(HUGR_ENVELOPE, shots=100)
     qpu.client.payloads["https://example.invalid/result-1"] = _result_payload(
         json.dumps(QSYS_SHOTS), 1002
     )
@@ -619,7 +643,7 @@ def test_job_result_items_paginates_and_sorts(mod):
 
 def test_job_result_count_mismatch_raises(mod):
     qpu = mod.QPU()
-    job = qpu.run(HUGR_ENVELOPE)
+    job = qpu.run(HUGR_ENVELOPE, shots=100)
     qpu.client.result_count = 3
 
     with pytest.raises(RuntimeError, match="1 of 3"):
@@ -628,7 +652,7 @@ def test_job_result_count_mismatch_raises(mod):
 
 def test_job_result_item_error_raises(mod):
     qpu = mod.QPU()
-    job = qpu.run(HUGR_ENVELOPE)
+    job = qpu.run(HUGR_ENVELOPE, shots=100)
     qpu.client.result_pages = [[{"index": 0, "error": "boom", "result": None}]]
 
     with pytest.raises(RuntimeError, match="boom"):
@@ -689,7 +713,7 @@ def test_reattached_job_authenticates(mod):
 
 def test_job_status_and_backend(mod):
     qpu = mod.QPU()
-    job = qpu.run(HUGR_ENVELOPE)
+    job = qpu.run(HUGR_ENVELOPE, shots=100)
 
     assert job.backend() is qpu
     assert job.status() == "COMPLETED"

@@ -438,8 +438,38 @@ def test_qpu_process_circuits_uploads_and_returns_handles(mod):
             "providerModelId": "model-1",
             "shots": 100,
             "providerPlatform": "aer_simulator_statevector",
+            "asEntity": None,
         }
     ]
+
+
+def test_qpu_process_circuits_requires_shots(mod):
+    from pytket.circuit import Circuit
+
+    qpu = mod.QPU()
+
+    with pytest.raises(ValueError, match="`shots` is required"):
+        qpu.process_circuits([Circuit(1)])
+    with pytest.raises(ValueError, match="`shots` is required"):
+        qpu.process_circuits([Circuit(1)], n_shots=[])
+    assert qpu.client.calls == []
+
+
+def test_qpu_process_circuits_passes_as_entity_to_upload_and_job(mod):
+    from pytket.circuit import Circuit
+
+    qpu = mod.QPU(as_entity="my-team")
+
+    qpu.process_circuits([Circuit(1)], n_shots=100)
+
+    upload_calls = [
+        variables for query, variables in qpu.client.calls if "uploadProviderModelPayload" in query
+    ]
+    create_provider_job_calls = [
+        variables for query, variables in qpu.client.calls if "createProviderJob" in query
+    ]
+    assert upload_calls == [{"asEntity": "my-team"}]
+    assert create_provider_job_calls[-1]["asEntity"] == "my-team"
 
 
 def test_qpu_accepts_uniform_shot_sequence(mod):

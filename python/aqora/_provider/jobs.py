@@ -65,14 +65,18 @@ def is_provider_failure(status: str | None, error: str | None) -> bool:
     return status is None and bool(error)
 
 
-def normalize_shots(shots: Any) -> int | None:
-    """Coerce a user-supplied shot count into a positive int, or None.
+def normalize_shots(shots: Any) -> int:
+    """Coerce a user-supplied shot count into a positive int.
 
-    The provider API takes a single optional `shots` value shared by every
-    circuit in a job. Rejects bools and non-integral values; requires `>= 1`.
+    The provider API takes a single `shots` value shared by every circuit in a
+    job. Providers do not agree on a default (some fail the job, others return
+    a result without counts), so it is required. Rejects bools and
+    non-integral values; requires `>= 1`.
     """
     if shots is None:
-        return None
+        raise ValueError(
+            "`shots` is required: pass the number of shots to run, e.g. `run(program, shots=1000)`"
+        )
     if isinstance(shots, bool):
         raise TypeError("`shots` must be an integer")
     try:
@@ -98,9 +102,15 @@ def submit_model(
     *,
     shots: int | None = None,
     platform: str | None = None,
+    as_entity: str | None = None,
 ) -> "ProviderJob":
+    """Upload `payload` and submit it as a job.
+
+    `as_entity` attributes both the upload and the job to that entity (an
+    organization the user belongs to); the backend rejects a job whose model
+    is owned by a different entity."""
     graphql.ensure_authenticated()
-    upload_info = graphql.start_provider_model_upload()
+    upload_info = graphql.start_provider_model_upload(as_entity=as_entity)
     etag = graphql.upload_payload(upload_info["uploadUrl"], payload)
     model = graphql.create_provider_model(
         provider_model_upload_id=upload_info["providerModelUploadId"],
@@ -110,6 +120,7 @@ def submit_model(
         provider_model_id=model["id"],
         shots=shots,
         provider_platform=platform,
+        as_entity=as_entity,
     )
     return ProviderJob(graphql, str(job["id"]), payload=job)
 

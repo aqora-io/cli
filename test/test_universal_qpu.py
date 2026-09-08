@@ -120,6 +120,7 @@ def _install_hugr_qir(convert=None) -> None:
 class FakeClient:
     def __init__(self, *_args, **_kwargs) -> None:
         self.authenticated = False
+        self.calls: list[tuple[str, dict[str, object]]] = []
         self.uploads: list[tuple[str, bytes, str | None]] = []
         self.job_status: str | None = "COMPLETED"
         self.job_error: str | None = None
@@ -152,6 +153,7 @@ class FakeClient:
         return self.payloads[url].encode("utf-8")
 
     async def send(self, query: str, **variables):
+        self.calls.append((query, variables))
         if "uploadProviderModelPayload" in query:
             return {
                 "uploadProviderModelPayload": {
@@ -527,13 +529,37 @@ def test_run_submits_in_the_platform_preferred_format(qpu_mod, wire):
     assert program["serialization_format"] == wire.PROGRAM_HUGR_V1
 
 
+def test_run_requires_shots(qpu_mod):
+    qpu = qpu_mod.QPU(platform="nexus:Selene")
+
+    with pytest.raises(TypeError, match="shots"):
+        qpu.run(FakeGuppyFunction())
+    with pytest.raises(ValueError, match="`shots` is required"):
+        qpu.run(FakeGuppyFunction(), shots=None)
+    assert qpu.client.calls == []
+
+
+def test_run_passes_as_entity_to_upload_and_job(qpu_mod):
+    qpu = qpu_mod.QPU(platform="nexus:Selene", as_entity="my-team")
+    qpu.run(FakeGuppyFunction(), shots=10)
+
+    upload_calls = [
+        variables for query, variables in qpu.client.calls if "uploadProviderModelPayload" in query
+    ]
+    create_provider_job_calls = [
+        variables for query, variables in qpu.client.calls if "createProviderJob" in query
+    ]
+    assert upload_calls == [{"asEntity": "my-team"}]
+    assert create_provider_job_calls[-1]["asEntity"] == "my-team"
+
+
 def test_run_negotiates_past_formats_the_program_cannot_reach(qpu_mod, wire):
     _install_qiskit(qasm2=lambda c: QASM2_SOURCE, qasm3=lambda c: QASM3_SOURCE)
     qpu = qpu_mod.QPU(platform="nexus:Selene")
 
     # The platform prefers HUGR then QIR, neither of which a qiskit circuit can
     # produce without the cross-hop extras, so it lands on QASM_V2.
-    qpu.run(FakeQiskitCircuit())
+    qpu.run(FakeQiskitCircuit(), shots=100)
 
     (program,) = _uploaded_programs(qpu)
     assert program["serialization_format"] == wire.PROGRAM_QASM_V2
@@ -562,7 +588,7 @@ def test_missing_input_formats_field_degrades_to_native(qpu_mod, wire):
     qpu.client.platforms[0]["meta"] = {"maxQubits": 26}
 
     assert qpu.input_formats == []
-    qpu.run(FakeGuppyFunction())
+    qpu.run(FakeGuppyFunction(), shots=100)
     (program,) = _uploaded_programs(qpu)
     assert program["serialization_format"] == wire.PROGRAM_HUGR_V1
 
@@ -575,7 +601,7 @@ def test_unknown_platform_raises(qpu_mod):
 
 def test_run_accepts_a_list_of_programs(qpu_mod):
     qpu = qpu_mod.QPU(platform="nexus:Selene")
-    qpu.run([FakeGuppyFunction(), FakePackage()])
+    qpu.run([FakeGuppyFunction(), FakePackage()], shots=100)
     assert len(_uploaded_programs(qpu)) == 2
 
 
@@ -584,13 +610,13 @@ def test_run_does_not_split_an_iterable_program(qpu_mod):
     # program rather than becoming one program per character.
     qpu = qpu_mod.QPU(platform="nexus:Selene")
     qpu.client.platforms[0]["meta"]["inputFormats"] = ["QASM_V2"]
-    qpu.run(QASM2_SOURCE)
+    qpu.run(QASM2_SOURCE, shots=100)
     assert len(_uploaded_programs(qpu)) == 1
 
 
 def test_job_reports_the_negotiated_format(qpu_mod, wire):
     qpu = qpu_mod.QPU(platform="nexus:Selene")
-    job = qpu.run(FakeGuppyFunction())
+    job = qpu.run(FakeGuppyFunction(), shots=100)
     assert job.serialization_format == wire.PROGRAM_HUGR_V1
 
 
@@ -602,7 +628,7 @@ def test_from_id_builds_the_qpu_from_the_job_platform(qpu_mod):
 
 def test_counts_maps_every_result(qpu_mod, wire):
     qpu = qpu_mod.QPU(platform="nexus:Selene")
-    job = qpu.run(FakeGuppyFunction())
+    job = qpu.run(FakeGuppyFunction(), shots=100)
     qpu.client.result_pages = [
         [
             {"index": 0, "error": None, "result": "https://example.invalid/result-0"},
@@ -623,7 +649,7 @@ def test_counts_maps_every_result(qpu_mod, wire):
 
 def test_counts_follows_result_pagination(qpu_mod, wire):
     qpu = qpu_mod.QPU(platform="nexus:Selene")
-    job = qpu.run(FakeGuppyFunction())
+    job = qpu.run(FakeGuppyFunction(), shots=100)
     qpu.client.result_pages = [
         [{"index": 0, "error": None, "result": "https://example.invalid/result-0"}],
         [{"index": 1, "error": None, "result": "https://example.invalid/result-1"}],
