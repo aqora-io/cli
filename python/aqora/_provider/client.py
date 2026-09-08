@@ -11,8 +11,8 @@ from aqora import Client
 from .wire import _package_version  # noqa: F401  (re-exported for existing importers)
 
 UPLOAD_PROVIDER_MODEL_PAYLOAD_MUTATION = """
-mutation UploadProviderModelPayload {
-  uploadProviderModelPayload {
+mutation UploadProviderModelPayload($asEntity: UsernameOrID) {
+  uploadProviderModelPayload(asEntity: $asEntity) {
     providerModelUploadId
     uploadUrl
   }
@@ -38,11 +38,13 @@ mutation CreateProviderJob(
   $providerModelId: ID!,
   $shots: Int,
   $providerPlatform: ProviderPlatformNameOrID,
+  $asEntity: UsernameOrID,
 ) {
   createProviderJob(
     providerModelId: $providerModelId,
     shots: $shots,
     providerPlatform: $providerPlatform,
+    asEntity: $asEntity,
   ) {
     id
     provider
@@ -210,8 +212,10 @@ class AqoraGraphQLClient:
         _require_http_scheme(url)
         return _run_sync(lambda: self._client.s3_get(url)).decode("utf-8")
 
-    def start_provider_model_upload(self) -> Mapping[str, Any]:
-        response = _run_sync(lambda: self._client.send(UPLOAD_PROVIDER_MODEL_PAYLOAD_MUTATION))
+    def start_provider_model_upload(self, *, as_entity: str | None = None) -> Mapping[str, Any]:
+        response = _run_sync(
+            lambda: self._client.send(UPLOAD_PROVIDER_MODEL_PAYLOAD_MUTATION, asEntity=as_entity)
+        )
         return response["uploadProviderModelPayload"]
 
     def create_provider_model(
@@ -246,6 +250,7 @@ class AqoraGraphQLClient:
         provider_model_id: str,
         shots: int | None,
         provider_platform: str | None = None,
+        as_entity: str | None = None,
     ) -> Mapping[str, Any]:
         response = _run_sync(
             lambda: self._client.send(
@@ -253,6 +258,7 @@ class AqoraGraphQLClient:
                 providerModelId=provider_model_id,
                 shots=shots,
                 providerPlatform=provider_platform,
+                asEntity=as_entity,
             )
         )
         return response["createProviderJob"]
