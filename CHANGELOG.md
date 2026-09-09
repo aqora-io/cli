@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.31.2 - 2026-09-09
+#### Bug Fixes
+- org job submissions - (c431ddd) - Julian Popescu
+
+- - -
+
 ## v0.31.1 - 2026-09-04
 #### Bug Fixes
 - retry and sleep inmprovements - (9012ebc) - Julian Popescu
