@@ -121,6 +121,18 @@ impl CredentialsProvider for tokio::sync::RwLock<Tokens> {
     }
 }
 
+/// A fixed bearer token, for clients that already hold a valid access token.
+#[derive(Debug, Clone)]
+pub struct BearerToken(pub String);
+
+#[cfg_attr(feature = "threaded", async_trait)]
+#[cfg_attr(not(feature = "threaded"), async_trait(?Send))]
+impl CredentialsProvider for BearerToken {
+    async fn bearer_token(&self) -> Result<Option<String>, BoxError> {
+        Ok(Some(self.0.clone()))
+    }
+}
+
 const X_REVOKE_TOKENS: HeaderName = HeaderName::from_static("x-revoke-tokens");
 const X_REFRESH_TOKENS: HeaderName = HeaderName::from_static("x-refresh-tokens");
 const X_ACCESS_TOKEN: HeaderName = HeaderName::from_static("x-access-token");
@@ -295,5 +307,33 @@ where
     type Service = CredentialsService<T, S>;
     fn layer(&self, inner: S) -> Self::Service {
         CredentialsService::new_arc(self.credentials.clone(), inner)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::http::{Body, Request, Response};
+    use std::sync::Mutex;
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn test_bearer_token_sets_authorization_header() {
+        let captured: Arc<Mutex<Option<HeaderValue>>> = Arc::new(Mutex::new(None));
+        let captured_clone = captured.clone();
+        let service = tower::service_fn(move |req: Request| {
+            *captured_clone.lock().unwrap() = req.headers().get(AUTHORIZATION).cloned();
+            async { Ok::<_, std::convert::Infallible>(Response::new(Body::default())) }
+        });
+        let svc = CredentialsLayer::new(BearerToken("tok".into())).layer(service);
+
+        svc.oneshot(Request::new(Body::default())).await.unwrap();
+
+        let header = captured
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("Authorization header set");
+        assert_eq!(header, "Bearer tok");
     }
 }
