@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import sys
 import types
+import warnings
 
 import pytest
 
@@ -117,6 +118,37 @@ class FakeClient:
     async def authorize_viewer(self, scope=None) -> FakeAuthorization:
         self.scopes.append(scope)
         return self.authorization
+
+
+NOT_AUTHORIZED = aqora.ClientError(
+    "GraphQL had errors",
+    [{"message": "Not authorized", "extensions": {"code": "NOT_AUTHORIZED"}}],
+)
+
+
+class FakeLocalClient:
+    """A client outside a runner: ``authorize_viewer`` finds no workspace app."""
+
+    def __init__(
+        self, *, authenticated: bool = False, send_error: Exception | None = None
+    ) -> None:
+        self.authenticated = authenticated
+        self.send_error = send_error
+        self.authenticate_calls = 0
+        self.queries: list[str] = []
+
+    async def authorize_viewer(self, scope=None) -> None:
+        return None
+
+    async def authenticate(self) -> None:
+        self.authenticate_calls += 1
+        self.authenticated = True
+
+    async def send(self, query: str, **variables: object) -> dict[str, object]:
+        self.queries.append(query)
+        if self.send_error is not None:
+            raise self.send_error
+        return {"viewer": {"username": "alice"}}
 
 
 def only_html(marimo: types.ModuleType) -> str:
@@ -265,3 +297,63 @@ async def test_does_not_cache_without_a_session_context(marimo):
 
     assert client.scopes == [None, None]
     assert len(marimo.output.appended) == 2
+
+
+@pytest.mark.asyncio
+async def test_acts_as_the_local_login_outside_a_runner(marimo):
+    client = FakeLocalClient()
+
+    with pytest.warns(UserWarning, match="acting as alice"):
+        viewer = await viewer_login(client=client)
+
+    assert viewer is client
+    assert client.authenticate_calls == 1
+    assert marimo.output.appended == []
+    assert marimo.output.cleared == 0
+
+
+@pytest.mark.asyncio
+async def test_does_not_reauthenticate_a_local_client(marimo):
+    client = FakeLocalClient(authenticated=True)
+
+    with pytest.warns(UserWarning, match="acting as alice"):
+        await viewer_login(client=client)
+
+    assert client.authenticate_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_explains_how_to_login_without_local_credentials(marimo):
+    client = FakeLocalClient(send_error=NOT_AUTHORIZED)
+
+    with pytest.raises(aqora.ClientError, match="aqora login") as info:
+        await viewer_login(client=client)
+
+    assert info.value.__cause__ is NOT_AUTHORIZED
+    assert marimo.output.appended == []
+
+
+@pytest.mark.asyncio
+async def test_other_local_errors_propagate_unchanged(marimo):
+    error = aqora.ClientError("connection refused")
+    client = FakeLocalClient(send_error=error)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # a warning here would surface as one
+        with pytest.raises(aqora.ClientError) as info:
+            await viewer_login(client=client)
+
+    assert info.value is error
+
+
+@pytest.mark.asyncio
+async def test_does_not_cache_the_local_login(marimo):
+    client = FakeLocalClient()
+    start_session()
+
+    with pytest.warns(UserWarning):
+        await viewer_login(client=client)
+        await viewer_login(client=client)
+
+    assert len(client.queries) == 2
+    assert client.authenticate_calls == 1
