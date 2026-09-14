@@ -16,6 +16,7 @@ mutation Oauth2RefreshMutation(
       expiresIn
       accessToken
       refreshToken
+      scope
     }
   }
 }

@@ -15,6 +15,7 @@ mod graphql_client;
 mod id;
 mod ipynb;
 mod manifest;
+pub(crate) mod oauth2;
 mod print;
 mod process;
 mod progress_bar;

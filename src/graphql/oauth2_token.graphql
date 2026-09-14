@@ -8,6 +8,7 @@ mutation Oauth2TokenMutation($code: String!, $client_id: String!, $redirect_uri:
       expiresIn
       accessToken
       refreshToken
+      scope
     }
   }
 }
