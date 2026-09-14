@@ -135,19 +135,17 @@ fn get_environ<'py>(py: Python<'py>, key: &str) -> PyResult<Option<String>> {
     }
 }
 
-/// The OAuth2 client this workspace runner authorizes viewers for.
+/// The OAuth2 client this workspace runner authorizes viewers for, or `None`
+/// when the request was not made with a runner api key.
 async fn workspace_oauth2_client(
     base: &Client,
-) -> PyResult<oauth2_workspace_client_query::Oauth2WorkspaceClientQueryOauth2WorkspaceClient> {
-    base.send::<Oauth2WorkspaceClientQuery>(oauth2_workspace_client_query::Variables)
+) -> PyResult<Option<oauth2_workspace_client_query::Oauth2WorkspaceClientQueryOauth2WorkspaceClient>>
+{
+    Ok(base
+        .send::<Oauth2WorkspaceClientQuery>(oauth2_workspace_client_query::Variables)
         .await
         .map_err(|error| client_error(error.into()))?
-        .oauth2_workspace_client
-        .ok_or_else(|| {
-            ClientError::new_err((
-                "viewer login is only available inside an aqora workspace runner",
-            ))
-        })
+        .oauth2_workspace_client)
 }
 
 /// A client authenticating as the viewer `tokens` were issued for, refreshing
@@ -245,8 +243,9 @@ impl PyClient {
 
     /// Start an OAuth2 authorization for the viewer of this workspace app.
     ///
-    /// Only works inside an aqora workspace runner, where requests without an
-    /// `Authorization` header are authenticated as the workspace.
+    /// Resolves to `None` outside an aqora workspace runner: only there are
+    /// requests without an `Authorization` header authenticated as the
+    /// workspace.
     #[pyo3(signature = (scope=None))]
     fn authorize_viewer<'py>(
         &self,
@@ -258,7 +257,9 @@ impl PyClient {
         let options = self.options.clone();
         future_into_py(py, async move {
             let base = inner.read().await.client.clone();
-            let workspace_client = workspace_oauth2_client(&base).await?;
+            let Some(workspace_client) = workspace_oauth2_client(&base).await? else {
+                return Ok(None);
+            };
             let request = new_authorization_request(
                 &workspace_client.authorize_url,
                 &workspace_client.client_id,
@@ -272,13 +273,13 @@ impl PyClient {
             let stream = subscribe_code(&base, &request)
                 .await
                 .map_err(client_error)?;
-            Ok(PyViewerAuthorization {
+            Ok(Some(PyViewerAuthorization {
                 request: Arc::new(request),
                 first_code: Arc::new(Mutex::new(Some(spawn_first_code(stream)))),
                 base,
                 url,
                 options,
-            })
+            }))
         })
     }
 

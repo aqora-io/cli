@@ -1,4 +1,5 @@
 import html
+import warnings
 from typing import Any, Sequence
 
 from ._aqora import Client
@@ -43,8 +44,12 @@ async def viewer_login(
     and returns a client authenticated as *them*. The grant is reused for the rest
     of their session, so re-running a cell does not ask again; a fresh visit does.
     The default ``Client()`` inside a workspace runner acts as the workspace owner;
-    use the returned client for anything done on the viewer's behalf. Only works
-    inside an aqora workspace runner.
+    use the returned client for anything done on the viewer's behalf.
+
+    Outside a workspace runner, in a notebook on your own machine, there is no
+    viewer to ask: the client returned acts as whoever ran ``aqora login``, with
+    that account's full access rather than ``scope``. That is meant for
+    development; the consent flow only runs on aqora.
     """
     import marimo as mo  # imported lazily; aqora does not depend on marimo
 
@@ -56,6 +61,8 @@ async def viewer_login(
 
     client = client or Client()
     auth = await client.authorize_viewer(scope)
+    if auth is None:
+        return await _local_login(client)
     mo.output.append(
         mo.Html(
             f'<a href="{html.escape(auth.url, quote=True)}"'
@@ -71,3 +78,32 @@ async def viewer_login(
         except Exception:
             pass  # a context that refuses attributes just means no caching
     return viewer
+
+
+async def _local_login(client: Client) -> Client:
+    """The developer's own ``aqora login``, standing in for a viewer."""
+    # `aqora/__init__` imports this module before it defines ClientError
+    from . import ClientError
+
+    if not client.authenticated:
+        await client.authenticate()
+    try:
+        data = await client.send("query { viewer { username } }")
+    except ClientError as error:
+        codes = {
+            (graphql_error.get("extensions") or {}).get("code")
+            for graphql_error in error.graphql_errors or []
+        }
+        if "NOT_AUTHORIZED" not in codes:
+            raise
+        raise ClientError(
+            "viewer_login: not inside an aqora workspace runner and no aqora"
+            " credentials found; run `aqora login` first"
+        ) from error
+    warnings.warn(
+        "viewer_login: not inside an aqora workspace runner; acting as"
+        f" {data['viewer']['username']} from `aqora login` with that account's"
+        " full access",
+        stacklevel=3,
+    )
+    return client
