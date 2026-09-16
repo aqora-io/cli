@@ -59,6 +59,7 @@ class Client:
     async def authorize_viewer(
         self, scope: Sequence[str] | None = None
     ) -> ViewerAuthorization | None: ...
+    async def viewer_grant_active(self) -> bool: ...
 
 class ViewerAuthorization:
     url: str

@@ -116,6 +116,8 @@ struct PyClient {
     /// The scopes the viewer granted this client, for clients built from a
     /// viewer authorization.
     granted_scopes: Option<Vec<String>>,
+    /// The credentials behind such a client, shared with its request layer.
+    viewer: Option<Arc<ViewerCredentials>>,
 }
 
 struct PyClientInner {
@@ -162,10 +164,9 @@ fn viewer_client(
         .split_whitespace()
         .map(ToString::to_string)
         .collect();
+    let viewer = Arc::new(ViewerCredentials::new(base, client_id, tokens));
     let mut client = unauthenticated_client(url.clone(), options.clone()).map_err(client_error)?;
-    client.graphql_layer(CredentialsLayer::new(ViewerCredentials::new(
-        base, client_id, tokens,
-    )));
+    client.graphql_layer(CredentialsLayer::from_arc(Arc::clone(&viewer)));
     Ok(PyClient {
         url,
         options,
@@ -174,6 +175,7 @@ fn viewer_client(
             authenticated: true,
         })),
         granted_scopes: Some(granted_scopes),
+        viewer: Some(viewer),
     })
 }
 
@@ -222,6 +224,7 @@ impl PyClient {
                 authenticated: false,
             })),
             granted_scopes: None,
+            viewer: None,
         })
     }
 
@@ -238,6 +241,7 @@ impl PyClient {
                 authenticated: true,
             })),
             granted_scopes: None,
+            viewer: None,
         })
     }
 
@@ -444,6 +448,21 @@ impl PyClient {
     #[getter]
     fn granted_scopes(&self) -> Option<Vec<String>> {
         self.granted_scopes.clone()
+    }
+
+    /// Whether the viewer grant behind this client still works, refreshing the
+    /// access token first if it has expired. False once aqora refuses the
+    /// refresh: the viewer revoked the app, or left it unused for longer than
+    /// aqora allows. Only clients from `ViewerAuthorization.wait` have a grant.
+    fn viewer_grant_active<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let viewer = Arc::clone(self.viewer.as_ref().ok_or_else(|| {
+            ClientError::new_err(
+                ("not a viewer client: only ViewerAuthorization.wait returns one",),
+            )
+        })?);
+        future_into_py(py, async move {
+            viewer.grant_active().await.map_err(client_error)
+        })
     }
 }
 

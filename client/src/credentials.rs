@@ -294,9 +294,12 @@ impl<T> Clone for CredentialsLayer<T> {
 
 impl<T> CredentialsLayer<T> {
     pub fn new(credentials: T) -> Self {
-        Self {
-            credentials: Arc::new(credentials),
-        }
+        Self::from_arc(Arc::new(credentials))
+    }
+
+    /// Share `credentials` with the layer, to keep a handle on them.
+    pub fn from_arc(credentials: Arc<T>) -> Self {
+        Self { credentials }
     }
 }
 
