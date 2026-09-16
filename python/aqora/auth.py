@@ -42,7 +42,9 @@ async def viewer_login(
 
     Renders a sign-in link in the current cell output, waits until they approve,
     and returns a client authenticated as *them*. The grant is reused for the rest
-    of their session, so re-running a cell does not ask again; a fresh visit does.
+    of their session, so re-running a cell does not ask again; a fresh visit does,
+    as does a grant that ended because they revoked the app or left it unused for
+    longer than aqora allows.
     The default ``Client()`` inside a workspace runner acts as the workspace owner;
     use the returned client for anything done on the viewer's behalf.
 
@@ -57,7 +59,9 @@ async def viewer_login(
     if session is not None:
         cached, granted = getattr(session, _GRANT_ATTR, (None, None))
         if cached is not None and _covers(granted, scope):
-            return cached
+            if await cached.viewer_grant_active():
+                return cached
+            # revoked, or idle past aqora's limit: they have to consent again
 
     client = client or Client()
     auth = await client.authorize_viewer(scope)

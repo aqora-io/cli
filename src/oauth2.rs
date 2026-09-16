@@ -224,11 +224,12 @@ pub(crate) async fn exchange_code(
     exchange_authorization_code(client, &req.client_id, &req.redirect_uri, code).await
 }
 
+/// `None` when the server refused: the grant behind `refresh_token` has ended.
 pub(crate) async fn refresh_tokens(
     client: &aqora_client::Client,
     client_id: &str,
     refresh_token: &str,
-) -> Result<IssuedTokens> {
+) -> Result<Option<IssuedTokens>> {
     let refresh = client
         .send::<Oauth2RefreshMutation>(oauth2_refresh_mutation::Variables {
             client_id: client_id.to_string(),
@@ -237,18 +238,19 @@ pub(crate) async fn refresh_tokens(
         })
         .await?
         .oauth2_refresh;
-    check_issued(
-        refresh.unauthorized,
-        refresh.client_error,
-        refresh.issued.map(|issued| {
-            IssuedTokens::new(
-                issued.access_token,
-                issued.refresh_token,
-                issued.expires_in,
-                issued.scope,
-            )
-        }),
-    )
+    match refresh.issued {
+        Some(issued) => Ok(Some(IssuedTokens::new(
+            issued.access_token,
+            issued.refresh_token,
+            issued.expires_in,
+            issued.scope,
+        ))),
+        None if refresh.unauthorized || refresh.client_error => Ok(None),
+        None => Err(error::system(
+            "GraphQL response missing issued",
+            "This is a bug, please report it",
+        )),
+    }
 }
 
 /// Viewer tokens obtained through a workspace runner: refreshes through
@@ -270,6 +272,25 @@ impl ViewerCredentials {
             tokens: RwLock::new(tokens),
         }
     }
+
+    /// Whether the grant behind these tokens still works, refreshing them
+    /// first if the access token has expired. `Ok(false)` once the server
+    /// refuses the refresh: the viewer revoked the app, or left it unused for
+    /// longer than aqora allows.
+    pub(crate) async fn grant_active(&self) -> Result<bool> {
+        let mut tokens = self.tokens.write().await;
+        if !tokens.is_expired() {
+            return Ok(true);
+        }
+        let refreshed = refresh_tokens(&self.base, &self.client_id, &tokens.refresh_token).await?;
+        match refreshed {
+            Some(refreshed) => {
+                *tokens = refreshed;
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
 }
 
 #[async_trait]
@@ -281,12 +302,14 @@ impl CredentialsProvider for ViewerCredentials {
                 return Ok(Some(tokens.access_token.clone()));
             }
         }
-        let mut tokens = self.tokens.write().await;
-        if tokens.is_expired() {
-            let refresh_token = tokens.refresh_token.clone();
-            *tokens = refresh_tokens(&self.base, &self.client_id, &refresh_token).await?;
+        if !self.grant_active().await? {
+            return Err(error::user(
+                "aqora no longer accepts this viewer's grant",
+                "They revoked the app or left it unused for too long; call viewer_login again",
+            )
+            .into());
         }
-        Ok(Some(tokens.access_token.clone()))
+        Ok(Some(self.tokens.read().await.access_token.clone()))
     }
 }
 
@@ -495,6 +518,50 @@ mod tests {
             Some("refreshed-access".to_string())
         );
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    const REFUSED: &str =
+        r#"{"data":{"oauth2Refresh":{"clientError":true,"unauthorized":false,"issued":null}}}"#;
+
+    #[tokio::test]
+    async fn viewer_credentials_grant_stays_active_without_asking_while_fresh() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let credentials = ViewerCredentials::new(
+            stub_client(REFUSED, calls.clone()),
+            "workspace-1".to_string(),
+            IssuedTokens {
+                access_token: "access".to_string(),
+                refresh_token: "refresh".to_string(),
+                expires_at: Utc::now() + Duration::try_hours(1).unwrap(),
+                scope: "default".to_string(),
+            },
+        );
+
+        assert!(credentials.grant_active().await.unwrap());
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn viewer_credentials_report_a_refused_refresh_as_an_ended_grant() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let credentials = ViewerCredentials::new(
+            stub_client(REFUSED, calls.clone()),
+            "workspace-1".to_string(),
+            IssuedTokens {
+                access_token: "access".to_string(),
+                refresh_token: "refresh".to_string(),
+                expires_at: Utc::now() - Duration::try_hours(1).unwrap(),
+                scope: "default".to_string(),
+            },
+        );
+
+        assert!(!credentials.grant_active().await.unwrap());
+        let error = credentials.bearer_token().await.unwrap_err();
+        assert!(
+            error.to_string().contains("no longer accepts"),
+            "unexpected error: {error}"
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 
     #[tokio::test]

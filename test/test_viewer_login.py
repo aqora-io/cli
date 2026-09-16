@@ -91,6 +91,11 @@ def marimo():
 class FakeViewer:
     def __init__(self, granted_scopes: list[str]) -> None:
         self.granted_scopes = granted_scopes
+        # False once the viewer revoked the app or left it idle past aqora's limit
+        self.active = True
+
+    async def viewer_grant_active(self) -> bool:
+        return self.active
 
 
 VIEWER_CLIENT = FakeViewer(["default"])
@@ -256,6 +261,23 @@ async def test_reuses_the_grant_on_a_rerun_without_a_session_param(marimo):
     assert second is first
     assert client.scopes == [None]
     assert len(marimo.output.appended) == 1
+
+
+@pytest.mark.asyncio
+async def test_asks_again_once_the_grant_has_ended(marimo):
+    first_viewer = FakeViewer(["default"])
+    client = FakeClient(viewer=first_viewer)
+    start_session()
+
+    first = await viewer_login(client=client)
+    first_viewer.active = False
+    client.authorization.viewer = FakeViewer(["default"])
+    second = await viewer_login(client=client)
+
+    assert first is first_viewer
+    assert second is client.authorization.viewer
+    assert client.scopes == [None, None]
+    assert len(marimo.output.appended) == 2
 
 
 @pytest.mark.asyncio
