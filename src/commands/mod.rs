@@ -14,6 +14,7 @@ mod pair;
 mod python;
 mod remove;
 mod shell;
+mod store;
 mod template;
 mod test;
 mod upload;
@@ -38,6 +39,7 @@ use pair::{pair, Pair};
 use python::{python, Python};
 use remove::{remove, Remove};
 use shell::{shell, Shell};
+use store::{store, Store};
 use template::{template, Template};
 use test::{test, Test};
 use upload::{upload, Upload};
@@ -87,6 +89,10 @@ pub enum Commands {
     },
     Python(Python),
     Shell(Shell),
+    Store {
+        #[command(subcommand)]
+        args: Store,
+    },
     Test(Test),
     Upload(Upload),
     Template(Template),
@@ -118,6 +124,7 @@ impl Cli {
                 Commands::Auth { args } => auth(args, global).await,
                 Commands::Python(args) => python(args, global).await,
                 Commands::Shell(args) => shell(args, global).await,
+                Commands::Store { args } => store(args, global).await,
                 Commands::Test(args) => test(args, global).await,
                 Commands::Lab(args) => lab(args, global).await,
                 Commands::Upload(args) => upload(args, global).await,

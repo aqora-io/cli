@@ -190,6 +190,7 @@ dependencies = [
  "sentry-types 0.32.3",
  "serde",
  "serde_json",
+ "shell-words",
  "slug",
  "supports-color 3.0.2",
  "tempfile",

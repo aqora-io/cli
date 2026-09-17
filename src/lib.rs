@@ -27,6 +27,7 @@ mod revert_file;
 mod run;
 pub mod sentry;
 mod shutdown;
+mod store;
 mod upload;
 mod vscode;
 #[cfg(feature = "extension-module")]
