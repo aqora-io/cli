@@ -35,16 +35,6 @@ class FakeHtml:
         self.text = text
 
 
-class FakeRequest:
-    def __init__(self, query_params: dict[str, object]) -> None:
-        self.query_params = query_params
-
-
-class FakeAppMeta:
-    def __init__(self) -> None:
-        self.request: FakeRequest | None = None
-
-
 @dataclasses.dataclass
 class FakeContext:
     """marimo's per-session runtime context.
@@ -71,8 +61,6 @@ def marimo():
     module = types.ModuleType("marimo")
     module.output = FakeOutput()
     module.Html = FakeHtml
-    meta = FakeAppMeta()
-    module.app_meta = lambda: meta
     context = types.ModuleType("marimo._runtime.context")
     context.get_context = _no_context  # no session until a test starts one
     saved = {name: sys.modules.get(name) for name in ("marimo", context.__name__)}
@@ -106,10 +94,13 @@ class FakeAuthorization:
         self.url = url
         self.client_id = "workspace-1"
         self.viewer = viewer
+        self.error: Exception | None = None
         self.timeouts: list[float | None] = []
 
     async def wait(self, *, timeout: float | None = None) -> FakeViewer:
         self.timeouts.append(timeout)
+        if self.error is not None:
+            raise self.error
         return self.viewer
 
 
@@ -198,6 +189,19 @@ async def test_returns_the_viewer_client_and_clears_the_link(marimo):
 
 
 @pytest.mark.asyncio
+async def test_clears_the_link_when_the_viewer_does_not_sign_in(marimo):
+    client = FakeClient()
+    client.authorization.error = aqora.ClientError(
+        "timed out waiting for authorization"
+    )
+
+    with pytest.raises(aqora.ClientError, match="timed out"):
+        await viewer_login(client=client)
+
+    assert marimo.output.cleared == 1
+
+
+@pytest.mark.asyncio
 async def test_forwards_the_scope_and_the_timeout(marimo):
     client = FakeClient()
 
@@ -242,25 +246,6 @@ async def test_reuses_the_grant_for_the_rest_of_the_session(marimo):
     assert client.scopes == [None]
     assert len(marimo.output.appended) == 1
     assert marimo.output.cleared == 1
-
-
-@pytest.mark.asyncio
-async def test_reuses_the_grant_on_a_rerun_without_a_session_param(marimo):
-    client = FakeClient()
-    start_session()
-    marimo.app_meta().request = FakeRequest(
-        {"session_id": ["s_dwbe3f"], "file": ["app.py"]}
-    )
-
-    first = await viewer_login(client=client)
-    # a re-run still has a request, but session_id only ever rides on the request
-    # that opened the session
-    marimo.app_meta().request = FakeRequest({"file": ["app.py"]})
-    second = await viewer_login(client=client)
-
-    assert second is first
-    assert client.scopes == [None]
-    assert len(marimo.output.appended) == 1
 
 
 @pytest.mark.asyncio
