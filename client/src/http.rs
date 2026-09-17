@@ -16,6 +16,7 @@ use crate::async_util::{
 use crate::error::{BoxError, MiddlewareError};
 use crate::tower_util::{ArcLayer, BoxService};
 
+pub use http::Uri;
 pub use http_body::SizeHint;
 
 pub enum Body {

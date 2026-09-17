@@ -44,7 +44,9 @@ async def viewer_login(
     and returns a client authenticated as *them*. The grant is reused for the rest
     of their session, so re-running a cell does not ask again; a fresh visit does,
     as does a grant that ended because they revoked the app or left it unused for
-    longer than aqora allows.
+    longer than aqora allows. An ended grant is only noticed once the client's
+    current access token expires: until then the same client is returned and its
+    requests fail, and reloading the page is the way to be asked again sooner.
     The default ``Client()`` inside a workspace runner acts as the workspace owner;
     use the returned client for anything done on the viewer's behalf.
 
@@ -53,8 +55,6 @@ async def viewer_login(
     that account's full access rather than ``scope``. That is meant for
     development; the consent flow only runs on aqora.
     """
-    import marimo as mo  # imported lazily; aqora does not depend on marimo
-
     session = _session_context()
     if session is not None:
         cached, granted = getattr(session, _GRANT_ATTR, (None, None))
@@ -67,6 +67,8 @@ async def viewer_login(
     auth = await client.authorize_viewer(scope)
     if auth is None:
         return await _local_login(client)
+    import marimo as mo  # imported lazily; aqora does not depend on marimo
+
     mo.output.append(
         mo.Html(
             f'<a href="{html.escape(auth.url, quote=True)}"'
@@ -74,8 +76,10 @@ async def viewer_login(
             f"{html.escape(label)}</a>"
         )
     )
-    viewer = await auth.wait(timeout=timeout)
-    mo.output.clear()
+    try:
+        viewer = await auth.wait(timeout=timeout)
+    finally:
+        mo.output.clear()  # the link is dead once waiting stops, signed in or not
     if session is not None:
         try:
             setattr(session, _GRANT_ATTR, (viewer, viewer.granted_scopes))

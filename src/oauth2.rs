@@ -1,12 +1,13 @@
 use crate::error::{self, Result};
-use aqora_client::{credentials::CredentialsProvider, error::BoxError};
+use aqora_client::{credentials::CredentialsProvider, error::BoxError, http::Uri};
 use async_trait::async_trait;
 use base64::prelude::*;
 use chrono::{DateTime, Duration, Utc};
 use futures::{prelude::*, stream::BoxStream};
 use graphql_client::GraphQLQuery;
 use ring::signature::KeyPair;
-use tokio::{sync::RwLock, task::JoinHandle};
+use tokio::sync::RwLock;
+use tokio_util::task::AbortOnDropHandle;
 use url::Url;
 
 const EXPIRATION_PADDING_SEC: i64 = 60;
@@ -94,11 +95,26 @@ pub(crate) fn new_authorization_request(
     scope: Option<&str>,
 ) -> Result<AuthorizationRequest> {
     let rng = ring::rand::SystemRandom::new();
+    let random_failed = |_: ring::error::Unspecified| {
+        error::system(
+            "Could not generate random bytes for the authorization request",
+            "Please try again later",
+        )
+    };
     let keypair = ring::signature::Ed25519KeyPair::from_seed_unchecked(
-        &ring::rand::generate::<[u8; 32]>(&rng).unwrap().expose(),
+        &ring::rand::generate::<[u8; 32]>(&rng)
+            .map_err(random_failed)?
+            .expose(),
     )
-    .unwrap();
-    let state_bytes = ring::rand::generate::<[u8; 16]>(&rng).unwrap().expose();
+    .map_err(|error| {
+        error::system(
+            &format!("Could not build the authorization signing key: {error}"),
+            "This is a bug, please report it",
+        )
+    })?;
+    let state_bytes = ring::rand::generate::<[u8; 16]>(&rng)
+        .map_err(random_failed)?
+        .expose();
 
     let state = BASE64_URL_SAFE_NO_PAD.encode(state_bytes);
     let public_key = BASE64_URL_SAFE_NO_PAD.encode(keypair.public_key().as_ref());
@@ -136,11 +152,12 @@ pub(crate) async fn subscribe_code(
 /// `graphql-ws-client` only puts the `Subscribe` frame on the wire (and only
 /// keeps the connection's keepalive pings flowing) while the stream is polled,
 /// so an authorization stream must not sit idle while the viewer decides.
+/// Dropping the handle closes the subscription.
 #[cfg_attr(not(feature = "extension-module"), allow(dead_code))]
 pub(crate) fn spawn_first_code(
     mut stream: BoxStream<'static, Result<String>>,
-) -> JoinHandle<Option<Result<String>>> {
-    tokio::spawn(async move { stream.next().await })
+) -> AbortOnDropHandle<Option<Result<String>>> {
+    AbortOnDropHandle::new(tokio::spawn(async move { stream.next().await }))
 }
 
 #[derive(Debug, Clone)]
@@ -295,6 +312,14 @@ impl ViewerCredentials {
 
 #[async_trait]
 impl CredentialsProvider for ViewerCredentials {
+    /// Only aqora itself gets the viewer's token, not presigned storage urls.
+    fn authenticates(&self, url: &Uri) -> Result<bool, BoxError> {
+        Ok(aqora_client::utils::host_matches(
+            self.base.url(),
+            &url.to_string().parse()?,
+        )?)
+    }
+
     async fn bearer_token(&self) -> Result<Option<String>, BoxError> {
         {
             let tokens = self.tokens.read().await;
@@ -431,6 +456,28 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn spawn_first_code_stops_the_stream_once_the_handle_is_dropped() {
+        // `alive` lives inside the stream, so `stopped` resolves once it is dropped
+        let (alive, stopped) = tokio::sync::oneshot::channel::<()>();
+        let handle = spawn_first_code(
+            stream::pending::<Result<String>>()
+                .map(move |item| {
+                    let _ = &alive;
+                    item
+                })
+                .boxed(),
+        );
+
+        // e.g. `wait()` was cancelled, or the authorization was never awaited
+        drop(handle);
+
+        tokio::time::timeout(std::time::Duration::from_secs(1), stopped)
+            .await
+            .expect("the stream is dropped with the handle")
+            .unwrap_err();
+    }
+
     fn stub_client(body: &'static str, calls: Arc<AtomicUsize>) -> aqora_client::Client {
         let mut client = aqora_client::Client::new("https://aqora.io/graphql".parse().unwrap());
         client.graphql_layer(tower::layer::layer_fn(move |_: HttpBoxService| {
@@ -518,6 +565,28 @@ mod tests {
             Some("refreshed-access".to_string())
         );
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn viewer_credentials_only_authenticate_requests_to_aqora() {
+        let credentials = ViewerCredentials::new(
+            stub_client(REFRESHED, Arc::new(AtomicUsize::new(0))),
+            "workspace-1".to_string(),
+            IssuedTokens {
+                access_token: "access".to_string(),
+                refresh_token: "refresh".to_string(),
+                expires_at: Utc::now() + Duration::try_hours(1).unwrap(),
+                scope: "default".to_string(),
+            },
+        );
+
+        let authenticates = |uri: &str| credentials.authenticates(&uri.parse().unwrap()).unwrap();
+        assert!(authenticates("https://aqora.io/graphql"));
+        assert!(authenticates("https://aqora.io/file/abc"));
+        // presigned storage urls must not receive the viewer's token
+        assert!(!authenticates(
+            "https://bucket.s3.amazonaws.com/abc?X-Amz-Signature=x"
+        ));
     }
 
     const REFUSED: &str =

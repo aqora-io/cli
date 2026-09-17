@@ -72,7 +72,7 @@ jobs:
         run: cargo install wasm-pack
       - name: Set up Homebrew
         id: set-up-homebrew
-        uses: Homebrew/actions/setup-homebrew@master
+        uses: Homebrew/actions/setup-homebrew@2026.09.13.1
       - name: Install LLVM clang
         run: brew install llvm
       - name: Use LLVM clang

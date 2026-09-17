@@ -13,10 +13,8 @@ use pyo3::{
     types::{PyBytes, PyDict, PyString},
 };
 use pyo3_async_runtimes::tokio::future_into_py;
-use tokio::{
-    sync::{Mutex, RwLock},
-    task::JoinHandle,
-};
+use tokio::sync::{Mutex, RwLock};
+use tokio_util::task::AbortOnDropHandle;
 use url::Url;
 
 use crate::{
@@ -166,7 +164,9 @@ fn viewer_client(
         .collect();
     let viewer = Arc::new(ViewerCredentials::new(base, client_id, tokens));
     let mut client = unauthenticated_client(url.clone(), options.clone()).map_err(client_error)?;
-    client.graphql_layer(CredentialsLayer::from_arc(Arc::clone(&viewer)));
+    client
+        .graphql_layer(CredentialsLayer::from_arc(Arc::clone(&viewer)))
+        .s3_layer(CredentialsLayer::from_arc(Arc::clone(&viewer)));
     Ok(PyClient {
         url,
         options,
@@ -472,7 +472,7 @@ impl PyClient {
 struct PyViewerAuthorization {
     request: Arc<AuthorizationRequest>,
     /// The task draining the code subscription, taken by the first `wait`.
-    first_code: Arc<Mutex<Option<JoinHandle<Option<crate::error::Result<String>>>>>>,
+    first_code: Arc<Mutex<Option<AbortOnDropHandle<Option<crate::error::Result<String>>>>>>,
     /// The client the authorization was started with. It sends no
     /// `Authorization` header, so viewer tokens are refreshed through it.
     base: Client,
@@ -496,25 +496,24 @@ impl PyViewerAuthorization {
     /// authenticated as them.
     #[pyo3(signature = (*, timeout=None))]
     fn wait<'py>(&self, py: Python<'py>, timeout: Option<f64>) -> PyResult<Bound<'py, PyAny>> {
+        let timeout =
+            Duration::try_from_secs_f64(timeout.unwrap_or(DEFAULT_AUTHORIZATION_TIMEOUT_SEC))
+                .map_err(|error| PyValueError::new_err(format!("invalid timeout: {error}")))?;
         let request = Arc::clone(&self.request);
         let first_code = Arc::clone(&self.first_code);
         let base = self.base.clone();
         let url = self.url.clone();
         let options = self.options.clone();
         future_into_py(py, async move {
-            let mut first_code = first_code
-                .lock()
-                .await
-                .take()
-                .ok_or_else(|| ClientError::new_err(("authorization already completed",)))?;
-            let code = match tokio::time::timeout(
-                Duration::from_secs_f64(timeout.unwrap_or(DEFAULT_AUTHORIZATION_TIMEOUT_SEC)),
-                &mut first_code,
-            )
-            .await
-            {
+            let first_code = first_code.lock().await.take().ok_or_else(|| {
+                ClientError::new_err((
+                    "authorization already waited on; start a new one with authorize_viewer",
+                ))
+            })?;
+            // Dropping `first_code` on any early return, or when Python cancels
+            // this future, closes the subscription.
+            let code = match tokio::time::timeout(timeout, first_code).await {
                 Err(_) => {
-                    first_code.abort();
                     return Err(ClientError::new_err((
                         "timed out waiting for authorization",
                     )));
