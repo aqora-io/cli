@@ -76,6 +76,7 @@ fn tracing_setup() -> Option<tracing_appender::non_blocking::WorkerGuard> {
             .compact()
             .without_time()
             .with_target(false)
+            .with_writer(std::io::stderr)
             .fmt_fields(formatter)
             .with_filter(
                 tracing_subscriber::EnvFilter::builder()

@@ -92,6 +92,7 @@ enum Action {
 	READ_PROVIDER_JOB
 	READ_PROVIDER_PLATFORM_MEMBERSHIP
 	READ_RESOURCE_USAGE
+	READ_STORAGE
 	READ_SUBJECT_SUBSCRIPTION
 	READ_SUBMISSION
 	READ_TOPIC
@@ -142,6 +143,7 @@ enum Action {
 	UPDATE_WORKSPACE_VERSION
 	UPLOAD_FILES
 	UPLOAD_PROVIDER_MODEL
+	WRITE_STORAGE
 }
 
 type Activity {
@@ -1302,6 +1304,14 @@ input CreateOrganizationInput {
 
 input CreatePasswordResetInput {
 	usernameOrEmail: String!
+}
+
+input CreateStoreCredentialsInput {
+	"""
+	How long the credentials stay valid, in seconds. Clamped to the
+	server's maximum; defaults to the server's default lifetime.
+	"""
+	durationSecs: Int
 }
 
 input CreateTagInput {
@@ -2473,6 +2483,14 @@ type Mutation {
 	oauth2Authorize(input: Oauth2AuthorizeInput!, consent: Boolean! = true): Oauth2AuthorizeOutput!
 	oauth2Token(input: Oauth2TokenInput!): Oauth2TokenOutput!
 	oauth2Refresh(input: Oauth2RefreshInput!): Oauth2TokenOutput!
+	"""
+	Forget the viewer's grant to an OAuth2 client by deleting every token it
+	holds for them and every code it could still redeem, so the next time it
+	asks for access they are asked to consent again. The owner comes from the
+	session, so a viewer can only ever revoke their own grants. False when
+	the session cannot hold one.
+	"""
+	revokeOauth2Client(clientId: String!): Boolean!
 	createUseCaseVersion(competitionId: ID!, input: UpdateUseCaseInput!): ProjectVersionEdge!
 	validateUseCaseVersion(projectVersionId: ID!): ProjectVersionEdge!
 	awardBadge(entityId: ID!, badge: Badge!): EntityBadgeEdge!
@@ -2648,6 +2666,12 @@ type Mutation {
 	deleteWorkspaceVersion(id: ID!): ID!
 	createAnnouncement(input: CreateAnnouncementInput!): Announcement!
 	hideAnnouncement(announcementId: ID!): Announcement!
+	"""
+	Mint short-lived S3 credentials for the caller's object store. They
+	are derived from the caller's own session, grant or api key and stop
+	working as soon as that is revoked.
+	"""
+	createStoreCredentials(input: CreateStoreCredentialsInput): StoreCredentials!
 }
 
 """
@@ -2743,6 +2767,25 @@ type Oauth2ConfigEdge {
 	A cursor for use in pagination
 	"""
 	cursor: String!
+}
+
+"""
+An OAuth2 client the viewer has already granted access to, with the union of
+the scopes they granted it. Holding a token *is* the grant, so this lists
+exactly what `revokeOauth2Client` can take away.
+"""
+type Oauth2Grant {
+	clientId: String!
+	scopes: [Scope!]!
+	oauth2Config: Oauth2Config
+	"""
+	The name a dynamically registered client gave itself.
+	"""
+	clientName: String
+	"""
+	The workspace app the viewer granted, for `workspace-` client ids.
+	"""
+	workspace: Workspace
 }
 
 type Oauth2LoggedIn implements Oauth2AuthResponse {
@@ -3387,6 +3430,12 @@ type Query {
 	the request was not made with a runner api key.
 	"""
 	oauth2WorkspaceClient: Oauth2WorkspaceClient
+	"""
+	Every OAuth2 client the viewer has granted access to, by client id.
+	Empty for anonymous callers and for sessions that cannot hold a grant
+	(runner api keys, `oauth2.` tokens).
+	"""
+	viewerOauth2Grants: [Oauth2Grant!]!
 	datasets(after: String, before: String, first: Int, last: Int, filters: DatasetQueryFilters): DatasetConnection!
 	datasetBySlug(owner: String!, localSlug: String!): Dataset
 	dataCatalogBySlug(owner: String!, localSlug: String!): DataCatalog
@@ -3486,6 +3535,8 @@ enum Scope {
 	READ_PROJECT
 	READ_WORKSPACE
 	PROVIDER
+	READ_STORAGE
+	WRITE_STORAGE
 }
 
 scalar Semver
@@ -3538,6 +3589,24 @@ cap.
 type StorageUsage {
 	used: Int
 	limit: Int
+}
+
+"""
+SigV4 credentials for the caller's object store, usable with any S3
+client: `endpoint` with path-style addressing, `bucket` as the bucket,
+`region` as the signing region.
+"""
+type StoreCredentials {
+	accessKeyId: String!
+	secretAccessKey: String!
+	expiresAt: DateTime!
+	"""
+	Origin only, no trailing slash, so `{endpoint}/{bucket}/{key}` is
+	the object's URL for clients that build URLs by hand.
+	"""
+	endpoint: String!
+	bucket: String!
+	region: String!
 }
 
 enum SubjectKind {

@@ -9,6 +9,7 @@ from aqora._aqora import *  # pyright: ignore[reportAssignmentType, reportWildca
 from ._provider.jobs import ProviderJob
 from ._provider.results import ProviderResult
 from .auth import viewer_login
+from .store import Store, StoreCredentials
 from .qpu import QPU, QPUJob
 
 

@@ -42,6 +42,44 @@ aqora login
 
 Browse the competitions on [aqora.io](https://aqora.io) and climb the leaderboards!
 
+# Storage
+
+Every account comes with private S3 storage. The credentials are short-lived
+and derived from your login, so they stop working when you log out.
+
+Export them for any S3 client, including Rust's `object_store`, the AWS SDKs and
+the AWS CLI:
+
+```bash
+eval "$(aqora store credentials --format env)"
+```
+
+Or install an AWS profile that mints fresh credentials whenever they expire:
+
+```bash
+aqora store configure-aws
+aws --profile aqora s3 ls s3://<your username>/
+```
+
+`--format json`, `--format aws-process` and `--format duckdb` are also
+available. From Python, `aqora.Store` hands back ready-made clients that renew
+their credentials on their own:
+
+```python
+from aqora import Store
+
+store = Store()
+s3 = store.obstore()          # obstore.store.S3Store
+client = store.boto3()        # boto3 S3 client
+fs = store.s3fs()             # s3fs.S3FileSystem
+store.duckdb(con)             # registers an S3 secret on a DuckDB connection
+creds = store.credentials()   # or `await store.credentials_async()`
+```
+
+Each helper needs its library installed, for example `pip install aqora[obstore]`.
+Inside a workspace runner no login is needed. Viewer and API-key sessions need
+the `read:storage` scope, and `write:storage` to write.
+
 # Contributing
 
 We strongly recommend you to install a stable Rust toolchain using [Rustup](https://rustup.rs/), and a

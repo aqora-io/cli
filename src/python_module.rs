@@ -245,6 +245,37 @@ impl PyClient {
         })
     }
 
+    /// Mint short-lived S3 credentials for this client's aqora storage.
+    ///
+    /// Resolves to a dict with `access_key_id`, `secret_access_key`,
+    /// `expires_at` (RFC 3339), `endpoint`, `bucket` and `region`.
+    #[pyo3(signature = (duration=None))]
+    fn store_credentials<'py>(
+        &self,
+        py: Python<'py>,
+        duration: Option<i64>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let inner = Arc::clone(&self.inner);
+        future_into_py(py, async move {
+            let creds = {
+                let inner = inner.read().await;
+                crate::store::create_store_credentials(&inner.client, duration)
+                    .await
+                    .map_err(client_error)?
+            };
+            Python::attach(|py| {
+                let dict = PyDict::new(py);
+                dict.set_item("access_key_id", &creds.access_key_id)?;
+                dict.set_item("secret_access_key", &creds.secret_access_key)?;
+                dict.set_item("expires_at", creds.expires_at_rfc3339())?;
+                dict.set_item("endpoint", &creds.endpoint)?;
+                dict.set_item("bucket", &creds.bucket)?;
+                dict.set_item("region", &creds.region)?;
+                Ok(dict.unbind())
+            })
+        })
+    }
+
     /// Start an OAuth2 authorization for the viewer of this workspace app.
     ///
     /// Resolves to `None` outside an aqora workspace runner: only there are

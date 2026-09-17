@@ -41,6 +41,11 @@ cirq = ["cirq-core>=1.4"]
 qiskit-tket = ["pytket-qiskit>=0.77"]
 pytket-qir = ["pytket-qir>=2.0"]
 guppy-qir = ["hugr-qir>=0.1.2"]
+# S3 clients `aqora.Store` can hand back, each imported only when asked for.
+obstore = ["obstore>=0.5"]
+boto3 = ["boto3>=1.34"]
+s3fs = ["s3fs>=2023.1.0"]
+duckdb = ["duckdb>=1.1"]
 iceberg = [
   "fsspec[http]>=2025.3.0",
   # 0.11.0 is the first release defining `pyiceberg.catalog.rest.auth`
