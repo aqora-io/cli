@@ -2,6 +2,19 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.32.0 - 2026-09-18
+#### Features
+- (**store**) mint s3 store credentials from the cli and python sdk - (d1bd318) - Julian Popescu
+- act as the local aqora login outside a workspace runner - (5fe8e24) - Julian Popescu
+- viewer login for workspace apps in the python sdk - (0623871) - Julian Popescu
+- share the oauth2 authorization flow and add viewer credentials - (769b1e5) - Julian Popescu
+- add static bearer credentials and websocket keepalive to the client - (c861bfa) - Julian Popescu
+#### Bug Fixes
+- small fixes - (d633d20) - Julian Popescu
+- ask the viewer again once their grant has ended - (8b6d087) - Julian Popescu
+
+- - -
+
 ## v0.31.2 - 2026-09-09
 #### Bug Fixes
 - org job submissions - (c431ddd) - Julian Popescu
