@@ -26,6 +26,8 @@ def test_constructor_validation():
         KV("/absolute.json", offline_store())
     with pytest.raises(ValueError):
         KV("item.json", offline_store(), stale_after=-1)
+    with pytest.raises(ValueError):
+        KV("a/../b.json", offline_store())
     kv = KV("path/to/item.json", offline_store())
     assert isinstance(kv, KV)
     assert kv in _open
@@ -83,3 +85,11 @@ def test_context_manager_does_not_mask_the_body_exception(monkeypatch):
     with pytest.raises(RuntimeError, match="close failed"):
         with KV("item.json", offline_store()):
             pass
+
+
+def test_a_failed_close_keeps_the_kv_registered_for_the_exit_flush():
+    kv = KV("item.json", offline_store())
+    kv.set("a", 1)
+    with pytest.raises(TimeoutError):
+        kv.close(timeout=0.5)
+    assert kv in _open
