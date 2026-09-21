@@ -449,6 +449,7 @@ mod tests {
             }
             let current = remote.object.as_ref().map(|(_, etag)| etag.as_str());
             let ok = match &precondition {
+                Precondition::Any => true,
                 Precondition::IfNoneMatchAny => current.is_none(),
                 Precondition::IfMatch(etag) => current == Some(etag.as_str()),
             };

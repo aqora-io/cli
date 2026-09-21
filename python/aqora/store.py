@@ -33,6 +33,33 @@ class Store(_Store):
         """
         return _run_sync(lambda: self.credentials_async(force=force))
 
+    # --- objects -----------------------------------------------------------
+
+    def get(self, key: str) -> bytes | None:
+        """The object at ``key``, or ``None`` when there is none."""
+        return _run_sync(lambda: self.get_async(key))
+
+    def put(
+        self,
+        key: str,
+        body: bytes,
+        *,
+        content_type: str | None = None,
+        if_match: str | None = None,
+    ) -> str:
+        """Write ``body`` at ``key`` and return its ETag.
+
+        Pass the ETag of the version you read as ``if_match`` to fail instead
+        of overwriting a newer one.
+        """
+        return _run_sync(
+            lambda: self.put_async(key, body, content_type=content_type, if_match=if_match)
+        )
+
+    def delete(self, key: str) -> None:
+        """Remove ``key``; a missing object is not an error."""
+        _run_sync(lambda: self.delete_async(key))
+
     # --- obstore -----------------------------------------------------------
 
     def obstore(self, *, prefix: str | None = None, **config: Any) -> Any:

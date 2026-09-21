@@ -7,7 +7,7 @@ import datetime as dt
 import pytest
 
 import aqora
-from aqora import Client
+from aqora import Client, ClientError
 from aqora.store import Store, StoreCredentials
 
 UTC = dt.timezone.utc
@@ -179,3 +179,13 @@ def test_obstore_provider_aligns_its_refresh_threshold_with_the_cache(monkeypatc
     assert provider()["expires_at"] == T0 + dt.timedelta(hours=1)
     assert captured["bucket"] == "alice"
     assert captured["virtual_hosted_style_request"] is False
+
+
+def test_object_methods_surface_transport_errors():
+    store = Store(offline_client())
+    with pytest.raises(ClientError):
+        store.get("a.txt")
+    with pytest.raises(ClientError):
+        store.put("a.txt", b"hello", content_type="text/plain")
+    with pytest.raises(ClientError):
+        store.delete("a.txt")
