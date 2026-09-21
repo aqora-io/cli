@@ -90,25 +90,7 @@ fn render_aws_process(creds: &StoreCredentials) -> Result<String> {
 }
 
 fn render_duckdb(creds: &StoreCredentials) -> Result<String> {
-    let quote = |value: &str| value.replace('\'', "''");
-    Ok(format!(
-        "CREATE OR REPLACE SECRET aqora (\n    \
-            TYPE s3,\n    \
-            KEY_ID '{}',\n    \
-            SECRET '{}',\n    \
-            ENDPOINT '{}',\n    \
-            REGION '{}',\n    \
-            URL_STYLE 'path',\n    \
-            USE_SSL {},\n    \
-            SCOPE 's3://{}/'\n\
-        );",
-        quote(&creds.access_key_id),
-        quote(&creds.secret_access_key),
-        quote(&creds.host()?),
-        quote(&creds.region),
-        creds.use_ssl(),
-        quote(&creds.bucket),
-    ))
+    creds.duckdb_sql("aqora")
 }
 
 #[cfg(test)]

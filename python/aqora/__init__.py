@@ -10,6 +10,7 @@ from ._provider.jobs import ProviderJob
 from ._provider.results import ProviderResult
 from .auth import viewer_login
 from .store import Store, StoreCredentials
+from .kv import KV
 from .qpu import QPU, QPUJob
 
 
