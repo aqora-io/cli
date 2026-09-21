@@ -62,6 +62,8 @@ pub enum Fetched {
 
 #[derive(Debug, Clone)]
 pub enum Precondition {
+    /// Overwrite whatever is there.
+    Any,
     IfMatch(String),
     IfNoneMatchAny,
 }
@@ -169,6 +171,7 @@ impl Store {
             HeaderValue::from_str(content_type).map_err(Error::from)?,
         )];
         match precondition {
+            Precondition::Any => {}
             Precondition::IfMatch(etag) => {
                 headers.push((IF_MATCH, HeaderValue::from_str(&etag).map_err(Error::from)?));
             }
@@ -181,6 +184,18 @@ impl Store {
             StatusCode::PRECONDITION_FAILED => Err(PutError::Conflict),
             status if status.is_success() => Ok(etag_of(&response)?),
             _ => Err(unexpected_status(response).await.into()),
+        }
+    }
+
+    /// Remove `key`; a missing object is not an error.
+    pub async fn delete_object(&self, key: &str) -> Result<()> {
+        let response = self
+            .request(Method::DELETE, key, Vec::new(), Bytes::new())
+            .await?;
+        match response.status() {
+            StatusCode::NOT_FOUND => Ok(()),
+            status if status.is_success() => Ok(()),
+            _ => Err(unexpected_status(response).await),
         }
     }
 

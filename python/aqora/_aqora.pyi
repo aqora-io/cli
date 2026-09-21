@@ -109,6 +109,16 @@ class _Store:
         allow_insecure_host: bool | None = None,
     ) -> None: ...
     async def credentials_async(self, *, force: bool = False) -> StoreCredentials: ...
+    async def get_async(self, key: str) -> bytes | None: ...
+    async def put_async(
+        self,
+        key: str,
+        body: bytes,
+        *,
+        content_type: str | None = None,
+        if_match: str | None = None,
+    ) -> str: ...
+    async def delete_async(self, key: str) -> None: ...
 
 class _KV:
     def __init__(

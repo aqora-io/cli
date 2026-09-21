@@ -28,7 +28,10 @@ use crate::{
         subscribe_code, AuthorizationRequest, IssuedTokens, Oauth2WorkspaceClientQuery,
         ViewerCredentials,
     },
-    store::{create_store_credentials, CredentialSource, Store, StoreCredentials},
+    store::{
+        create_store_credentials, CredentialSource, Fetched, Precondition, PutError, Store,
+        StoreCredentials,
+    },
     workspace::download_workspace_notebook,
 };
 
@@ -754,6 +757,60 @@ impl PyStore {
         future_into_py(py, async move {
             let creds = store.credentials(force).await.map_err(client_error)?;
             Ok(PyStoreCredentials(creds))
+        })
+    }
+
+    /// The object at `key` as bytes, or `None` when there is none.
+    fn get_async<'py>(&self, py: Python<'py>, key: &str) -> PyResult<Bound<'py, PyAny>> {
+        let store = Arc::clone(&self.store);
+        let key = key.to_owned();
+        future_into_py(py, async move {
+            let body = match store.get_object(&key, None).await.map_err(client_error)? {
+                Fetched::Changed { body, .. } => Some(body),
+                Fetched::Missing | Fetched::NotModified => None,
+            };
+            Python::attach(|py| Ok(body.map(|body| PyBytes::new(py, &body[..]).unbind())))
+        })
+    }
+
+    /// Write `body` at `key` and return its ETag.
+    #[pyo3(signature = (key, body, *, content_type=None, if_match=None))]
+    fn put_async<'py>(
+        &self,
+        py: Python<'py>,
+        key: &str,
+        body: Vec<u8>,
+        content_type: Option<String>,
+        if_match: Option<String>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let store = Arc::clone(&self.store);
+        let key = key.to_owned();
+        future_into_py(py, async move {
+            store
+                .put_object(
+                    &key,
+                    body.into(),
+                    content_type
+                        .as_deref()
+                        .unwrap_or("application/octet-stream"),
+                    if_match.map_or(Precondition::Any, Precondition::IfMatch),
+                )
+                .await
+                .map_err(|error| match error {
+                    PutError::Conflict => ClientError::new_err(format!(
+                        "{key} changed since the ETag passed as if_match"
+                    )),
+                    PutError::Other(error) => client_error(error),
+                })
+        })
+    }
+
+    /// Remove `key`; a missing object is not an error.
+    fn delete_async<'py>(&self, py: Python<'py>, key: &str) -> PyResult<Bound<'py, PyAny>> {
+        let store = Arc::clone(&self.store);
+        let key = key.to_owned();
+        future_into_py(py, async move {
+            store.delete_object(&key).await.map_err(client_error)
         })
     }
 }
