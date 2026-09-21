@@ -7,14 +7,14 @@
 
 use std::{
     sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use aqora_client::retry::{BackoffBuilder, ExponentialBackoffBuilder};
 use async_trait::async_trait;
 use bytes::Bytes;
 use serde_json::{Map, Value};
-use tokio::sync::Notify;
+use tokio::{sync::Notify, time::Instant};
 use tokio_util::task::AbortOnDropHandle;
 
 use crate::{
@@ -68,6 +68,8 @@ struct State {
     closed: bool,
     /// Why the last batch gave up, until the next flush attempt starts.
     failed: Option<String>,
+    /// Bumped by every mutation, so a batch can tell whether it tried them all.
+    generation: u64,
 }
 
 impl State {
@@ -89,6 +91,29 @@ impl State {
             .is_none_or(|current| current.fetched_at <= started)
         {
             self.remote = Some(snapshot);
+        }
+    }
+}
+
+enum FlushError {
+    Conflict,
+    /// Worth retrying with backoff.
+    Transient(String),
+    /// Retrying cannot help; wait for the next mutation or `flush`.
+    Permanent(String),
+}
+
+impl From<error::Error> for FlushError {
+    fn from(error: error::Error) -> Self {
+        Self::Transient(error.description())
+    }
+}
+
+impl From<PutError> for FlushError {
+    fn from(error: PutError) -> Self {
+        match error {
+            PutError::Conflict => Self::Conflict,
+            PutError::Other(error) => error.into(),
         }
     }
 }
@@ -174,6 +199,8 @@ impl Kv {
             ));
         }
         state.pending.push(op);
+        state.failed = None;
+        state.generation += 1;
         drop(state);
         self.inner.wake.notify_one();
         Ok(())
@@ -289,10 +316,10 @@ impl Inner {
                 wake.as_mut().enable();
                 {
                     let state = self.lock();
-                    if !state.pending.is_empty() {
+                    if !state.pending.is_empty() && state.failed.is_none() {
                         break;
                     }
-                    if state.closed {
+                    if state.closed && state.pending.is_empty() {
                         return;
                     }
                 }
@@ -303,38 +330,56 @@ impl Inner {
     }
 
     /// Write the pending mutations on top of the latest document, retrying
-    /// with backoff; conflicts refetch and rebase.
+    /// with backoff; conflicts refetch and rebase, the first one at once.
     async fn flush_batch(&self) {
         let mut backoff = ExponentialBackoffBuilder::default().build();
+        let mut conflicts = 0;
+        let mut attempted = self.lock().generation;
         loop {
-            let outcome = self.try_flush().await;
-            let message = match outcome {
+            let message = match self.try_flush(&mut attempted).await {
                 Ok(()) => {
                     self.settled.notify_waiters();
                     return;
                 }
-                Err(PutError::Conflict) => {
+                Err(FlushError::Conflict) => {
                     self.lock().remote = None;
+                    conflicts += 1;
+                    if conflicts == 1 {
+                        continue;
+                    }
                     "conflict".to_owned()
                 }
-                Err(PutError::Other(error)) => error.description(),
+                Err(FlushError::Transient(message)) => message,
+                Err(FlushError::Permanent(message)) => return self.give_up(message, attempted),
             };
             match backoff.next() {
                 Some(delay) => {
                     tracing::debug!("KV flush failed ({message}), retrying in {delay:?}");
                     tokio::time::sleep(delay).await;
                 }
-                None => {
-                    tracing::warn!("KV flush gave up: {message}");
-                    self.lock().failed = Some(message);
-                    self.settled.notify_waiters();
-                    return;
-                }
+                None => return self.give_up(message, attempted),
             }
         }
     }
 
-    async fn try_flush(&self) -> Result<(), PutError> {
+    /// Leave the batch pending until a mutation or `flush` restarts it, unless
+    /// a mutation already arrived after the last attempt: then the next batch
+    /// starts at once so that it gets tried too.
+    fn give_up(&self, message: String, attempted: u64) {
+        tracing::warn!("KV flush gave up: {message}");
+        let mut state = self.lock();
+        if state.generation == attempted {
+            state.failed = Some(message);
+        }
+        drop(state);
+        self.settled.notify_waiters();
+    }
+
+    /// One attempt; `attempted` is set to the generation of mutations it covers.
+    async fn try_flush(&self, attempted: &mut u64) -> Result<(), FlushError> {
+        // Held through the commit so that a reader cannot fetch a newer
+        // document in the meantime and have this attempt's result replace it.
+        let _refetching = self.refetch.lock().await;
         let started = Instant::now();
         let base = {
             let state = self.lock();
@@ -347,7 +392,10 @@ impl Inner {
             Some(base) => base,
             None => {
                 let (doc, etag) = match self.transport.fetch(None).await? {
-                    Fetched::Changed { body, etag } => (parse(&body)?, Some(etag)),
+                    Fetched::Changed { body, etag } => (
+                        parse(&body).map_err(|error| FlushError::Permanent(error.description()))?,
+                        Some(etag),
+                    ),
                     Fetched::Missing | Fetched::NotModified => (Doc::new(), None),
                 };
                 self.lock().store(
@@ -361,10 +409,16 @@ impl Inner {
                 (doc, etag)
             }
         };
-        let ops = self.lock().pending.clone();
+        let ops = {
+            let state = self.lock();
+            *attempted = state.generation;
+            state.pending.clone()
+        };
         let mut doc = base_doc;
         apply(&mut doc, &ops);
-        let body = Bytes::from(serde_json::to_vec(&doc).map_err(error::Error::from)?);
+        let body = Bytes::from(
+            serde_json::to_vec(&doc).map_err(|error| FlushError::Permanent(error.to_string()))?,
+        );
         let precondition = match base_etag {
             Some(etag) => Precondition::IfMatch(etag),
             None => Precondition::IfNoneMatchAny,
@@ -394,6 +448,8 @@ mod tests {
         puts: Vec<Precondition>,
         conflicts: u32,
         failures: u32,
+        put_failures: u32,
+        put_delay: Duration,
     }
 
     #[derive(Default)]
@@ -436,30 +492,42 @@ mod tests {
             })
         }
 
+        /// Applies (or fails) at once, then takes `put_delay` to answer, so
+        /// the server-side effect precedes the client seeing the result.
         async fn put(&self, body: Bytes, precondition: Precondition) -> Result<String, PutError> {
-            let mut remote = self.0.lock().unwrap();
-            remote.puts.push(precondition.clone());
-            if remote.failures > 0 {
-                remote.failures -= 1;
-                return Err(PutError::Other(error::system("put failed", "")));
-            }
-            if remote.conflicts > 0 {
-                remote.conflicts -= 1;
-                return Err(PutError::Conflict);
-            }
-            let current = remote.object.as_ref().map(|(_, etag)| etag.as_str());
-            let ok = match &precondition {
-                Precondition::Any => true,
-                Precondition::IfNoneMatchAny => current.is_none(),
-                Precondition::IfMatch(etag) => current == Some(etag.as_str()),
+            let (result, delay) = {
+                let mut remote = self.0.lock().unwrap();
+                remote.puts.push(precondition.clone());
+                let result = if remote.failures > 0 || remote.put_failures > 0 {
+                    if remote.failures > 0 {
+                        remote.failures -= 1;
+                    } else {
+                        remote.put_failures -= 1;
+                    }
+                    Err(PutError::Other(error::system("put failed", "")))
+                } else if remote.conflicts > 0 {
+                    remote.conflicts -= 1;
+                    Err(PutError::Conflict)
+                } else {
+                    let current = remote.object.as_ref().map(|(_, etag)| etag.as_str());
+                    let ok = match &precondition {
+                        Precondition::Any => true,
+                        Precondition::IfNoneMatchAny => current.is_none(),
+                        Precondition::IfMatch(etag) => current == Some(etag.as_str()),
+                    };
+                    if ok {
+                        remote.version += 1;
+                        let etag = format!("\"v{}\"", remote.version);
+                        remote.object = Some((body.to_vec(), etag.clone()));
+                        Ok(etag)
+                    } else {
+                        Err(PutError::Conflict)
+                    }
+                };
+                (result, remote.put_delay)
             };
-            if !ok {
-                return Err(PutError::Conflict);
-            }
-            remote.version += 1;
-            let etag = format!("\"v{}\"", remote.version);
-            remote.object = Some((body.to_vec(), etag.clone()));
-            Ok(etag)
+            tokio::time::sleep(delay).await;
+            result
         }
     }
 
@@ -503,9 +571,15 @@ mod tests {
         assert_eq!(kv.get("theirs").await.unwrap(), Some(json!(1)));
         fake.write(json!({"theirs": 2}));
         kv.set("mine", json!(true)).unwrap();
+        let before = tokio::time::Instant::now();
         kv.flush().await.unwrap();
         assert_eq!(fake.read(), json!({"theirs": 2, "mine": true}));
         assert_eq!(fake.0.lock().unwrap().puts.len(), 2);
+        assert_eq!(
+            before.elapsed(),
+            Duration::ZERO,
+            "the first conflict rebases at once"
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -544,9 +618,73 @@ mod tests {
         let error = kv.flush().await.unwrap_err();
         assert!(error.message().contains("failed"), "{error}");
         assert!(fake.0.lock().unwrap().object.is_none());
+        // Having given up, the flusher waits instead of hammering the store.
+        let attempts = fake.0.lock().unwrap().fetches.len();
+        tokio::time::advance(Duration::from_secs(600)).await;
+        assert_eq!(fake.0.lock().unwrap().fetches.len(), attempts);
         fake.with(|remote| remote.failures = 0);
+        kv.set("b", json!(2)).unwrap();
         kv.flush().await.unwrap();
-        assert_eq!(fake.read(), json!({"a": 1}));
+        assert_eq!(fake.read(), json!({"a": 1, "b": 2}));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_mutation_during_the_last_attempt_restarts_the_batch() {
+        let fake = Arc::new(Fake::default());
+        // Puts take a second and fail: attempts run at 0-1, 2-3, 5-6, 10-11,
+        // 19-20 and 36-37 seconds, after which the batch would give up with
+        // `b` never tried.
+        fake.with(|remote| {
+            remote.put_delay = Duration::from_secs(1);
+            remote.put_failures = 6;
+        });
+        let kv = Arc::new(kv(&fake, Duration::from_secs(60)));
+        kv.set("a", json!(1)).unwrap();
+        let flush = tokio::spawn({
+            let kv = kv.clone();
+            async move { kv.flush().await }
+        });
+        tokio::time::sleep(Duration::from_millis(36_500)).await;
+        kv.set("b", json!(2)).unwrap();
+        flush.await.unwrap().unwrap();
+        assert_eq!(fake.read(), json!({"a": 1, "b": 2}));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_refetch_cannot_be_overwritten_by_an_older_flush() {
+        let fake = Arc::new(Fake::default());
+        fake.write(json!({}));
+        fake.with(|remote| remote.put_delay = Duration::from_secs(1));
+        let kv = Arc::new(kv(&fake, Duration::from_millis(300)));
+        assert_eq!(kv.get("theirs").await.unwrap(), None);
+        kv.set("a", json!(1)).unwrap();
+        let flush = tokio::spawn({
+            let kv = kv.clone();
+            async move { kv.flush().await }
+        });
+        // The put has applied on the server but not answered yet; someone
+        // else writes on top of it and a stale reader asks for the document.
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        fake.write(json!({"a": 1, "theirs": true}));
+        let during = kv.get("theirs").await.unwrap();
+        flush.await.unwrap().unwrap();
+        let after = kv.get("theirs").await.unwrap();
+        assert!(
+            !(during.is_some() && after.is_none()),
+            "a read went backwards: {during:?} then {after:?}"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_document_that_is_not_an_object_fails_without_retrying() {
+        let fake = Arc::new(Fake::default());
+        fake.write(json!([1, 2]));
+        let kv = kv(&fake, Duration::from_secs(60));
+        kv.set("a", json!(1)).unwrap();
+        let error = kv.flush().await.unwrap_err();
+        assert!(error.message().contains("not a JSON object"), "{error}");
+        assert_eq!(fake.0.lock().unwrap().fetches.len(), 1);
+        assert!(fake.0.lock().unwrap().puts.is_empty());
     }
 
     #[tokio::test(start_paused = true)]

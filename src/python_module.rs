@@ -830,7 +830,7 @@ impl PyKv {
         store: Option<Bound<'py, PyStore>>,
         stale_after: f64,
     ) -> PyResult<Self> {
-        if path.is_empty() || path.starts_with('/') {
+        if path.is_empty() || path.starts_with('/') || path.split('/').any(|part| part == "..") {
             return Err(PyValueError::new_err(
                 "`path` must be a non-empty key relative to the bucket, like 'path/to/item.json'",
             ));

@@ -57,8 +57,8 @@ class KV(_KV):
 
     def close(self, *, timeout: float | None = DEFAULT_SYNC_TIMEOUT) -> None:
         """Flush, then stop accepting writes."""
-        _open.discard(self)
         _run_sync(lambda: self.close_async(), timeout=timeout)
+        _open.discard(self)
 
     def __enter__(self) -> KV:
         return self
@@ -75,9 +75,9 @@ class KV(_KV):
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
-        _open.discard(self)
         try:
             await self.close_async()
+            _open.discard(self)
         except Exception as error:
             if exc_type is None:
                 raise
