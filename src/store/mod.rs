@@ -1,11 +1,16 @@
 //! Short-lived S3 credentials for the caller's aqora storage, minted through
 //! `createStoreCredentials` and shared by the CLI commands and the Python
-//! bindings.
+//! bindings; [`engine`] adds the cache and signed object requests behind
+//! `aqora.Store` and `aqora.KV`.
+
+mod engine;
 
 use chrono::{SecondsFormat, Utc};
 use graphql_client::GraphQLQuery;
 use serde::Serialize;
 use url::Url;
+
+pub use engine::*;
 
 use crate::{
     error::{self, Result},
@@ -76,6 +81,29 @@ impl StoreCredentials {
             .with_timezone(&Utc)
             .to_rfc3339_opts(SecondsFormat::Secs, false)
     }
+
+    /// A `CREATE OR REPLACE SECRET` statement registering the bucket with DuckDB.
+    pub fn duckdb_sql(&self, name: &str) -> Result<String> {
+        let quote = |value: &str| value.replace('\'', "''");
+        Ok(format!(
+            "CREATE OR REPLACE SECRET {name} (\n    \
+                TYPE s3,\n    \
+                KEY_ID '{}',\n    \
+                SECRET '{}',\n    \
+                ENDPOINT '{}',\n    \
+                REGION '{}',\n    \
+                URL_STYLE 'path',\n    \
+                USE_SSL {},\n    \
+                SCOPE 's3://{}/'\n\
+            );",
+            quote(&self.access_key_id),
+            quote(&self.secret_access_key),
+            quote(&self.host()?),
+            quote(&self.region),
+            self.use_ssl(),
+            quote(&self.bucket),
+        ))
+    }
 }
 
 pub async fn create_store_credentials(
@@ -126,6 +154,20 @@ mod tests {
         assert_eq!(
             creds("https://s3.aqora.io").expires_at_rfc3339(),
             "2026-01-02T03:04:05+00:00"
+        );
+    }
+
+    #[test]
+    fn duckdb_sql_quotes_values() {
+        let creds = StoreCredentials {
+            secret_access_key: "se cret'".into(),
+            ..creds("http://100.123.32.73:3001")
+        };
+        assert_eq!(
+            creds.duckdb_sql("mine").unwrap(),
+            "CREATE OR REPLACE SECRET mine (\n    TYPE s3,\n    KEY_ID 'AQS1abc',\n    \
+             SECRET 'se cret''',\n    ENDPOINT '100.123.32.73:3001',\n    REGION 'aqora',\n    \
+             URL_STYLE 'path',\n    USE_SSL false,\n    SCOPE 's3://alice/'\n);"
         );
     }
 }

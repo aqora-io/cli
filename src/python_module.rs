@@ -6,6 +6,8 @@ use aqora_client::{
     Client, ClientOptions,
 };
 use aqora_runner::pipeline::{LayerEvaluation, PipelineConfig};
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use pyo3::{
     exceptions::PyValueError,
     import_exception,
@@ -20,11 +22,13 @@ use url::Url;
 use crate::{
     dirs::config_home,
     graphql_client::{authenticate_client, unauthenticated_client},
+    kv::{Kv, StoreObject},
     oauth2::{
         exchange_code, new_authorization_request, oauth2_workspace_client_query, spawn_first_code,
         subscribe_code, AuthorizationRequest, IssuedTokens, Oauth2WorkspaceClientQuery,
         ViewerCredentials,
     },
+    store::{create_store_credentials, CredentialSource, Store, StoreCredentials},
     workspace::download_workspace_notebook,
 };
 
@@ -568,6 +572,284 @@ impl PyViewerAuthorization {
     }
 }
 
+/// Mint store credentials through a client, logging it in first if needed.
+struct ClientCredentialSource(Arc<RwLock<PyClientInner>>);
+
+#[async_trait]
+impl CredentialSource for ClientCredentialSource {
+    async fn mint(&self, duration_secs: Option<i64>) -> crate::error::Result<StoreCredentials> {
+        {
+            let inner = self.0.read().await;
+            if inner.authenticated {
+                return create_store_credentials(&inner.client, duration_secs).await;
+            }
+        }
+        let mut inner = self.0.write().await;
+        if !inner.authenticated {
+            let client = authenticate_client(config_home()?, inner.client.clone()).await?;
+            *inner = PyClientInner {
+                client,
+                authenticated: true,
+            };
+        }
+        create_store_credentials(&inner.client, duration_secs).await
+    }
+}
+
+/// SigV4 credentials for your bucket on the aqora object store.
+///
+/// Use path-style addressing: objects live at `{endpoint}/{bucket}/{key}`.
+#[pyclass(frozen, subclass, name = "StoreCredentials", module = "aqora")]
+struct PyStoreCredentials(StoreCredentials);
+
+#[pymethods]
+impl PyStoreCredentials {
+    #[new]
+    #[pyo3(signature = (*, access_key_id, secret_access_key, expires_at, endpoint, bucket, region))]
+    fn new(
+        access_key_id: String,
+        secret_access_key: String,
+        expires_at: DateTime<Utc>,
+        endpoint: String,
+        bucket: String,
+        region: String,
+    ) -> Self {
+        Self(StoreCredentials {
+            access_key_id,
+            secret_access_key,
+            expires_at,
+            endpoint,
+            bucket,
+            region,
+        })
+    }
+
+    #[getter]
+    fn access_key_id(&self) -> &str {
+        &self.0.access_key_id
+    }
+
+    #[getter]
+    fn secret_access_key(&self) -> &str {
+        &self.0.secret_access_key
+    }
+
+    #[getter]
+    fn expires_at(&self) -> DateTime<Utc> {
+        self.0.expires_at
+    }
+
+    #[getter]
+    fn endpoint(&self) -> &str {
+        &self.0.endpoint
+    }
+
+    #[getter]
+    fn bucket(&self) -> &str {
+        &self.0.bucket
+    }
+
+    #[getter]
+    fn region(&self) -> &str {
+        &self.0.region
+    }
+
+    #[getter]
+    fn use_ssl(&self) -> bool {
+        self.0.use_ssl()
+    }
+
+    /// `host[:port]` of the endpoint, the form DuckDB's `ENDPOINT` takes.
+    #[getter]
+    fn host(&self) -> PyResult<String> {
+        self.0.host().map_err(client_error)
+    }
+
+    #[pyo3(signature = (key = ""))]
+    fn url(&self, key: &str) -> PyResult<String> {
+        Ok(self.0.object_url(key).map_err(client_error)?.into())
+    }
+
+    /// Seconds until the credentials expire; negative once they have.
+    #[pyo3(signature = (now = None))]
+    fn remaining(&self, now: Option<DateTime<Utc>>) -> f64 {
+        self.0.remaining_secs(now.unwrap_or_else(Utc::now))
+    }
+
+    /// A `CREATE OR REPLACE SECRET` statement registering the bucket with DuckDB.
+    fn duckdb_sql(&self, name: &str) -> PyResult<String> {
+        self.0.duckdb_sql(name).map_err(client_error)
+    }
+}
+
+/// Your aqora bucket: credentials minted on demand and cached until fewer
+/// than `refresh_margin` seconds remain.
+#[pyclass(frozen, subclass, name = "_Store", module = "aqora._aqora")]
+struct PyStore {
+    store: Arc<Store>,
+    client: Py<PyClient>,
+}
+
+#[pymethods]
+impl PyStore {
+    #[new]
+    #[pyo3(signature = (client=None, *, duration=None, refresh_margin=60.0, url=None, allow_insecure_host=None))]
+    fn new<'py>(
+        py: Python<'py>,
+        client: Option<Bound<'py, PyClient>>,
+        duration: Option<i64>,
+        refresh_margin: f64,
+        url: Option<&str>,
+        allow_insecure_host: Option<bool>,
+    ) -> PyResult<Self> {
+        if client.is_some() && (url.is_some() || allow_insecure_host.is_some()) {
+            return Err(PyValueError::new_err(
+                "`url` and `allow_insecure_host` cannot be combined with an explicit `client`",
+            ));
+        }
+        if duration.is_some_and(|duration| duration < 60) {
+            return Err(PyValueError::new_err(
+                "`duration` must be at least 60 seconds",
+            ));
+        }
+        let refresh_margin = Duration::try_from_secs_f64(refresh_margin)
+            .map_err(|error| PyValueError::new_err(format!("invalid refresh_margin: {error}")))?;
+        let client = match client {
+            Some(client) => client.unbind(),
+            None => Py::new(py, PyClient::new(py, url, allow_insecure_host)?)?,
+        };
+        let inner = client.get();
+        let store = Store::new(
+            Arc::new(ClientCredentialSource(Arc::clone(&inner.inner))),
+            duration,
+            refresh_margin,
+            reqwest::Client::new(),
+            inner.options.allow_insecure_host,
+        );
+        Ok(Self {
+            store: Arc::new(store),
+            client,
+        })
+    }
+
+    #[getter]
+    fn client(&self, py: Python<'_>) -> Py<PyClient> {
+        self.client.clone_ref(py)
+    }
+
+    #[getter]
+    fn duration(&self) -> Option<i64> {
+        self.store.duration()
+    }
+
+    #[getter]
+    fn refresh_margin(&self) -> f64 {
+        self.store.refresh_margin().as_secs_f64()
+    }
+
+    /// Current credentials, minting new ones when needed.
+    #[pyo3(signature = (*, force=false))]
+    fn credentials_async<'py>(&self, py: Python<'py>, force: bool) -> PyResult<Bound<'py, PyAny>> {
+        let store = Arc::clone(&self.store);
+        future_into_py(py, async move {
+            let creds = store.credentials(force).await.map_err(client_error)?;
+            Ok(PyStoreCredentials(creds))
+        })
+    }
+}
+
+/// A dictionary of JSON values held in one object on the store, written in
+/// the background.
+#[pyclass(frozen, subclass, name = "_KV", module = "aqora._aqora")]
+struct PyKv(Arc<Kv>);
+
+#[pymethods]
+impl PyKv {
+    #[new]
+    #[pyo3(signature = (path, store=None, *, stale_after=5.0))]
+    fn new<'py>(
+        py: Python<'py>,
+        path: &str,
+        store: Option<Bound<'py, PyStore>>,
+        stale_after: f64,
+    ) -> PyResult<Self> {
+        if path.is_empty() || path.starts_with('/') {
+            return Err(PyValueError::new_err(
+                "`path` must be a non-empty key relative to the bucket, like 'path/to/item.json'",
+            ));
+        }
+        let stale_after = Duration::try_from_secs_f64(stale_after)
+            .map_err(|error| PyValueError::new_err(format!("invalid stale_after: {error}")))?;
+        let store = match store {
+            Some(store) => Arc::clone(&store.get().store),
+            None => Arc::clone(&PyStore::new(py, None, None, 60.0, None, None)?.store),
+        };
+        let object = StoreObject {
+            store,
+            key: path.to_owned(),
+        };
+        Ok(Self(Arc::new(Kv::new(
+            Arc::new(object),
+            stale_after,
+            pyo3_async_runtimes::tokio::get_runtime().handle(),
+        ))))
+    }
+
+    /// Store a JSON-serialisable `value` under `key`.
+    fn set(&self, py: Python<'_>, key: &str, value: Bound<'_, PyAny>) -> PyResult<()> {
+        let json: String = py
+            .import(pyo3::intern!(py, "json"))?
+            .call_method1(pyo3::intern!(py, "dumps"), (value,))?
+            .extract()?;
+        let value = serde_json::from_str(&json)
+            .map_err(|error| PyValueError::new_err(format!("invalid JSON value: {error}")))?;
+        self.0.set(key, value).map_err(client_error)
+    }
+
+    fn delete(&self, key: &str) -> PyResult<()> {
+        self.0.delete(key).map_err(client_error)
+    }
+
+    /// The value under `key`, or `None` when missing.
+    fn get_async<'py>(&self, py: Python<'py>, key: &str) -> PyResult<Bound<'py, PyAny>> {
+        let kv = Arc::clone(&self.0);
+        let key = key.to_owned();
+        let py_json = py.import(pyo3::intern!(py, "json"))?.unbind();
+        future_into_py(py, async move {
+            let value = kv.get(&key).await.map_err(client_error)?;
+            Python::attach(move |py| match value {
+                None => Ok(py.None()),
+                Some(value) => {
+                    let json = serde_json::to_string(&value)
+                        .map_err(|error| ClientError::new_err(error.to_string()))?;
+                    Ok(py_json
+                        .bind(py)
+                        .call_method1(pyo3::intern!(py, "loads"), (json,))?
+                        .unbind())
+                }
+            })
+        })
+    }
+
+    /// All keys, sorted.
+    fn list_async<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let kv = Arc::clone(&self.0);
+        future_into_py(py, async move { kv.list().await.map_err(client_error) })
+    }
+
+    /// Wait until every pending write is stored, raising if that fails.
+    fn flush_async<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let kv = Arc::clone(&self.0);
+        future_into_py(py, async move { kv.flush().await.map_err(client_error) })
+    }
+
+    /// Flush, then stop accepting writes.
+    fn close_async<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let kv = Arc::clone(&self.0);
+        future_into_py(py, async move { kv.close().await.map_err(client_error) })
+    }
+}
+
 #[pymodule]
 #[pyo3(name = "_aqora")]
 pub fn aqora(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -578,6 +860,9 @@ pub fn aqora(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<LayerEvaluation>()?;
     m.add_class::<PyClient>()?;
     m.add_class::<PyViewerAuthorization>()?;
+    m.add_class::<PyStoreCredentials>()?;
+    m.add_class::<PyStore>()?;
+    m.add_class::<PyKv>()?;
     m.add_function(wrap_pyfunction!(qio_build_model_payload, m)?)?;
     m.add_function(wrap_pyfunction!(qio_parse_result_payload, m)?)?;
     for (name, format) in [
