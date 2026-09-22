@@ -12,7 +12,7 @@ use crate::commands::GlobalArgs;
 use crate::error::Result;
 
 use agent::{select, Agent};
-use prompt::{build_prompt, write_token};
+use prompt::{build_prompt, fetch_docs, write_docs, write_token};
 use session::Sessions;
 use target::{resolve, PairTarget};
 
@@ -92,6 +92,19 @@ pub async fn pair(args: Pair, global: GlobalArgs) -> Result<()> {
     pb.set_message(format!("Editor for {target} is {}", editor.phase));
 
     let (token_dir, token_path) = write_token(&editor.token)?;
+    let docs_path = match fetch_docs().await {
+        Some(docs) => match write_docs(token_dir.path(), &docs) {
+            Ok(path) => Some(path),
+            Err(err) => {
+                tracing::debug!(
+                    "Could not write the documentation to {}: {err}",
+                    token_dir.path().display()
+                );
+                None
+            }
+        },
+        None => None,
+    };
     let editor_page = global
         .aqora_url()?
         .join(&format!("workspaces/{}/edit", editor.editor_page_id))?;
@@ -116,12 +129,18 @@ pub async fn pair(args: Pair, global: GlobalArgs) -> Result<()> {
     }
 
     let session = session::choose(args.session.as_deref(), &live)?;
-    let prompt = build_prompt(&editor, &token_path, &editor_page, session);
+    let prompt = build_prompt(
+        &editor,
+        &token_path,
+        docs_path.as_deref(),
+        &editor_page,
+        session,
+    );
     match agent {
         Some(agent) => {
             pb.finish_with_message(format!("Launching {}", agent.display_name()));
             agent
-                .command(&prompt, &args.agent_args)
+                .command(&prompt, token_dir.path(), &args.agent_args)
                 .spawn()?
                 .wait()
                 .await?;

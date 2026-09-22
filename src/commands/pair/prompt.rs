@@ -1,5 +1,6 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use tempfile::TempDir;
 use url::Url;
@@ -8,6 +9,11 @@ use crate::error::Result;
 
 use super::target::PairEditor;
 
+/// The whole documentation site as one markdown file, for the agent to read.
+pub const DOCS_URL: &str = "https://docs.aqora.io/llms-full.txt";
+const DOCS_FILE: &str = "aqora-docs.md";
+const DOCS_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// POSIX single-quoting, so a quote or a space in a URL or a path cannot change
 /// how the agent's shell parses the command it is handed.
 fn quote(value: impl std::fmt::Display) -> String {
@@ -15,10 +21,13 @@ fn quote(value: impl std::fmt::Display) -> String {
 }
 
 /// `session` is the one session to target, when there is exactly one; the
-/// scripts resolve it themselves otherwise.
+/// scripts resolve it themselves otherwise. `docs_path` is the downloaded
+/// documentation, when the download worked; the agent is sent to the URL
+/// otherwise.
 pub fn build_prompt(
     editor: &PairEditor,
     token_path: &Path,
+    docs_path: Option<&Path>,
     editor_page: &Url,
     session: Option<&str>,
 ) -> String {
@@ -36,6 +45,10 @@ pub fn build_prompt(
     } else {
         ""
     };
+    let docs = match docs_path {
+        Some(path) => format!("saved at {}", quote(path.display())),
+        None => format!("at {DOCS_URL}"),
+    };
     format!(
         "Use the /marimo-pair skill to pair-program on a running marimo notebook.
 
@@ -49,6 +62,14 @@ An auth token is stored at {token_path}. Pass it via `{execute_cmd} \
 The notebook must be open in a browser for a session to exist. If the server reports no \
 active sessions, ask the user to open {editor_page} and then try again.{session_hint}
 
+The notebook runs in an aqora.io workspace. Its kernel has the `aqora` Python package \
+installed and is already authenticated as the workspace owner, so never run `aqora login` or \
+ask for credentials. Before writing code that uses `aqora` (QPU, Store, KV, viewer_login, \
+aqora.pyarrow.dataset), read the aqora documentation {docs}. It describes the latest release; \
+when in doubt, check the installed API with `help()` in the kernel. If an `aqora` MCP server \
+is configured for you, it runs GraphQL against the aqora API; `aqora.Client()` in the kernel \
+does the same.
+
 Once you are connected, send a fun toast (mo.status.toast(...)) to the user inside marimo \
 letting them know you're ready to pair.",
         base_url = editor.base_url,
@@ -56,6 +77,37 @@ letting them know you're ready to pair.",
         quoted_token_path = quote(token_path.display()),
         editor_page = editor_page,
     )
+}
+
+/// Fetch the documentation for the agent. Pairing works without it, so a
+/// failure only costs the agent context.
+pub async fn fetch_docs() -> Option<String> {
+    let result = async {
+        reqwest::Client::builder()
+            .timeout(DOCS_TIMEOUT)
+            .build()?
+            .get(DOCS_URL)
+            .send()
+            .await?
+            .error_for_status()?
+            .text()
+            .await
+    }
+    .await;
+    match result {
+        Ok(docs) => Some(docs),
+        Err(err) => {
+            tracing::debug!("Could not fetch {DOCS_URL}: {err}");
+            None
+        }
+    }
+}
+
+/// Write the documentation next to the token, so it shares its lifetime.
+pub fn write_docs(dir: &Path, docs: &str) -> Result<PathBuf> {
+    let path = dir.join(DOCS_FILE);
+    std::fs::write(&path, docs)?;
+    Ok(path)
 }
 
 /// Keep the token out of the prompt text (and so out of shell history and the
@@ -133,6 +185,7 @@ mod tests {
         let prompt = build_prompt(
             &editor("http://host/runner/it's/"),
             Path::new("/tmp/it's dir/token.txt"),
+            Some(Path::new("/tmp/it's dir/aqora-docs.md")),
             &editor_page(),
             None,
         );
@@ -146,6 +199,49 @@ mod tests {
             "{prompt}"
         );
         assert!(!prompt.contains("--session"), "{prompt}");
+        assert!(
+            prompt.contains(r#"'/tmp/it'\''s dir/aqora-docs.md'"#),
+            "{prompt}"
+        );
+        assert!(!prompt.contains(DOCS_URL), "{prompt}");
+    }
+
+    #[test]
+    fn the_prompt_falls_back_to_the_docs_url_without_a_docs_file() {
+        let prompt = build_prompt(
+            &editor("http://host/runner/abc/"),
+            Path::new("/tmp/token.txt"),
+            None,
+            &editor_page(),
+            None,
+        );
+
+        assert!(prompt.contains(DOCS_URL), "{prompt}");
+        assert!(!prompt.contains("aqora-docs.md"), "{prompt}");
+    }
+
+    #[test]
+    fn the_prompt_says_the_kernel_is_already_authenticated() {
+        let prompt = build_prompt(
+            &editor("http://host/runner/abc/"),
+            Path::new("/tmp/token.txt"),
+            None,
+            &editor_page(),
+            None,
+        );
+
+        assert!(prompt.contains("already authenticated"), "{prompt}");
+        assert!(prompt.contains("`aqora`"), "{prompt}");
+    }
+
+    #[test]
+    fn docs_are_written_next_to_the_token() {
+        let (dir, token_path) = write_token("s3cret").unwrap();
+
+        let docs_path = write_docs(dir.path(), "# aqora").unwrap();
+
+        assert_eq!(docs_path.parent(), token_path.parent());
+        assert_eq!(std::fs::read_to_string(&docs_path).unwrap(), "# aqora");
     }
 
     #[test]
@@ -153,6 +249,7 @@ mod tests {
         let prompt = build_prompt(
             &editor("http://host/runner/abc/"),
             Path::new("/tmp/token.txt"),
+            None,
             &editor_page(),
             Some("s_1"),
         );
