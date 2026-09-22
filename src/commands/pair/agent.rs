@@ -1,5 +1,5 @@
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::error::{self, Result};
 
@@ -52,8 +52,18 @@ impl Agent {
     /// The prompt goes in as a single argument. It carries no token — only the
     /// path to one — so it is safe in `ps` and in shell history. Extra args go
     /// in front of it, matching the agents' `[options] [prompt]` grammar.
-    pub fn command(&self, prompt: &str, extra_args: &[OsString]) -> tokio::process::Command {
+    /// `context_dir` holds the files the prompt points the agent at.
+    pub fn command(
+        &self,
+        prompt: &str,
+        context_dir: &Path,
+        extra_args: &[OsString],
+    ) -> tokio::process::Command {
         let mut command = tokio::process::Command::new(self.binary());
+        if let Agent::Claude = self {
+            // Claude asks before reading outside the working directory.
+            command.arg("--add-dir").arg(context_dir);
+        }
         command.args(extra_args);
         match self {
             Agent::Claude | Agent::Codex => command.arg(prompt),
@@ -159,6 +169,7 @@ pub fn select(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     const READY: Availability = Availability {
         binary: true,
@@ -210,7 +221,7 @@ mod tests {
     /// The prompt is one argv element, never split and never a shell string.
     fn argv(agent: Agent, extra_args: &[&str]) -> Vec<String> {
         let extra_args: Vec<OsString> = extra_args.iter().map(OsString::from).collect();
-        let command = agent.command("pair with me", &extra_args);
+        let command = agent.command("pair with me", Path::new("/tmp/ctx"), &extra_args);
         std::iter::once(command.as_std().get_program())
             .chain(command.as_std().get_args())
             .map(|arg| arg.to_string_lossy().into_owned())
@@ -218,9 +229,18 @@ mod tests {
     }
 
     #[test]
-    fn claude_and_codex_take_the_prompt_as_their_first_argument() {
-        assert_eq!(argv(Agent::Claude, &[]), ["claude", "pair with me"]);
+    fn codex_takes_the_prompt_as_its_first_argument() {
         assert_eq!(argv(Agent::Codex, &[]), ["codex", "pair with me"]);
+    }
+
+    /// The token and docs live outside the working directory, and Claude
+    /// prompts before reading files there unless the directory is added.
+    #[test]
+    fn claude_is_allowed_to_read_the_context_dir() {
+        assert_eq!(
+            argv(Agent::Claude, &[]),
+            ["claude", "--add-dir", "/tmp/ctx", "pair with me"]
+        );
     }
 
     #[test]
@@ -235,7 +255,14 @@ mod tests {
     fn extra_args_go_before_the_prompt() {
         assert_eq!(
             argv(Agent::Claude, &["--model", "opus"]),
-            ["claude", "--model", "opus", "pair with me"]
+            [
+                "claude",
+                "--add-dir",
+                "/tmp/ctx",
+                "--model",
+                "opus",
+                "pair with me"
+            ]
         );
         assert_eq!(
             argv(Agent::Codex, &["--model", "opus"]),
