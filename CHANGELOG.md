@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.33.0 - 2026-09-23
+#### Features
+- add aqora context and docs to aqora pair - (2e0eff6) - Julian Popescu
+- add extra methods to store - (d18b651) - Julian Popescu
+- kv - (f2911f4) - Julian Popescu
+#### Bug Fixes
+- code review comments - (09609f4) - Julian Popescu
+
+- - -
+
 ## v0.32.0 - 2026-09-18
 #### Features
 - (**store**) mint s3 store credentials from the cli and python sdk - (d1bd318) - Julian Popescu
