@@ -5,10 +5,11 @@ use handlebars::{RenderError, RenderErrorReason};
 use serde::Serialize;
 
 use crate::registry::REGISTRY;
-use crate::utils::{assert_python_raw_string_safe, assert_semver, assert_slug};
+use crate::utils::{
+    assert_python_minor, assert_python_raw_string_safe, assert_semver, DEFAULT_PYTHON_VERSION,
+};
 
-const DEFAULT_PYTHON_VERSION: &str = "3.10";
-const DEFAULT_MARIMO_VERSION: &str = "0.23.4";
+const DEFAULT_MARIMO_VERSION: &str = "0.25.0";
 const DEFAULT_VERSION: &str = "0.0.0";
 
 /// The starter contents of a plain marimo workspace.
@@ -27,9 +28,6 @@ pub struct WorkspaceTemplate {
     /// Display name, shown in the notebook's heading.
     #[builder(setter(into))]
     name: String,
-    /// Slug-safe identifier, used as the Python project name.
-    #[builder(setter(into))]
-    slug: String,
     /// Workspace version, shown alongside the name.
     #[builder(setter(into), default = "DEFAULT_VERSION.to_string()")]
     version: String,
@@ -43,25 +41,19 @@ impl WorkspaceTemplate {
     pub fn render(&self, out: impl AsRef<Path>) -> Result<(), RenderError> {
         REGISTRY.render_all("workspace", self, out)
     }
-
-    pub fn render_conda(&self, out: impl AsRef<Path>) -> Result<(), RenderError> {
-        REGISTRY.render_all("conda_workspace", self, out)
-    }
 }
 
 impl WorkspaceTemplateBuilder {
     pub fn validate(&self) -> Result<(), String> {
         self.python_version
             .as_deref()
-            .map(assert_semver)
+            .map(assert_python_minor)
             .transpose()?;
         self.marimo_version
             .as_deref()
             .map(assert_semver)
             .transpose()?;
         self.version.as_deref().map(assert_semver).transpose()?;
-        // The slug becomes the `[project] name` in pyproject.toml, so it is a slug.
-        assert_slug(self.slug.as_ref().ok_or("Slug is required")?)?;
         // The display name stays free text, but "markdown" understates where it lands:
         // it is markdown *inside a Python raw string literal* in readme.py, rendered
         // without escaping. It has to be safe for the literal as well as legible.
@@ -78,24 +70,18 @@ impl WorkspaceTemplateBuilder {
             .map_err(|e| RenderErrorReason::Other(e.to_string()))?
             .render(out)
     }
-
-    pub fn render_conda(&self, out: impl AsRef<Path>) -> Result<(), RenderError> {
-        self.build()
-            .map_err(|e| RenderErrorReason::Other(e.to_string()))?
-            .render_conda(out)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::extract_pep723_toml;
 
     fn rendered() -> (tempfile::TempDir, std::path::PathBuf) {
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("workspace");
         WorkspaceTemplate::builder()
             .name("My Workspace")
-            .slug("my-workspace")
             .render(&out)
             .expect("render");
         (dir, out)
@@ -104,12 +90,16 @@ mod tests {
     #[test]
     fn renders_the_starter_files() {
         let (_dir, out) = rendered();
-        for file in ["readme.py", "pyproject.toml", ".ignore", ".secrets"] {
+        for file in ["readme.py", ".ignore", ".secrets"] {
             assert!(out.join(file).is_file(), "missing {file}");
         }
         // `.ignore`, not `.gitignore`: a hosted workspace has no git, and the
-        // indexer owns the exclusions.
+        // indexer owns the exclusions. No `pyproject.toml`: kernels run in a
+        // per-notebook pixi environment built from readme.py's own PEP 723
+        // header, and an old start.sh appends `[tool.marimo.venv]` to any
+        // pyproject it finds.
         assert!(!out.join(".gitignore").exists());
+        assert!(!out.join("pyproject.toml").exists());
     }
 
     /// The scaffolded dotfiles document behavior without enacting any: an
@@ -141,44 +131,55 @@ mod tests {
         assert!(readme.contains("import marimo"));
     }
 
+    /// kubimo's image pre-builds a Python environment for this exact header at
+    /// `/home/me/workspace/readme.py`, so the bytes must match verbatim.
+    #[test]
+    fn the_readme_starts_with_the_canonical_header() {
+        let (_dir, out) = rendered();
+        let readme = std::fs::read_to_string(out.join("readme.py")).unwrap();
+        assert!(
+            readme.starts_with(concat!(
+                "# /// script\n",
+                "# requires-python = \"==3.12.*\"\n",
+                "# dependencies = [\n",
+                "#     \"marimo\",\n",
+                "# ]\n",
+                "# ///\n",
+            )),
+            "{readme}"
+        );
+    }
+
     /// Declaring marimo here would make `uv sync` install a second copy into
     /// the venv, shadowing the image's system build — a ~920MB duplicate that
     /// also leaves kernels on a different marimo from the server.
     #[test]
-    fn the_pyproject_declares_neither_marimo_nor_aqora() {
+    fn the_header_declares_marimo_unpinned() {
         let (_dir, out) = rendered();
-        let pyproject = std::fs::read_to_string(out.join("pyproject.toml")).unwrap();
-        let deps = pyproject
-            .split("dependencies = [")
-            .nth(1)
-            .and_then(|rest| rest.split(']').next())
+        let readme = std::fs::read_to_string(out.join("readme.py")).unwrap();
+        let header = extract_pep723_toml(&readme);
+        assert_eq!(header["requires-python"].as_str(), Some("==3.12.*"));
+        let deps = header["dependencies"]
+            .as_array()
             .expect("dependencies array");
-        assert!(!deps.contains("marimo"), "{deps}");
-        assert!(!deps.contains("aqora"), "{deps}");
-        // And the venv table must be present, so the runner does not have to
-        // append it at startup — which would rewrite a tracked file on every
-        // boot and re-upload it.
-        assert!(pyproject.contains("[tool.marimo.venv]"), "{pyproject}");
-        assert!(pyproject.contains("writable = false"), "{pyproject}");
-    }
-
-    #[test]
-    fn the_project_name_is_the_slug_not_the_display_name() {
-        let (_dir, out) = rendered();
-        let pyproject = std::fs::read_to_string(out.join("pyproject.toml")).unwrap();
         assert!(
-            pyproject.contains(r#"name = "my-workspace""#),
-            "{pyproject}"
+            deps.iter().any(|dep| dep.as_str() == Some("marimo")),
+            "{deps:?}"
         );
     }
 
     #[test]
-    fn a_non_slug_identifier_is_refused() {
-        assert!(WorkspaceTemplate::builder()
-            .name("My Workspace")
-            .slug("Not A Slug")
-            .build()
-            .is_err());
+    fn no_rendered_file_contains_the_venv_table() {
+        let (_dir, out) = rendered();
+        for entry in std::fs::read_dir(&out).unwrap() {
+            let path = entry.unwrap().path();
+            let contents = std::fs::read_to_string(&path).unwrap();
+            assert!(
+                !contents.contains("[tool.marimo.venv]"),
+                "{}",
+                path.display()
+            );
+        }
     }
 
     /// The display name is rendered without escaping into `mo.md(r"""…""")`, so a name
@@ -196,11 +197,7 @@ mod tests {
             "",
         ] {
             assert!(
-                WorkspaceTemplate::builder()
-                    .name(name)
-                    .slug("my-workspace")
-                    .build()
-                    .is_err(),
+                WorkspaceTemplate::builder().name(name).build().is_err(),
                 "should have been refused: {name:?}"
             );
         }
@@ -216,11 +213,7 @@ mod tests {
             "100% coverage (v2)",
         ] {
             assert!(
-                WorkspaceTemplate::builder()
-                    .name(name)
-                    .slug("my-workspace")
-                    .build()
-                    .is_ok(),
+                WorkspaceTemplate::builder().name(name).build().is_ok(),
                 "should have been accepted: {name:?}"
             );
         }

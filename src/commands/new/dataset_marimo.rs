@@ -119,8 +119,9 @@ pub async fn dataset_marimo(args: DatasetMarimo, global: GlobalArgs) -> Result<(
         .map_err(|e| format_permission_error("create dataset-marimo", &dest, &e))?;
 
     pb.finish_with_message(format!(
-        "Created dataset marimo notebook in '{}'",
-        dest.display()
+        "Created dataset marimo notebook in '{}'. Run it with `uvx marimo edit --sandbox {}`",
+        dest.display(),
+        dest.join("readme.py").display()
     ));
     Ok(())
 }
