@@ -62,9 +62,13 @@ An auth token is stored at {token_path}. Pass it via `{execute_cmd} \
 The notebook must be open in a browser for a session to exist. If the server reports no \
 active sessions, ask the user to open {editor_page} and then try again.{session_hint}
 
-The notebook runs in an aqora.io workspace. Its kernel has the `aqora` Python package \
-installed and is already authenticated as the workspace owner, so never run `aqora login` or \
-ask for credentials. Before writing code that uses `aqora` (QPU, Store, KV, viewer_login, \
+The notebook runs in an aqora.io workspace. Its kernel runs in the notebook's own \
+environment, built from the PEP 723 header at the top of the notebook file, so only the \
+packages declared there are installed. If `import aqora` fails, ask the user to install \
+`aqora` from marimo's prompt or package panel, which declares it in that header; don't \
+install it any other way. The kernel is already authenticated as the workspace owner, so \
+never run `aqora login` or ask for credentials. Before writing code that uses `aqora` (QPU, \
+Store, KV, viewer_login, \
 aqora.pyarrow.dataset), read the aqora documentation {docs}. It describes the latest release; \
 when in doubt, check the installed API with `help()` in the kernel. If an `aqora` MCP server \
 is configured for you, it runs GraphQL against the aqora API; `aqora.Client()` in the kernel \
@@ -232,6 +236,22 @@ mod tests {
 
         assert!(prompt.contains("already authenticated"), "{prompt}");
         assert!(prompt.contains("`aqora`"), "{prompt}");
+    }
+
+    /// A kernel only has what its notebook's PEP 723 header declares, and a new
+    /// notebook declares marimo alone: the agent must not assume `aqora` is there.
+    #[test]
+    fn the_prompt_points_missing_packages_at_the_notebook_header() {
+        let prompt = build_prompt(
+            &editor("http://host/runner/x/"),
+            Path::new("/tmp/token.txt"),
+            None,
+            &editor_page(),
+            None,
+        );
+        assert!(prompt.contains("PEP 723 header"), "{prompt}");
+        assert!(prompt.contains("If `import aqora` fails"), "{prompt}");
+        assert!(!prompt.contains("package installed"), "{prompt}");
     }
 
     #[test]
