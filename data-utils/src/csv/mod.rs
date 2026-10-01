@@ -175,8 +175,8 @@ pub async fn infer_format<R>(mut reader: R, max_records: Option<usize>) -> io::R
 where
     R: AsyncRead + AsyncSeek + Unpin,
 {
-    let delimiters_to_guess = [b',', b'\t', b';', b'|'];
-    let quotes_to_guess = [b'"', b'\''];
+    let delimiters_to_guess = *b",\t;|";
+    let quotes_to_guess = *b"\"'";
     let escapes_to_guess = [None, Some(b'\\')];
     let format_guesses = delimiters_to_guess
         .into_iter()

@@ -26,10 +26,8 @@ fn json_value_to_toml_value(json: &JsonValue) -> Option<TomlValue> {
         JsonValue::Number(n) => {
             if let Some(i) = n.as_i64() {
                 TomlValue::Integer(i)
-            } else if let Some(f) = n.as_f64() {
-                TomlValue::Float(f)
             } else {
-                return None;
+                TomlValue::Float(n.as_f64()?)
             }
         }
         JsonValue::Array(a) => TomlValue::Array(

@@ -84,7 +84,7 @@ This may overwrite files. Do you want to continue?",
         .competition_by_slug
         .ok_or_else(|| {
             error::user(
-                &format!("Competition '{}' not found", &args.competition),
+                &format!("Competition '{}' not found", args.competition),
                 "Please make sure the competition exists",
             )
         })?;
