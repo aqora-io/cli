@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use aqora_template::DatasetMarimoTemplate;
 use clap::Args;
@@ -118,10 +118,35 @@ pub async fn dataset_marimo(args: DatasetMarimo, global: GlobalArgs) -> Result<(
         .render(&dest)
         .map_err(|e| format_permission_error("create dataset-marimo", &dest, &e))?;
 
-    pb.finish_with_message(format!(
+    pb.finish_with_message(created_message(&dest));
+    Ok(())
+}
+
+fn created_message(dest: &Path) -> String {
+    format!(
         "Created dataset marimo notebook in '{}'. Run it with `uvx marimo edit --sandbox {}`",
         dest.display(),
-        dest.join("readme.py").display()
-    ));
-    Ok(())
+        shell_words::quote(&dest.join("readme.py").to_string_lossy())
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_run_command_survives_a_path_with_spaces() {
+        let message = created_message(Path::new("/tmp/My Dataset"));
+        let command = message.split('`').nth(1).expect("a command in backticks");
+        assert_eq!(
+            shell_words::split(command).unwrap(),
+            [
+                "uvx",
+                "marimo",
+                "edit",
+                "--sandbox",
+                "/tmp/My Dataset/readme.py"
+            ]
+        );
+    }
 }
