@@ -34,7 +34,7 @@ pub fn assert_semver(string: &str) -> Result<(), String> {
 #[inline]
 pub fn is_python_minor(string: &str) -> bool {
     lazy_static::lazy_static! {
-        static ref PYTHON_MINOR_REGEX: Regex = Regex::new(r"^3\.\d+$").unwrap();
+        static ref PYTHON_MINOR_REGEX: Regex = Regex::new(r"^3\.[0-9]+$").unwrap();
     }
     PYTHON_MINOR_REGEX.is_match(string)
 }

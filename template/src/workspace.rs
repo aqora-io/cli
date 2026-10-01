@@ -218,4 +218,23 @@ mod tests {
             );
         }
     }
+
+    /// The version lands in `requires-python = "==3.X.*"`, and Python's
+    /// version specifiers take ASCII digits only.
+    #[test]
+    fn a_python_version_needs_ascii_digits() {
+        let build = |version: &str| {
+            WorkspaceTemplate::builder()
+                .name("My Workspace")
+                .python_version(version)
+                .build()
+        };
+        assert!(build("3.13").is_ok());
+        for version in ["3.\u{0661}\u{0662}", "3.\u{ff11}\u{ff12}", "3", "3.12.1"] {
+            assert!(
+                build(version).is_err(),
+                "should have been refused: {version:?}"
+            );
+        }
+    }
 }
