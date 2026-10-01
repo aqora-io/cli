@@ -95,9 +95,9 @@ mod tests {
         }
         // `.ignore`, not `.gitignore`: a hosted workspace has no git, and the
         // indexer owns the exclusions. No `pyproject.toml`: kernels run in a
-        // per-notebook pixi environment built from readme.py's own PEP 723
-        // header, and an old start.sh appends `[tool.marimo.venv]` to any
-        // pyproject it finds.
+        // per-notebook environment, built by uv or pixi as the workspace's
+        // runtime selects, from readme.py's own PEP 723 header, and an old
+        // start.sh appends `[tool.marimo.venv]` to any pyproject it finds.
         assert!(!out.join(".gitignore").exists());
         assert!(!out.join("pyproject.toml").exists());
     }

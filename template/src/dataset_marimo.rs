@@ -10,7 +10,7 @@ use crate::utils::{
     DEFAULT_PYTHON_VERSION,
 };
 
-const DEFAULT_MARIMO_VERSION: &str = "0.23.4";
+const DEFAULT_MARIMO_VERSION: &str = "0.25.0";
 const DEFAULT_CLI_VERSION_STR: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Builder, Serialize, Debug)]
