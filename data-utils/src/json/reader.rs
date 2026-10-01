@@ -25,7 +25,7 @@ impl<'a> Consumer<'a> {
         self.bytes = self.bytes.split_at(n).1
     }
     fn consume_whitespace(&mut self) {
-        const CHARS: [u8; 4] = [b' ', b'\t', b'\r', b'\n'];
+        const CHARS: [u8; 4] = *b" \t\r\n";
         let index = self
             .bytes
             .iter()

@@ -34,15 +34,14 @@ fn sentry_setup() -> Option<sentry::ClientInitGuard> {
 
     let opts = sentry::ClientOptions {
         release: Some(Cow::Owned(manifest_version().to_string())),
-        dsn: if let Some(sentry_dsn) = option_env!("SENTRY_DSN") {
+        dsn: {
+            let sentry_dsn = option_env!("SENTRY_DSN")?;
             if let Ok(sentry_dsn) = sentry_dsn.parse() {
                 Some(sentry_dsn)
             } else {
                 tracing::error!("Bad SENTRY_DSN: {sentry_dsn:?}");
                 return None;
             }
-        } else {
-            return None;
         },
         ..Default::default()
     };
