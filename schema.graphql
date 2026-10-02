@@ -2568,8 +2568,17 @@ type Mutation {
 	holds a WASM module the programs call into (`{"wasm_module":
 	"<base64>"}`). It must be owned by the same entity. Only Nexus
 	platforms support WASM modules.
+	
+	`options` is an object of backend options for the job. Nexus
+	H-series devices and emulators accept a subset of their
+	`QuantinuumConfig` (`noisy_simulation`, `simulator`, `error_params`,
+	`compiler_options`, `no_opt`, `allow_2q_gate_rebase`,
+	`target_2qb_gate`, `leakage_detection`, `simplify_initial`); other
+	platforms accept none. A null option is the same as leaving it out.
+	The job is rejected before anything is submitted when an option isn't
+	accepted.
 	"""
-	createProviderJob(providerModelId: ID!, shots: Int, providerPlatform: ProviderPlatformNameOrID, asEntity: UsernameOrID, wasmModuleId: ID): ProviderJob!
+	createProviderJob(providerModelId: ID!, shots: Int, providerPlatform: ProviderPlatformNameOrID, asEntity: UsernameOrID, wasmModuleId: ID, options: JSON): ProviderJob!
 	addProviderPlatformMember(providerPlatformId: ID!, entityId: ID!): ProviderPlatformMembershipConnectionEdge!
 	removeProviderPlatformMember(providerPlatformId: ID!, entityId: ID!): ID!
 	fetchWebsiteMetadata(url: Url!): WebsiteMetadata!

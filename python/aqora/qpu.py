@@ -87,7 +87,14 @@ class QPU:
             self._input_formats = self._load_input_formats()
         return self._input_formats
 
-    def run(self, programs: Any, *, shots: int, wasm: Any = None) -> "QPUJob":
+    def run(
+        self,
+        programs: Any,
+        *,
+        shots: int,
+        wasm: Any = None,
+        options: Mapping[str, Any] | None = None,
+    ) -> "QPUJob":
         """Submit one or more programs as a provider job.
 
         `shots` is required: every program in the job runs that many times.
@@ -103,6 +110,12 @@ class QPU:
         `wasm` attaches a WASM module the programs call into: a pytket
         `WasmFileHandler`/`WasmModuleHandler`, the module's bytecode, or a path
         to a `.wasm` file. Only Nexus platforms accept one.
+
+        `options` are backend options for the job. Nexus H-series devices and
+        emulators accept `noisy_simulation`, `simulator`, `error_params`,
+        `compiler_options`, `no_opt`, `allow_2q_gate_rebase`,
+        `target_2qb_gate`, `leakage_detection` and `simplify_initial`; other
+        platforms accept none, and the server rejects the job before it runs.
         """
         shots = jobs.normalize_shots(shots)
         sources = [formats.detect(program) for program in _as_programs(programs)]
@@ -114,6 +127,7 @@ class QPU:
             platform=self._platform,
             as_entity=self._as_entity,
             wasm=wasm,
+            options=options,
         )
         return QPUJob(
             self,

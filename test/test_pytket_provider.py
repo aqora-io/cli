@@ -484,6 +484,49 @@ def test_qpu_process_circuits_without_wasm_sends_the_plain_job_document(mod):
     assert "wasmModuleId" not in variables
 
 
+def test_qpu_process_circuits_forwards_quantinuum_kwargs_as_options(mod):
+    from pytket.circuit import Circuit
+
+    qpu = mod.QPU()
+
+    qpu.process_circuits(
+        [Circuit(1)],
+        n_shots=10,
+        noisy_simulation=False,
+        leakage_detection=None,
+        options={"noisy_simulation": True, "simulator": "stabilizer"},
+    )
+
+    ((query, variables),) = _create_provider_job_calls(qpu.client)
+    # The kwarg wins over `options=`; one left at None isn't sent.
+    assert variables["options"] == {"noisy_simulation": False, "simulator": "stabilizer"}
+    assert "$options: JSON" in query
+
+
+def test_qpu_process_circuits_without_options_sends_no_options(mod):
+    from pytket.circuit import Circuit
+
+    qpu = mod.QPU()
+
+    qpu.process_circuits([Circuit(1)], n_shots=10, leakage_detection=None)
+
+    ((query, variables),) = _create_provider_job_calls(qpu.client)
+    assert "options" not in query
+    assert "options" not in variables
+
+
+def test_qpu_process_circuits_rejects_non_mapping_options(mod):
+    from pytket.circuit import Circuit
+
+    qpu = mod.QPU()
+
+    with pytest.raises(TypeError, match="mapping of option names"):
+        qpu.process_circuits(
+            [Circuit(1)], n_shots=10, options=[("no_opt", True)], noisy_simulation=False
+        )
+    assert qpu.client.uploads == []
+
+
 def test_qpu_process_circuits_requires_shots(mod):
     from pytket.circuit import Circuit
 

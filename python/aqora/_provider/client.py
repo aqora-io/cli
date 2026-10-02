@@ -266,6 +266,7 @@ class AqoraGraphQLClient:
         provider_platform: str | None = None,
         as_entity: str | None = None,
         wasm_module_id: str | None = None,
+        options: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         optional: list[tuple[str, str]] = []
         variables: dict[str, Any] = {
@@ -277,6 +278,9 @@ class AqoraGraphQLClient:
         if wasm_module_id is not None:
             optional.append(("wasmModuleId", "ID"))
             variables["wasmModuleId"] = wasm_module_id
+        if options:
+            optional.append(("options", "JSON"))
+            variables["options"] = dict(options)
         query = create_provider_job_mutation(optional)
         response = _run_sync(lambda: self._client.send(query, **variables))
         return response["createProviderJob"]

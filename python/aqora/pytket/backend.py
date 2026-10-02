@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from aqora import Client
 from aqora._provider import jobs, wire
@@ -37,6 +37,11 @@ GATESET = {
     OpType.Measure,
     OpType.Reset,
 }
+
+# pytket-quantinuum `process_circuits` kwargs that are also Nexus
+# `QuantinuumConfig` fields; forwarded as job options when given. Other
+# options go through `options=`.
+_QUANTINUUM_OPTION_KWARGS = ("noisy_simulation", "leakage_detection", "simplify_initial")
 
 _STATUS_MAPPING = {
     "WAITING": StatusEnum.QUEUED,
@@ -142,6 +147,12 @@ class QPU(Backend):
         Like pytket-quantinuum's backend, `wasm_file_handler` takes a pytket
         `WasmFileHandler` (or `WasmModuleHandler`) for circuits that call into
         a WASM module; only Nexus platforms accept one.
+
+        `noisy_simulation`, `leakage_detection` and `simplify_initial` are
+        forwarded as job options, and `options=` takes any other
+        `QuantinuumConfig` field the platform accepts (see `aqora.QPU.run`).
+        Only options actually given are sent, so the platform's defaults
+        apply to the rest.
         """
         circuits = list(circuits)
         if not circuits:
@@ -160,6 +171,7 @@ class QPU(Backend):
             platform=self._platform,
             as_entity=self._as_entity,
             wasm=kwargs.get("wasm_file_handler"),
+            options=_job_options(kwargs),
         )
         return [ResultHandle(job.job_id, index) for index in range(len(circuits))]
 
@@ -265,3 +277,18 @@ class QPU(Backend):
         if not max_qubits:
             return None
         return max(max_qubits)
+
+
+def _job_options(kwargs: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    """The job options in `process_circuits` kwargs: `options=`, plus the
+    pytket-quantinuum kwargs that name `QuantinuumConfig` fields, which win
+    over the same key in `options=`. A kwarg left at None counts as not given."""
+    options = kwargs.get("options")
+    given = {
+        name: kwargs[name] for name in _QUANTINUUM_OPTION_KWARGS if kwargs.get(name) is not None
+    }
+    if not given or (options is not None and not isinstance(options, Mapping)):
+        # Nothing to merge, or `options=` isn't a mapping and `submit_model`
+        # rejects it as it is.
+        return options
+    return {**(options or {}), **given}
