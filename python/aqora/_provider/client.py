@@ -4,7 +4,7 @@ import asyncio
 import concurrent.futures
 import threading
 import urllib.parse
-from typing import Any, Awaitable, Callable, Mapping
+from typing import Any, Awaitable, Callable, Mapping, Sequence
 
 from aqora import Client
 
@@ -33,28 +33,42 @@ mutation CreateProviderModel(
 }
 """
 
-CREATE_PROVIDER_JOB_MUTATION = """
+
+def create_provider_job_mutation(optional: Sequence[tuple[str, str]] = ()) -> str:
+    """The `createProviderJob` document, declaring the `(name, type)` arguments
+    in `optional` on top of the ones every job sends.
+
+    Optional arguments are declared only when used, so a plain job sends the
+    same document as before they existed and still works against a server
+    that predates them.
+    """
+    declarations = "".join(f"  ${name}: {type_},\n" for name, type_ in optional)
+    arguments = "".join(f"    {name}: ${name},\n" for name, _ in optional)
+    return f"""
 mutation CreateProviderJob(
   $providerModelId: ID!,
   $shots: Int,
   $providerPlatform: ProviderPlatformNameOrID,
   $asEntity: UsernameOrID,
-) {
+{declarations}) {{
   createProviderJob(
     providerModelId: $providerModelId,
     shots: $shots,
     providerPlatform: $providerPlatform,
     asEntity: $asEntity,
-  ) {
+{arguments}  ) {{
     id
     provider
     status
     error
     resultCount
     createdAt
-  }
-}
+  }}
+}}
 """
+
+
+CREATE_PROVIDER_JOB_MUTATION = create_provider_job_mutation()
 
 PROVIDER_JOB_QUERY = """
 query ProviderJob($id: ID!) {
@@ -251,16 +265,20 @@ class AqoraGraphQLClient:
         shots: int | None,
         provider_platform: str | None = None,
         as_entity: str | None = None,
+        wasm_module_id: str | None = None,
     ) -> Mapping[str, Any]:
-        response = _run_sync(
-            lambda: self._client.send(
-                CREATE_PROVIDER_JOB_MUTATION,
-                providerModelId=provider_model_id,
-                shots=shots,
-                providerPlatform=provider_platform,
-                asEntity=as_entity,
-            )
-        )
+        optional: list[tuple[str, str]] = []
+        variables: dict[str, Any] = {
+            "providerModelId": provider_model_id,
+            "shots": shots,
+            "providerPlatform": provider_platform,
+            "asEntity": as_entity,
+        }
+        if wasm_module_id is not None:
+            optional.append(("wasmModuleId", "ID"))
+            variables["wasmModuleId"] = wasm_module_id
+        query = create_provider_job_mutation(optional)
+        response = _run_sync(lambda: self._client.send(query, **variables))
         return response["createProviderJob"]
 
     def get_provider_job(self, job_id: str) -> Mapping[str, Any]:

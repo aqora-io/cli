@@ -2563,8 +2563,13 @@ type Mutation {
 	entity itself must be a member: a viewer whose organization is the
 	member must pass the organization as `asEntity`, which requires being
 	one of its Owners or Admins.
+	
+	`wasmModuleId` is a second provider model, uploaded the same way, that
+	holds a WASM module the programs call into (`{"wasm_module":
+	"<base64>"}`). It must be owned by the same entity. Only Nexus
+	platforms support WASM modules.
 	"""
-	createProviderJob(providerModelId: ID!, shots: Int, providerPlatform: ProviderPlatformNameOrID, asEntity: UsernameOrID): ProviderJob!
+	createProviderJob(providerModelId: ID!, shots: Int, providerPlatform: ProviderPlatformNameOrID, asEntity: UsernameOrID, wasmModuleId: ID): ProviderJob!
 	addProviderPlatformMember(providerPlatformId: ID!, entityId: ID!): ProviderPlatformMembershipConnectionEdge!
 	removeProviderPlatformMember(providerPlatformId: ID!, entityId: ID!): ID!
 	fetchWebsiteMetadata(url: Url!): WebsiteMetadata!

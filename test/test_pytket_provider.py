@@ -268,6 +268,7 @@ class FakeClient:
         self.authenticated = False
         self.calls: list[tuple[str, dict[str, object]]] = []
         self.uploads: list[tuple[str, bytes, str | None]] = []
+        self.created_models = 0
         self.job_status: str | None = "COMPLETED"
         self.job_error: str | None = None
         # `result_count` of None means "match the number of result nodes".
@@ -341,7 +342,8 @@ class FakeClient:
                 }
             }
         if "createProviderModel" in query:
-            return {"createProviderModel": {"id": "model-1"}}
+            self.created_models += 1
+            return {"createProviderModel": {"id": f"model-{self.created_models}"}}
         if "createProviderJob" in query:
             return {
                 "createProviderJob": {
@@ -441,6 +443,45 @@ def test_qpu_process_circuits_uploads_and_returns_handles(mod):
             "asEntity": None,
         }
     ]
+
+
+class FakeWasmFileHandler:
+    """Stands in for pytket's `WasmFileHandler`, whose `bytecode_base64` is bytes."""
+
+    bytecode_base64 = base64.b64encode(b"\0asm\x01\0\0\0")
+
+
+def _create_provider_job_calls(client) -> list[tuple[str, dict[str, object]]]:
+    return [(query, variables) for query, variables in client.calls if "createProviderJob" in query]
+
+
+def test_qpu_process_circuits_attaches_wasm_file_handler(mod):
+    from pytket.circuit import Circuit
+
+    qpu = mod.QPU()
+
+    qpu.process_circuits([Circuit(1)], n_shots=10, wasm_file_handler=FakeWasmFileHandler())
+
+    # The circuits, then the WASM module as a second provider model.
+    _, wasm_upload = qpu.client.uploads
+    assert json.loads(wasm_upload[1]) == {"wasm_module": "AGFzbQEAAAA="}
+    ((query, variables),) = _create_provider_job_calls(qpu.client)
+    assert variables["providerModelId"] == "model-1"
+    assert variables["wasmModuleId"] == "model-2"
+    assert "$wasmModuleId: ID" in query
+
+
+def test_qpu_process_circuits_without_wasm_sends_the_plain_job_document(mod):
+    from pytket.circuit import Circuit
+
+    qpu = mod.QPU()
+
+    qpu.process_circuits([Circuit(1)], n_shots=10)
+
+    assert len(qpu.client.uploads) == 1
+    ((query, variables),) = _create_provider_job_calls(qpu.client)
+    assert "wasmModuleId" not in query
+    assert "wasmModuleId" not in variables
 
 
 def test_qpu_process_circuits_requires_shots(mod):

@@ -129,15 +129,9 @@ class QPU(BackendV2):
         self._graphql.ensure_authenticated()
 
         model_payload = self._build_model_payload(circuits)
-        upload_info = self._graphql.start_provider_model_upload(as_entity=self._as_entity)
-        etag = self._graphql.upload_payload(upload_info["uploadUrl"], model_payload)
-
-        model = self._graphql.create_provider_model(
-            provider_model_upload_id=upload_info["providerModelUploadId"],
-            etag=etag,
-        )
+        model_id = jobs.upload_model(self._graphql, model_payload, as_entity=self._as_entity)
         job = self._graphql.create_provider_job(
-            provider_model_id=model["id"],
+            provider_model_id=model_id,
             shots=shots,
             provider_platform=self._platform,
             as_entity=self._as_entity,
