@@ -122,6 +122,7 @@ class FakeClient:
         self.authenticated = False
         self.calls: list[tuple[str, dict[str, object]]] = []
         self.uploads: list[tuple[str, bytes, str | None]] = []
+        self.created_models = 0
         self.job_status: str | None = "COMPLETED"
         self.job_error: str | None = None
         self.result_pages: list[list[dict[str, object]]] = [
@@ -162,7 +163,8 @@ class FakeClient:
                 }
             }
         if "createProviderModel" in query:
-            return {"createProviderModel": {"id": "model-1"}}
+            self.created_models += 1
+            return {"createProviderModel": {"id": f"model-{self.created_models}"}}
         if "createProviderJob" in query:
             return {
                 "createProviderJob": {
@@ -563,6 +565,94 @@ def test_run_negotiates_past_formats_the_program_cannot_reach(qpu_mod, wire):
 
     (program,) = _uploaded_programs(qpu)
     assert program["serialization_format"] == wire.PROGRAM_QASM_V2
+
+
+# The smallest valid module: the `\0asm` header and version 1.
+WASM_BYTECODE = b"\0asm\x01\0\0\0"
+WASM_BASE64 = "AGFzbQEAAAA="
+
+
+def _create_provider_job_calls(qpu) -> list[tuple[str, dict[str, object]]]:
+    return [
+        (query, variables) for query, variables in qpu.client.calls if "createProviderJob" in query
+    ]
+
+
+@pytest.mark.parametrize("as_path", [False, True])
+def test_run_attaches_a_wasm_module(qpu_mod, tmp_path, as_path):
+    wasm = WASM_BYTECODE
+    if as_path:
+        wasm = tmp_path / "decoder.wasm"
+        wasm.write_bytes(WASM_BYTECODE)
+    qpu = qpu_mod.QPU(platform="nexus:Selene", as_entity="my-team")
+
+    qpu.run(FakeGuppyFunction(), shots=10, wasm=wasm)
+
+    _, wasm_upload = qpu.client.uploads
+    assert json.loads(wasm_upload[1]) == {"wasm_module": WASM_BASE64}
+    upload_calls = [
+        variables for query, variables in qpu.client.calls if "uploadProviderModelPayload" in query
+    ]
+    # Both uploads belong to the entity the job is submitted as.
+    assert upload_calls == [{"asEntity": "my-team"}, {"asEntity": "my-team"}]
+    ((query, variables),) = _create_provider_job_calls(qpu)
+    assert variables["providerModelId"] == "model-1"
+    assert variables["wasmModuleId"] == "model-2"
+    assert "wasmModuleId: $wasmModuleId" in query
+
+
+def test_run_without_wasm_sends_the_plain_job_document(qpu_mod):
+    qpu = qpu_mod.QPU(platform="nexus:Selene")
+
+    qpu.run(FakeGuppyFunction(), shots=10)
+
+    ((query, variables),) = _create_provider_job_calls(qpu)
+    assert "wasmModuleId" not in query
+    assert set(variables) == {"providerModelId", "shots", "providerPlatform", "asEntity"}
+
+
+@pytest.mark.parametrize(
+    ("wasm", "error", "match"),
+    [
+        (b"not wasm", ValueError, r"\\0asm"),
+        (12, TypeError, "WasmFileHandler"),
+    ],
+)
+def test_run_rejects_an_unusable_wasm_module_before_uploading(qpu_mod, wasm, error, match):
+    qpu = qpu_mod.QPU(platform="nexus:Selene")
+
+    with pytest.raises(error, match=match):
+        qpu.run(FakeGuppyFunction(), shots=10, wasm=wasm)
+    assert qpu.client.uploads == []
+    assert _create_provider_job_calls(qpu) == []
+
+
+def test_build_wasm_module_payload_accepts_handlers(wire):
+    class Handler:
+        bytecode_base64 = WASM_BASE64.encode("ascii")
+
+    class TextHandler:
+        bytecode_base64 = WASM_BASE64
+
+    for handler in (Handler(), TextHandler()):
+        assert json.loads(wire.build_wasm_module_payload(handler)) == {
+            "wasm_module": WASM_BASE64
+        }
+
+
+def test_build_wasm_module_payload_checks_handlers(wire):
+    # pytket's handlers built with `check=False`/`check_file=False` hold
+    # whatever they were given.
+    class NotWasmHandler:
+        bytecode_base64 = base64.b64encode(b"not wasm")
+
+    class InvalidBase64Handler:
+        bytecode_base64 = "not base64!"
+
+    with pytest.raises(ValueError, match=r"\\0asm"):
+        wire.build_wasm_module_payload(NotWasmHandler())
+    with pytest.raises(ValueError, match="invalid base64"):
+        wire.build_wasm_module_payload(InvalidBase64Handler())
 
 
 def test_input_formats_is_empty_without_a_selected_platform(qpu_mod):

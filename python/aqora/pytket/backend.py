@@ -137,6 +137,12 @@ class QPU(Backend):
         valid_check: bool = True,
         **kwargs: Any,
     ) -> list[ResultHandle]:
+        """Submit `circuits` as one provider job.
+
+        Like pytket-quantinuum's backend, `wasm_file_handler` takes a pytket
+        `WasmFileHandler` (or `WasmModuleHandler`) for circuits that call into
+        a WASM module; only Nexus platforms accept one.
+        """
         circuits = list(circuits)
         if not circuits:
             raise ValueError("At least one circuit is required")
@@ -153,6 +159,7 @@ class QPU(Backend):
             shots=shots,
             platform=self._platform,
             as_entity=self._as_entity,
+            wasm=kwargs.get("wasm_file_handler"),
         )
         return [ResultHandle(job.job_id, index) for index in range(len(circuits))]
 

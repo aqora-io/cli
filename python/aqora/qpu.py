@@ -87,7 +87,7 @@ class QPU:
             self._input_formats = self._load_input_formats()
         return self._input_formats
 
-    def run(self, programs: Any, *, shots: int) -> "QPUJob":
+    def run(self, programs: Any, *, shots: int, wasm: Any = None) -> "QPUJob":
         """Submit one or more programs as a provider job.
 
         `shots` is required: every program in the job runs that many times.
@@ -99,6 +99,10 @@ class QPU:
 
         Every program in a job shares one serialization format: the first the
         platform accepts that all of them can produce.
+
+        `wasm` attaches a WASM module the programs call into: a pytket
+        `WasmFileHandler`/`WasmModuleHandler`, the module's bytecode, or a path
+        to a `.wasm` file. Only Nexus platforms accept one.
         """
         shots = jobs.normalize_shots(shots)
         sources = [formats.detect(program) for program in _as_programs(programs)]
@@ -109,6 +113,7 @@ class QPU:
             shots=shots,
             platform=self._platform,
             as_entity=self._as_entity,
+            wasm=wasm,
         )
         return QPUJob(
             self,

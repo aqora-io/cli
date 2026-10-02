@@ -96,6 +96,22 @@ def _errored_result(index: int, error: str) -> ProviderResult:
     return ProviderResult(index=index, serialization_format=-1, raw="", error=error)
 
 
+def upload_model(
+    graphql: AqoraGraphQLClient,
+    payload: str,
+    *,
+    as_entity: str | None = None,
+) -> str:
+    """Upload `payload` as a provider model owned by `as_entity` and return its id."""
+    upload_info = graphql.start_provider_model_upload(as_entity=as_entity)
+    etag = graphql.upload_payload(upload_info["uploadUrl"], payload)
+    model = graphql.create_provider_model(
+        provider_model_upload_id=upload_info["providerModelUploadId"],
+        etag=etag,
+    )
+    return str(model["id"])
+
+
 def submit_model(
     graphql: AqoraGraphQLClient,
     payload: str,
@@ -103,24 +119,33 @@ def submit_model(
     shots: int | None = None,
     platform: str | None = None,
     as_entity: str | None = None,
+    wasm: Any = None,
 ) -> "ProviderJob":
     """Upload `payload` and submit it as a job.
 
     `as_entity` attributes both the upload and the job to that entity (an
     organization the user belongs to); the backend rejects a job whose model
-    is owned by a different entity."""
+    is owned by a different entity.
+
+    `wasm` is a WASM module the programs call into (see
+    `wire.build_wasm_module_payload`). It is uploaded as a second provider
+    model, owned by the same entity, and attached to the job. Only Nexus
+    platforms accept one."""
+    # Built first, so an unusable module fails before anything is uploaded.
+    wasm_payload = None if wasm is None else wire.build_wasm_module_payload(wasm)
     graphql.ensure_authenticated()
-    upload_info = graphql.start_provider_model_upload(as_entity=as_entity)
-    etag = graphql.upload_payload(upload_info["uploadUrl"], payload)
-    model = graphql.create_provider_model(
-        provider_model_upload_id=upload_info["providerModelUploadId"],
-        etag=etag,
+    model_id = upload_model(graphql, payload, as_entity=as_entity)
+    wasm_module_id = (
+        None
+        if wasm_payload is None
+        else upload_model(graphql, wasm_payload, as_entity=as_entity)
     )
     job = graphql.create_provider_job(
-        provider_model_id=model["id"],
+        provider_model_id=model_id,
         shots=shots,
         provider_platform=platform,
         as_entity=as_entity,
+        wasm_module_id=wasm_module_id,
     )
     return ProviderJob(graphql, str(job["id"]), payload=job)
 
