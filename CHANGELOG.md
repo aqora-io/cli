@@ -2,6 +2,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.34.0 - 2026-10-02
+#### Features
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**template**) declare notebook dependencies in PEP 723 headers - (bf8a586) - Julian Popescu
+#### Bug Fixes
+- (**new**) quote the notebook path in dataset-marimo's run hint - (e27df77) - Julian Popescu
+- (**pair**) stop promising agents a preinstalled aqora - (e1134cf) - Julian Popescu
+- (**template**) accept only ASCII digits in a Python version - (111511a) - Julian Popescu
+- (**template**) say kernels run under uv or pixi, and stamp marimo 0.25.0 - (c1dc3e5) - Julian Popescu
+
+- - -
+
 ## v0.33.0 - 2026-09-23
 #### Features
 - add aqora context and docs to aqora pair - (2e0eff6) - Julian Popescu
