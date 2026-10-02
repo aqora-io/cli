@@ -2,6 +2,15 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.35.0 - 2026-10-02
+#### Features
+- (**qpu**) pass emulator options to Nexus jobs - (3652839) - Julian Popescu
+- (**qpu**) attach WASM modules to Nexus jobs - (8630946) - Julian Popescu
+#### Miscellaneous Chores
+- update rust to 1.99 - (afe7291) - Julian Popescu
+
+- - -
+
 ## v0.34.0 - 2026-10-02
 #### Features
 - <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**template**) declare notebook dependencies in PEP 723 headers - (bf8a586) - Julian Popescu
