@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from typing import Any, Mapping
 
@@ -120,6 +121,7 @@ def submit_model(
     platform: str | None = None,
     as_entity: str | None = None,
     wasm: Any = None,
+    options: Mapping[str, Any] | None = None,
 ) -> "ProviderJob":
     """Upload `payload` and submit it as a job.
 
@@ -130,8 +132,23 @@ def submit_model(
     `wasm` is a WASM module the programs call into (see
     `wire.build_wasm_module_payload`). It is uploaded as a second provider
     model, owned by the same entity, and attached to the job. Only Nexus
-    platforms accept one."""
-    # Built first, so an unusable module fails before anything is uploaded.
+    platforms accept one.
+
+    `options` are backend options for the job, e.g. emulator settings. The
+    platform decides which it accepts and rejects the job otherwise."""
+    # Checked first, so a bad argument fails before anything is uploaded.
+    if options is not None:
+        if not isinstance(options, Mapping):
+            raise TypeError(
+                "`options` must be a mapping of option names to values, got "
+                f"{type(options).__name__}"
+            )
+        # The round trip also snapshots nested values, so the job sends the
+        # options as they were when it was submitted.
+        try:
+            options = json.loads(json.dumps(dict(options), allow_nan=False))
+        except (TypeError, ValueError) as err:
+            raise type(err)(f"`options` must be JSON-serializable: {err}") from err
     wasm_payload = None if wasm is None else wire.build_wasm_module_payload(wasm)
     graphql.ensure_authenticated()
     model_id = upload_model(graphql, payload, as_entity=as_entity)
@@ -146,6 +163,7 @@ def submit_model(
         provider_platform=platform,
         as_entity=as_entity,
         wasm_module_id=wasm_module_id,
+        options=options,
     )
     return ProviderJob(graphql, str(job["id"]), payload=job)
 

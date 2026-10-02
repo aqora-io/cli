@@ -655,6 +655,45 @@ def test_build_wasm_module_payload_checks_handlers(wire):
         wire.build_wasm_module_payload(InvalidBase64Handler())
 
 
+def test_run_sends_options(qpu_mod):
+    qpu = qpu_mod.QPU(platform="nexus:Selene")
+    options = {"noisy_simulation": False, "error_params": {"p1": 0.0}}
+
+    qpu.run(FakeGuppyFunction(), shots=10, options=options)
+
+    ((query, variables),) = _create_provider_job_calls(qpu)
+    assert variables["options"] == options
+    assert "$options: JSON" in query
+    assert "options: $options" in query
+
+
+def test_run_with_empty_options_sends_the_plain_job_document(qpu_mod):
+    qpu = qpu_mod.QPU(platform="nexus:Selene")
+
+    qpu.run(FakeGuppyFunction(), shots=10, options={})
+
+    ((query, variables),) = _create_provider_job_calls(qpu)
+    assert "options" not in query
+    assert "options" not in variables
+
+
+@pytest.mark.parametrize(
+    ("options", "error", "match"),
+    [
+        ([("no_opt", True)], TypeError, "mapping of option names"),
+        ({"error_params": {"p1": object()}}, TypeError, "JSON-serializable"),
+        ({"error_params": {"p1": float("nan")}}, ValueError, "JSON-serializable"),
+    ],
+)
+def test_run_rejects_unusable_options_before_uploading(qpu_mod, options, error, match):
+    qpu = qpu_mod.QPU(platform="nexus:Selene")
+
+    with pytest.raises(error, match=match):
+        qpu.run(FakeGuppyFunction(), shots=10, options=options)
+    assert qpu.client.uploads == []
+    assert _create_provider_job_calls(qpu) == []
+
+
 def test_input_formats_is_empty_without_a_selected_platform(qpu_mod):
     assert qpu_mod.QPU().input_formats == []
 
