@@ -66,7 +66,9 @@ impl Agent {
         }
         command.args(extra_args);
         match self {
-            Agent::Claude | Agent::Codex => command.arg(prompt),
+            // `--add-dir` takes any number of directories, prompt included.
+            Agent::Claude => command.arg("--").arg(prompt),
+            Agent::Codex => command.arg(prompt),
             Agent::Opencode => command.args(["--prompt", prompt]),
         };
         command
@@ -235,11 +237,13 @@ mod tests {
 
     /// The token and docs live outside the working directory, and Claude
     /// prompts before reading files there unless the directory is added.
+    /// `--add-dir` takes any number of directories, so without the `--` it
+    /// would take the prompt as one too.
     #[test]
     fn claude_is_allowed_to_read_the_context_dir() {
         assert_eq!(
             argv(Agent::Claude, &[]),
-            ["claude", "--add-dir", "/tmp/ctx", "pair with me"]
+            ["claude", "--add-dir", "/tmp/ctx", "--", "pair with me"]
         );
     }
 
@@ -261,6 +265,7 @@ mod tests {
                 "/tmp/ctx",
                 "--model",
                 "opus",
+                "--",
                 "pair with me"
             ]
         );
