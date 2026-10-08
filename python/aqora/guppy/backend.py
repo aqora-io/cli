@@ -100,15 +100,16 @@ class QPU:
     def run(self, program: Any, **options: Any) -> QPUJob:
         """Submit a guppy program as a provider job.
 
-        Only `shots` is forwarded to the provider API; any other option set to
-        a non-None value is rejected.
+        `shots` is required. `options=` takes backend options for the job,
+        e.g. `{"n_qubits": 8}` on Nexus Selene (see `aqora.QPU.run`). Any other
+        keyword set to a non-None value is rejected.
         """
         shots = jobs.normalize_shots(options.get("shots"))
         unsupported = self._unsupported_run_options(options)
         if unsupported:
             raise NotImplementedError(
-                "The aqora provider GraphQL API only supports `shots` as a per-run "
-                f"parameter (unsupported options: {', '.join(sorted(unsupported))})"
+                "The aqora provider GraphQL API only supports `shots` and `options` "
+                f"as per-run parameters (unsupported options: {', '.join(sorted(unsupported))})"
             )
 
         payload = wire.build_model_payload(
@@ -121,6 +122,7 @@ class QPU:
             shots=shots,
             platform=self._platform,
             as_entity=self._as_entity,
+            options=options.get("options"),
         )
         return QPUJob(self, job.job_id, payload=job._payload)
 
@@ -129,7 +131,7 @@ class QPU:
         # like seed=0 are rejected rather than silently dropped.
         unsupported = []
         for key, value in overrides.items():
-            if key == "shots":
+            if key in ("shots", "options"):
                 continue
             if value is not None:
                 unsupported.append(key)

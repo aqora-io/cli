@@ -2573,8 +2573,11 @@ type Mutation {
 	H-series devices and emulators accept a subset of their
 	`QuantinuumConfig` (`noisy_simulation`, `simulator`, `error_params`,
 	`compiler_options`, `no_opt`, `allow_2q_gate_rebase`,
-	`target_2qb_gate`, `leakage_detection`, `simplify_initial`); other
-	platforms accept none. A null option is the same as leaving it out.
+	`target_2qb_gate`, `leakage_detection`, `simplify_initial`). Nexus
+	Selene accepts `n_qubits` (the qubits to simulate, by default the
+	device's width) and the `SeleneConfig` objects `simulator` and
+	`error_model`; Selene Plus also accepts `runtime`. Other platforms
+	accept none. A null option is the same as leaving it out.
 	The job is rejected before anything is submitted when an option isn't
 	accepted.
 	"""
