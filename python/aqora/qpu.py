@@ -114,8 +114,12 @@ class QPU:
         `options` are backend options for the job. Nexus H-series devices and
         emulators accept `noisy_simulation`, `simulator`, `error_params`,
         `compiler_options`, `no_opt`, `allow_2q_gate_rebase`,
-        `target_2qb_gate`, `leakage_detection` and `simplify_initial`; other
-        platforms accept none, and the server rejects the job before it runs.
+        `target_2qb_gate`, `leakage_detection` and `simplify_initial`. Nexus
+        Selene accepts `n_qubits` (the qubits to simulate, by default the
+        device's width), `simulator` and `error_model`, and Selene Plus also
+        `runtime`, e.g. `{"n_qubits": 8, "runtime": {"type": "HeliosRuntime"}}`.
+        Other platforms accept none, and the server rejects the job before it
+        runs.
         """
         shots = jobs.normalize_shots(shots)
         sources = [formats.detect(program) for program in _as_programs(programs)]

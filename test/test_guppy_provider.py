@@ -482,6 +482,39 @@ def test_qpu_run_rejects_non_program_input(mod):
         qpu.run(12345, shots=100)
 
 
+def test_qpu_run_sends_options(mod):
+    qpu = mod.QPU(platform="nexus:Selene")
+    options = {"n_qubits": 8, "error_model": {"type": "DepolarizingErrorModel"}}
+
+    qpu.run(FakeGuppyFunction(), shots=100, options=options)
+
+    ((query, variables),) = [
+        (query, variables) for query, variables in qpu.client.calls if "createProviderJob" in query
+    ]
+    assert variables["options"] == options
+    assert "options: $options" in query
+
+
+def test_qpu_run_without_options_sends_no_options(mod):
+    qpu = mod.QPU(platform="nexus:Selene")
+
+    qpu.run(FakeGuppyFunction(), shots=100, options=None)
+
+    ((query, variables),) = [
+        (query, variables) for query, variables in qpu.client.calls if "createProviderJob" in query
+    ]
+    assert "options" not in variables
+    assert "$options" not in query
+
+
+def test_qpu_run_rejects_non_mapping_options(mod):
+    qpu = mod.QPU()
+
+    with pytest.raises(TypeError, match="mapping"):
+        qpu.run(FakeGuppyFunction(), shots=100, options=[("n_qubits", 8)])
+    assert qpu.client.calls == []
+
+
 def test_qpu_run_rejects_unsupported_options(mod):
     qpu = mod.QPU()
 
