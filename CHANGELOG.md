@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.36.0 - 2026-10-08
+#### Features
+- (**qpu**) forward Selene emulator options from the guppy backend - (7f462a2) - Julian Popescu
+
+- - -
+
 ## v0.35.1 - 2026-10-05
 #### Bug Fixes
 - claude --add-dir variable arguments - (c3e1130) - Julian Popescu
