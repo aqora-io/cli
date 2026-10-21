@@ -1,14 +1,21 @@
 from __future__ import annotations
 
+import base64
 import importlib.util
 import json
 import sys
 import time
 import types
-from enum import Enum
+import zlib
+from enum import Enum, IntEnum
 from pathlib import Path
 
 import pytest
+
+# The real native extension (built by `uv sync` / maturin): the provider wire
+# format is implemented in Rust, so it is kept registered while the rest of
+# the `aqora` package is faked.
+import aqora._aqora as _AQORA_NATIVE
 
 
 MODULE_PATH = (
@@ -26,7 +33,9 @@ def load_qiskit_module(fake_client_cls: type):
     aqora = types.ModuleType("aqora")
     aqora.__path__ = [str(MODULE_PATH.parents[1])]
     aqora.Client = fake_client_cls
+    aqora._aqora = _AQORA_NATIVE
     sys.modules["aqora"] = aqora
+    sys.modules["aqora._aqora"] = _AQORA_NATIVE
 
     qiskit = types.ModuleType("qiskit")
 
@@ -220,22 +229,53 @@ def load_qiskit_module(fake_client_cls: type):
                 }
             )
 
+    class QuantumProgramResultSerializationFormat(IntEnum):
+        UNKNOWN_SERIALIZATION_FORMAT = 0
+        CIRQ_RESULT_JSON_V1 = 1
+        QISKIT_RESULT_JSON_V1 = 2
+        CUDAQ_SAMPLE_RESULT_JSON_V1 = 3
+        MIMIQ_QCSR_JSON_V1 = 4
+
+    class QuantumProgramResultCompressionFormat(IntEnum):
+        UNKNOWN_COMPRESSION_FORMAT = 0
+        NONE = 1
+        ZLIB_BASE64_V1 = 2
+
     class QuantumProgramResult:
-        def __init__(self, payload: dict[str, object]) -> None:
-            self.payload = payload
+        # Every conversion handed to upstream, for tests to inspect.
+        converted: list["QuantumProgramResult"] = []
+
+        def __init__(self, compression_format, serialization_format, serialization) -> None:
+            self.compression_format = compression_format
+            self.serialization_format = serialization_format
+            self.serialization = serialization
 
         @classmethod
         def from_json_str(cls, payload: str) -> "QuantumProgramResult":
-            return cls(json.loads(payload))
+            data = json.loads(payload)
+            serialization = data["serialization"]
+            if data["compression_format"] == 2:
+                serialization = zlib.decompress(base64.b64decode(serialization)).decode()
+            return cls(
+                compression_format=QuantumProgramResultCompressionFormat.NONE,
+                # Raises ValueError for an unknown format, like the real IntEnum.
+                serialization_format=QuantumProgramResultSerializationFormat(
+                    data["serialization_format"]
+                ),
+                serialization=serialization,
+            )
 
         def to_qiskit_result(self):
-            return Result.from_dict(self.payload)
+            type(self).converted.append(self)
+            return Result.from_dict(json.loads(self.serialization))
 
     qio_core.BackendData = BackendData
     qio_core.ClientData = ClientData
     qio_core.QuantumComputationModel = QuantumComputationModel
     qio_core.QuantumProgram = QuantumProgram
     qio_core.QuantumProgramResult = QuantumProgramResult
+    qio_core.QuantumProgramResultCompressionFormat = QuantumProgramResultCompressionFormat
+    qio_core.QuantumProgramResultSerializationFormat = QuantumProgramResultSerializationFormat
     sys.modules["qio"] = qio
     sys.modules["qio.core"] = qio_core
 
@@ -249,6 +289,27 @@ def load_qiskit_module(fake_client_cls: type):
     assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
+
+
+def qio_result(
+    result: object,
+    *,
+    serialization_format: int = 2,
+    compress: bool = False,
+) -> str:
+    """A qio result envelope, as the platform stores it; format 2 is qiskit."""
+    serialization = result if isinstance(result, str) else json.dumps(result)
+    compression_format = 1
+    if compress:
+        serialization = base64.b64encode(zlib.compress(serialization.encode())).decode()
+        compression_format = 2
+    return json.dumps(
+        {
+            "compression_format": compression_format,
+            "serialization_format": serialization_format,
+            "serialization": serialization,
+        }
+    )
 
 
 class FakeClient:
@@ -275,14 +336,14 @@ class FakeClient:
             ]
         ]
         self.payloads: dict[str, str] = {
-            "https://example.invalid/result-0": json.dumps(
+            "https://example.invalid/result-0": qio_result(
                 {
                     "results": [{"header": {"name": "circuit-0"}}],
                     "success": True,
                     "job_id": "provider-result-0",
                 }
             ),
-            "https://example.invalid/result-1": json.dumps(
+            "https://example.invalid/result-1": qio_result(
                 {
                     "results": [{"header": {"name": "circuit-1"}}],
                     "success": True,
@@ -705,6 +766,120 @@ def test_result_item_with_error_raises(mod):
 
     item = mod.ProviderJobResultItem(index=0, error="boom", result_url=None)
     with pytest.raises(mod.job.JobError, match="boom"):
+        item.to_qiskit_result(qpu._graphql)
+
+
+def _result_item(mod, qpu, payload: str):
+    qpu.client.payloads["https://example.invalid/result-x"] = payload
+    return mod.ProviderJobResultItem(
+        index=3, error=None, result_url="https://example.invalid/result-x"
+    )
+
+
+def test_result_item_decompresses_qiskit_result(mod):
+    qpu = mod.QPU()
+    item = _result_item(
+        mod, qpu, qio_result({"results": [], "job_id": "zipped"}, compress=True)
+    )
+
+    assert item.to_qiskit_result(qpu._graphql).to_dict()["job_id"] == "zipped"
+
+
+def test_result_item_hands_upstream_formats_to_qio(mod):
+    qpu = mod.QPU()
+    qio_core = sys.modules["qio.core"]
+    qio_core.QuantumProgramResult.converted.clear()
+    item = _result_item(
+        mod,
+        qpu,
+        qio_result({"results": [], "job_id": "cirq"}, serialization_format=1, compress=True),
+    )
+
+    assert item.to_qiskit_result(qpu._graphql).to_dict()["job_id"] == "cirq"
+    (converted,) = qio_core.QuantumProgramResult.converted
+    assert converted.serialization_format == (
+        qio_core.QuantumProgramResultSerializationFormat.CIRQ_RESULT_JSON_V1
+    )
+    assert converted.compression_format == qio_core.QuantumProgramResultCompressionFormat.NONE
+    assert json.loads(converted.serialization) == {"results": [], "job_id": "cirq"}
+
+
+def test_result_item_upstream_format_unknown_to_qio_raises(mod):
+    qpu = mod.QPU()
+    item = _result_item(mod, qpu, qio_result({}, serialization_format=7))
+
+    with pytest.raises(mod.job.JobError, match="result 3.*format 7.*does not know"):
+        item.to_qiskit_result(qpu._graphql)
+
+
+def test_result_item_hands_qiskit_results_to_qio(mod):
+    # `qio` rewrites qiskit's hex counts, so qiskit results must keep going
+    # through it rather than straight to `Result.from_dict`.
+    qpu = mod.QPU()
+    qio_core = sys.modules["qio.core"]
+    qio_core.QuantumProgramResult.converted.clear()
+    item = _result_item(mod, qpu, qio_result({"results": [], "job_id": "aer"}))
+
+    item.to_qiskit_result(qpu._graphql)
+
+    (converted,) = qio_core.QuantumProgramResult.converted
+    assert converted.serialization_format == (
+        qio_core.QuantumProgramResultSerializationFormat.QISKIT_RESULT_JSON_V1
+    )
+
+
+def test_provider_result_hands_cirq_results_to_qio(mod):
+    results = sys.modules["aqora._provider.results"]
+    qio_core = sys.modules["qio.core"]
+    qio_core.QuantumProgramResult.converted.clear()
+    result = results.ProviderResult(
+        index=0, serialization_format=1, raw=json.dumps({"job_id": "cirq"})
+    )
+
+    assert result.to_qiskit_result().to_dict()["job_id"] == "cirq"
+    (converted,) = qio_core.QuantumProgramResult.converted
+    assert converted.compression_format == qio_core.QuantumProgramResultCompressionFormat.NONE
+
+
+def test_result_item_aqora_format_without_converter_raises(mod):
+    qpu = mod.QPU()
+    item = _result_item(mod, qpu, qio_result({}, serialization_format=1000))
+
+    with pytest.raises(
+        mod.job.JobError, match="PYTKET_BACKEND_RESULT_JSON_V1.*counts"
+    ):
+        item.to_qiskit_result(qpu._graphql)
+
+
+def test_result_item_unknown_format_raises(mod):
+    qpu = mod.QPU()
+    item = _result_item(mod, qpu, qio_result({}, serialization_format=1999))
+
+    with pytest.raises(mod.job.JobError, match="unknown serialization format 1999"):
+        item.to_qiskit_result(qpu._graphql)
+
+
+def test_result_item_uses_registered_converter(mod, monkeypatch: pytest.MonkeyPatch):
+    results = sys.modules["aqora._provider.results"]
+    seen = []
+
+    def convert(raw: str):
+        seen.append(raw)
+        return sys.modules["qiskit.result"].Result.from_dict({"job_id": "custom"})
+
+    monkeypatch.setitem(results._QISKIT_RESULT_CONVERTERS, 1999, convert)
+    qpu = mod.QPU()
+    item = _result_item(mod, qpu, qio_result("raw-text", serialization_format=1999, compress=True))
+
+    assert item.to_qiskit_result(qpu._graphql).to_dict()["job_id"] == "custom"
+    assert seen == ["raw-text"]
+
+
+def test_result_item_invalid_payload_raises_job_error(mod):
+    qpu = mod.QPU()
+    item = _result_item(mod, qpu, "not json")
+
+    with pytest.raises(mod.job.JobError, match="result 3"):
         item.to_qiskit_result(qpu._graphql)
 
 

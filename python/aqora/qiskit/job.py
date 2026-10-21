@@ -3,7 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
-from ._deps import JobError, JobStatus, JobV1, QuantumProgramResult, Result
+from aqora._provider import wire
+from aqora._provider.results import ProviderResult
+
+from ._deps import JobError, JobStatus, JobV1, Result
 
 if TYPE_CHECKING:
     from . import client as client_ops
@@ -39,7 +42,16 @@ class ProviderJobResultItem:
         if not self.result_url:
             raise JobError(f"Provider job result {self.index} is missing a result URL")
         payload = graphql.download_text(self.result_url)
-        return QuantumProgramResult.from_json_str(payload).to_qiskit_result()
+        # Read with qio-rs, which keeps formats it does not know as integers;
+        # `ProviderResult` then hands the upstream spec's formats to `qio`.
+        try:
+            serialization_format, raw = wire.parse_result_payload(payload)
+            result = ProviderResult(
+                index=self.index, serialization_format=serialization_format, raw=raw
+            )
+            return result.to_qiskit_result()
+        except (ValueError, ImportError) as exc:
+            raise JobError(f"Provider job result {self.index}: {exc}") from exc
 
 
 def _merge_qiskit_results(results: Sequence[Result], *, job_id: str | None = None) -> Result:

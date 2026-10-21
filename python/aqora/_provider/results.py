@@ -29,6 +29,27 @@ _BACKEND_RESULT_KEYS = {
 }
 
 
+# In `qio-rs`, discriminants 1000 and above are considered Aqora's.
+AQORA_FORMAT_RANGE_START = 1000
+
+_RESULT_FORMAT_NAMES: dict[int, str] = {
+    getattr(wire, name): name[len("RESULT_") :]
+    for name in dir(wire)
+    if name.startswith("RESULT_")
+}
+
+# Table keyed by Aqora's serialization format to hold functions used to convert
+# from raw result string to qiskit's "Result".
+_QISKIT_RESULT_CONVERTERS: dict[int, Callable[[str], "Result"]] = {}
+
+
+def result_format_name(serialization_format: int) -> str:
+    name = _RESULT_FORMAT_NAMES.get(serialization_format)
+    if name is None:
+        return f"in unknown serialization format {serialization_format}"
+    return f"a {name} result"
+
+
 @dataclass(frozen=True)
 class QirLabeledResult:
     """Quantinuum labeled QIR output (tab-separated line protocol).
@@ -165,15 +186,54 @@ class ProviderResult:
         return parse_qir_labeled(self.raw)
 
     def to_qiskit_result(self) -> "Result":
-        self._require_format(wire.RESULT_QISKIT_RESULT_JSON_V1, "a qiskit result")
+        """Convert the result into a qiskit `Result`, whatever its format.
+
+        Formats of the upstream qio spec (Qiskit, Cirq, CUDA-Q, MIMIQ) are
+        converted by the `qio` package, so a qiskit result reads the same here
+        as through `aqora.qiskit` (`qio` rewrites hex counts as bitstrings).
+
+        Other formats (such as Braket's) go through our own converters, in
+        `_QISKIT_RESULT_CONVERTERS`.
+
+        Unknown formats, those without a converter, simply raise a `ValueError`.
+        """
+        if 0 < self.serialization_format < AQORA_FORMAT_RANGE_START:
+            return self._upstream_qiskit_result()
+        convert = _QISKIT_RESULT_CONVERTERS.get(self.serialization_format)
+        if convert is None:
+            raise ValueError(
+                f"Result {self.index} is {result_format_name(self.serialization_format)}, "
+                "which cannot be converted to a qiskit Result; use `counts()` instead"
+            )
+        return convert(self.raw)
+
+    def _upstream_qiskit_result(self) -> "Result":
         try:
-            from qiskit.result import Result
+            from qio.core import (
+                QuantumProgramResult,
+                QuantumProgramResultCompressionFormat,
+                QuantumProgramResultSerializationFormat,
+            )
         except ImportError as exc:
             raise ImportError(
-                "Parsing qiskit results requires the `qiskit` package. "
+                "Converting this result to a qiskit Result requires the `qio` package. "
                 "Install `aqora[qiskit]` to use this method."
             ) from exc
-        return Result.from_dict(json.loads(self.raw))
+        try:
+            serialization_format = QuantumProgramResultSerializationFormat(
+                self.serialization_format
+            )
+        except ValueError:
+            raise ValueError(
+                f"Result {self.index} is "
+                f"{result_format_name(self.serialization_format)}, which the "
+                "installed `qio` does not know; upgrade it to convert this result"
+            ) from None
+        return QuantumProgramResult(
+            compression_format=QuantumProgramResultCompressionFormat.NONE,
+            serialization_format=serialization_format,
+            serialization=self.raw,
+        ).to_qiskit_result()
 
     def to_cirq_result(self) -> Any:
         self._require_format(wire.RESULT_CIRQ_RESULT_JSON_V1, "a cirq result")

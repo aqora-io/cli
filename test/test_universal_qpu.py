@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import enum
 import importlib.util
 import json
 import sys
@@ -17,7 +18,7 @@ import aqora._aqora as _AQORA_NATIVE
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1] / "python" / "aqora"
 
-_FAKE_MODULE_PREFIXES = ("aqora.", "qiskit", "pytket", "hugr", "cirq")
+_FAKE_MODULE_PREFIXES = ("aqora.", "qiskit", "qio", "pytket", "hugr", "cirq")
 
 HUGR_ENVELOPE = b"HUGR\x00fake-envelope"
 QIR_BITCODE = b"BC\xc0\xdefake-bitcode"
@@ -74,6 +75,33 @@ def _install_qiskit(*, qasm2=None, qasm3=None) -> None:
         module = types.ModuleType("qiskit.qasm3")
         module.dumps = qasm3
         sys.modules["qiskit.qasm3"] = module
+        _install_qio(qasm3)
+
+
+def _install_qio(qasm3) -> None:
+    """Register a fake `qio.core` whose QASM3 encoding calls `qasm3`."""
+
+    class QuantumProgramCompressionFormat(enum.IntEnum):
+        UNKNOWN_COMPRESSION_FORMAT = 0
+        NONE = 1
+        ZLIB_BASE64_V1 = 2
+
+    class QuantumProgram:
+        calls: list[tuple[object, object]] = []
+
+        def __init__(self, serialization: str) -> None:
+            self.serialization = serialization
+
+        @classmethod
+        def from_qiskit_circuit(cls, circuit, compression_format=None):
+            cls.calls.append((circuit, compression_format))
+            return cls(qasm3(circuit))
+
+    core = types.ModuleType("qio.core")
+    core.QuantumProgram = QuantumProgram
+    core.QuantumProgramCompressionFormat = QuantumProgramCompressionFormat
+    sys.modules["qio"] = types.ModuleType("qio")
+    sys.modules["qio.core"] = core
 
 
 def _install_pytket(*, qasm=True, qir=None) -> None:
@@ -353,6 +381,17 @@ def test_detect_qasm_source_after_block_comment(formats, wire):
     source = formats.detect(source_text)
     assert source.kind == "raw"
     assert source.native_format == wire.PROGRAM_QASM_V3
+
+
+def test_qiskit_qasm3_is_encoded_by_qio(formats):
+    _install_qiskit(qasm3=lambda circuit: "OPENQASM 3.0;")
+    circuit = object()
+
+    assert formats._qiskit_qasm3(circuit) == "OPENQASM 3.0;"
+    core = sys.modules["qio.core"]
+    assert core.QuantumProgram.calls == [
+        (circuit, core.QuantumProgramCompressionFormat.NONE)
+    ]
 
 
 def test_detect_base64_envelope(formats, wire):
@@ -894,44 +933,59 @@ def test_counts_from_qsys(results, wire):
     assert result.counts() == {"1 0": 2, "0 1": 1}
 
 
-def test_counts_from_qiskit(results, wire):
-    qiskit_result = types.ModuleType("qiskit.result")
+def _install_qio_results(counts):
+    """Register a fake `qio.core` whose qiskit conversion yields `counts`.
+
+    Returns the list every conversion is recorded in, as
+    `(serialization_format, compression_format, serialization)`.
+    """
+
+    class QuantumProgramResultSerializationFormat(enum.IntEnum):
+        UNKNOWN_SERIALIZATION_FORMAT = 0
+        CIRQ_RESULT_JSON_V1 = 1
+        QISKIT_RESULT_JSON_V1 = 2
+        CUDAQ_SAMPLE_RESULT_JSON_V1 = 3
+        MIMIQ_QCSR_JSON_V1 = 4
+
+    class QuantumProgramResultCompressionFormat(enum.IntEnum):
+        UNKNOWN_COMPRESSION_FORMAT = 0
+        NONE = 1
+        ZLIB_BASE64_V1 = 2
 
     class Result:
-        def __init__(self, payload) -> None:
-            self.payload = payload
-
-        @classmethod
-        def from_dict(cls, payload):
-            return cls(payload)
-
         def get_counts(self):
-            return {"00": 4, "11": 6}
+            return counts
 
-    qiskit_result.Result = Result
-    sys.modules["qiskit"] = types.ModuleType("qiskit")
-    sys.modules["qiskit"].__path__ = []
-    sys.modules["qiskit.result"] = qiskit_result
+    converted: list[tuple[object, object, str]] = []
+
+    class QuantumProgramResult:
+        def __init__(self, compression_format, serialization_format, serialization):
+            self.args = (serialization_format, compression_format, serialization)
+
+        def to_qiskit_result(self):
+            converted.append(self.args)
+            return Result()
+
+    core = types.ModuleType("qio.core")
+    core.QuantumProgramResult = QuantumProgramResult
+    core.QuantumProgramResultCompressionFormat = QuantumProgramResultCompressionFormat
+    core.QuantumProgramResultSerializationFormat = QuantumProgramResultSerializationFormat
+    sys.modules["qio"] = types.ModuleType("qio")
+    sys.modules["qio.core"] = core
+    return converted
+
+
+def test_counts_from_qiskit(results, wire):
+    converted = _install_qio_results({"00": 4, "11": 6})
 
     result = _result(results, wire.RESULT_QISKIT_RESULT_JSON_V1, json.dumps({}))
     assert result.counts() == {"00": 4, "11": 6}
+    # Converted by `qio`, uncompressed, like the other spec formats.
+    assert converted == [(wire.RESULT_QISKIT_RESULT_JSON_V1, 1, "{}")]
 
 
 def test_counts_from_qiskit_rejects_multi_experiment_payload(results, wire):
-    qiskit_result = types.ModuleType("qiskit.result")
-
-    class Result:
-        @classmethod
-        def from_dict(cls, _payload):
-            return cls()
-
-        def get_counts(self):
-            return [{"0": 1}, {"1": 1}]
-
-    qiskit_result.Result = Result
-    sys.modules["qiskit"] = types.ModuleType("qiskit")
-    sys.modules["qiskit"].__path__ = []
-    sys.modules["qiskit.result"] = qiskit_result
+    _install_qio_results([{"0": 1}, {"1": 1}])
 
     result = _result(results, wire.RESULT_QISKIT_RESULT_JSON_V1, json.dumps({}))
     with pytest.raises(ValueError, match="2 experiments"):

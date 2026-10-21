@@ -195,7 +195,10 @@ def _require(module: str, extra: str) -> Any:
 
 
 def _qiskit_qasm3(circuit: Any) -> str:
-    return _require("qiskit.qasm3", "qiskit").dumps(circuit)
+    core = _require("qio.core", "qiskit")
+    return core.QuantumProgram.from_qiskit_circuit(
+        circuit, compression_format=core.QuantumProgramCompressionFormat.NONE
+    ).serialization
 
 
 def _qiskit_qasm2(circuit: Any) -> str:
