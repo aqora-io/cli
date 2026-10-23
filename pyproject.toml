@@ -35,6 +35,7 @@ qiskit = ["qio>=0.2.2", "qiskit>=2.3.1"]
 pytket = ["pytket>=1.30"]
 guppy = ["guppylang>=0.21"]
 cirq = ["cirq-core>=1.4"]
+braket = ["amazon-braket-sdk>=1.80"]
 # Cross-framework hops for the universal `aqora.QPU`. Each one only widens the
 # set of formats a program can be encoded into; negotiation skips the hops whose
 # extra is not installed.

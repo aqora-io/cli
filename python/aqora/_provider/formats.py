@@ -82,7 +82,7 @@ class Source:
     """A program normalized into the shape its encoders expect.
 
     `kind` selects the encoder table. `program` is a framework circuit for
-    `qiskit`/`pytket`, HUGR envelope bytes for `hugr`, and an already-encoded
+    `qiskit`/`pytket`/`braket`, HUGR envelope bytes for `hugr`, and an already-encoded
     serialization string for `raw` (whose only reachable format is
     `native_format`).
     """
@@ -133,7 +133,8 @@ def _qasm_format(text: str) -> int | None:
 def detect(program: Any) -> Source:
     """Normalize any accepted program into a `Source`.
 
-    Accepts a qiskit `QuantumCircuit`, a pytket `Circuit`, a `@guppy`-decorated
+    Accepts a qiskit `QuantumCircuit`, a pytket `Circuit`, a Braket `Circuit`,
+    a `@guppy`-decorated
     function, a hugr `Package`, raw HUGR envelope or QIR bitcode bytes, QASM
     source text, or a base64 string of either binary encoding.
     """
@@ -141,6 +142,8 @@ def detect(program: Any) -> Source:
         return Source("qiskit", program, wire.PROGRAM_QASM_V3)
     if _is_instance_of(program, "pytket", "Circuit"):
         return Source("pytket", program, wire.PROGRAM_TKET_CIRCUIT_JSON_V1)
+    if _is_instance_of(program, "braket.circuits", "Circuit"):
+        return Source("braket", program, wire.PROGRAM_QASM_V3)
 
     # A `@guppy`-decorated function compiles to a hugr `Package`, which
     # serializes to a HUGR envelope; both collapse to the same envelope bytes.
@@ -167,9 +170,9 @@ def detect(program: Any) -> Source:
             ) from exc
     else:
         raise TypeError(
-            "`program` must be a qiskit QuantumCircuit, a pytket Circuit, a guppy "
-            "function, a hugr Package, HUGR envelope bytes, QIR bitcode bytes, "
-            "QASM source, or a base64 string of either binary encoding"
+            "`program` must be a qiskit QuantumCircuit, a pytket Circuit, a Braket "
+            "Circuit, a guppy function, a hugr Package, HUGR envelope bytes, QIR "
+            "bitcode bytes, QASM source, or a base64 string of either binary encoding"
         )
 
     if raw.startswith(_HUGR_MAGIC):
@@ -231,6 +234,11 @@ def _pytket_qir(circuit: Any) -> str:
     return base64.b64encode(bitcode).decode("ascii")
 
 
+def braket_qasm3(circuit: Any) -> str:
+    serialization = _require("braket.circuits.serialization", "braket")
+    return circuit.to_ir(serialization.IRType.OPENQASM).source
+
+
 def _hugr_envelope(envelope: bytes) -> str:
     return base64.b64encode(envelope).decode("ascii")
 
@@ -252,6 +260,9 @@ ENCODERS: dict[str, dict[int, Callable[[Any], str]]] = {
         wire.PROGRAM_TKET_CIRCUIT_JSON_V1: _pytket_tket_json,
         wire.PROGRAM_QASM_V2: _pytket_qasm2,
         wire.PROGRAM_QIR_V1: _pytket_qir,
+    },
+    "braket": {
+        wire.PROGRAM_QASM_V3: braket_qasm3,
     },
     "hugr": {
         wire.PROGRAM_HUGR_V1: _hugr_envelope,

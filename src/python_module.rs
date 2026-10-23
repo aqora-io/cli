@@ -991,6 +991,10 @@ pub fn aqora(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             "QIO_RESULT_QSYS_RESULT_JSON_V1",
             QuantumProgramResultSerializationFormat::QsysResultJsonV1,
         ),
+        (
+            "QIO_RESULT_BRAKET_GATE_MODEL_TASK_RESULT_JSON_V1",
+            QuantumProgramResultSerializationFormat::BraketGateModelTaskResultJsonV1,
+        ),
     ] {
         m.add(name, format as u16)?;
     }

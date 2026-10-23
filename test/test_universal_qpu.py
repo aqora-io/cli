@@ -17,7 +17,7 @@ import aqora._aqora as _AQORA_NATIVE
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1] / "python" / "aqora"
 
-_FAKE_MODULE_PREFIXES = ("aqora.", "qiskit", "pytket", "hugr", "cirq")
+_FAKE_MODULE_PREFIXES = ("aqora.", "qiskit", "pytket", "hugr", "cirq", "braket")
 
 HUGR_ENVELOPE = b"HUGR\x00fake-envelope"
 QIR_BITCODE = b"BC\xc0\xdefake-bitcode"
@@ -39,6 +39,15 @@ class FakePytketCircuit:
 
     def to_dict(self) -> dict[str, object]:
         return {"circuit": self.name}
+
+
+class FakeBraketCircuit:
+    def __init__(self, name: str = "bk") -> None:
+        self.name = name
+
+    def to_ir(self, ir_type):
+        assert ir_type == "OPENQASM"
+        return types.SimpleNamespace(source=f"OPENQASM 3.0;\n// {self.name}")
 
 
 class FakePackage:
@@ -94,6 +103,17 @@ def _install_pytket(*, qasm=True, qir=None) -> None:
         module.QIRFormat = QIRFormat
         module.pytket_to_qir = qir
         sys.modules["pytket.qir"] = module
+
+
+def _install_braket() -> None:
+    for name in ("braket", "braket.circuits"):
+        module = types.ModuleType(name)
+        module.__path__ = []
+        sys.modules[name] = module
+    sys.modules["braket.circuits"].Circuit = FakeBraketCircuit
+    serialization = types.ModuleType("braket.circuits.serialization")
+    serialization.IRType = types.SimpleNamespace(OPENQASM="OPENQASM")
+    sys.modules["braket.circuits.serialization"] = serialization
 
 
 def _install_qiskit_to_tket(convert=None) -> None:
@@ -316,6 +336,23 @@ def test_detect_pytket_circuit(formats, wire):
     source = formats.detect(FakePytketCircuit())
     assert source.kind == "pytket"
     assert source.native_format == wire.PROGRAM_TKET_CIRCUIT_JSON_V1
+
+
+def test_detect_braket_circuit(formats, wire):
+    _install_braket()
+    source = formats.detect(FakeBraketCircuit())
+    assert source.kind == "braket"
+    assert source.native_format == wire.PROGRAM_QASM_V3
+
+
+def test_braket_circuit_encodes_to_qasm3(formats, wire):
+    _install_braket()
+    source = formats.detect(FakeBraketCircuit())
+
+    programs, chosen = formats.encode([source], [wire.PROGRAM_QASM_V3])
+
+    assert chosen == wire.PROGRAM_QASM_V3
+    assert programs == [("OPENQASM 3.0;\n// bk", wire.PROGRAM_QASM_V3)]
 
 
 @pytest.mark.parametrize(
@@ -819,6 +856,38 @@ def test_counts_from_qir_labeled_is_joint_not_marginal(results, wire):
     )
     result = _result(results, wire.RESULT_QIR_LABELED_RESULT_V1, text)
     assert result.counts() == {"0 1": 1, "1 0": 1}
+
+
+def test_counts_from_braket_measurements(results, wire):
+    payload = {
+        "measuredQubits": [0, 1],
+        "measurements": [[0, 0], [1, 1], [1, 1], [0, 1]],
+        "taskMetadata": {"shots": 4},
+    }
+    result = _result(
+        results, wire.RESULT_BRAKET_GATE_MODEL_TASK_RESULT_JSON_V1, json.dumps(payload)
+    )
+    assert result.counts() == {"00": 1, "11": 2, "01": 1}
+
+
+def test_counts_from_braket_probabilities(results, wire):
+    payload = {
+        "measuredQubits": [0, 1],
+        "measurementProbabilities": {"00": 0.25, "11": 0.75},
+        "taskMetadata": {"shots": 100},
+    }
+    result = _result(
+        results, wire.RESULT_BRAKET_GATE_MODEL_TASK_RESULT_JSON_V1, json.dumps(payload)
+    )
+    assert result.counts() == {"00": 25, "11": 75}
+
+
+def test_counts_from_braket_without_measurements_refuses(results, wire):
+    result = _result(
+        results, wire.RESULT_BRAKET_GATE_MODEL_TASK_RESULT_JSON_V1, json.dumps({})
+    )
+    with pytest.raises(ValueError, match="neither measurements"):
+        result.counts()
 
 
 def test_counts_from_cudaq_global_register(results, wire):

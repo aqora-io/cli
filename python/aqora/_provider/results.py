@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from . import wire
 
 if TYPE_CHECKING:
+    from braket.tasks import GateModelQuantumTaskResult
     from pytket.backends.backendresult import BackendResult
     from qiskit.result import Result
 
@@ -186,6 +187,20 @@ class ProviderResult:
             ) from exc
         return cirq.read_json(json_text=self.raw)
 
+    def to_braket_result(self) -> "GateModelQuantumTaskResult":
+        self._require_format(
+            wire.RESULT_BRAKET_GATE_MODEL_TASK_RESULT_JSON_V1,
+            "a Braket gate-model task result",
+        )
+        try:
+            from braket.tasks import GateModelQuantumTaskResult
+        except ImportError as exc:
+            raise ImportError(
+                "Parsing Braket results requires the `amazon-braket-sdk` package. "
+                "Install `aqora[braket]` to use this method."
+            ) from exc
+        return GateModelQuantumTaskResult.from_string(self.raw)
+
     def cudaq_register_counts(self) -> dict[str, dict[str, int]]:
         """Per-register counts of a CUDA-Q sample result. Needs no `cudaq`."""
         self._require_format(
@@ -301,6 +316,32 @@ def _cudaq_counts(result: ProviderResult) -> dict[str, int]:
     )
 
 
+def _braket_counts(result: ProviderResult) -> dict[str, int]:
+    # Read straight from the task result JSON so counts need no Braket SDK.
+    # Bitstrings follow `measuredQubits` order, qubit 0 leftmost, as Braket's
+    # own `measurement_counts` does.
+    result._require_format(
+        wire.RESULT_BRAKET_GATE_MODEL_TASK_RESULT_JSON_V1,
+        "a Braket gate-model task result",
+    )
+    data = json.loads(result.raw)
+    measurements = data.get("measurements")
+    if measurements is not None:
+        return dict(Counter("".join(str(bit) for bit in shot) for shot in measurements))
+    # Some devices report only probabilities; scale them back to shot counts.
+    probabilities = data.get("measurementProbabilities")
+    shots = (data.get("taskMetadata") or {}).get("shots")
+    if probabilities is not None and shots:
+        return {
+            bits: round(probability * shots)
+            for bits, probability in probabilities.items()
+        }
+    raise ValueError(
+        f"Result {result.index} carries neither measurements nor measurement "
+        "probabilities; use `to_braket_result()` to inspect it"
+    )
+
+
 _COUNTS_BY_FORMAT: dict[int, Callable[[ProviderResult], dict[str, int]]] = {
     wire.RESULT_PYTKET_BACKEND_RESULT_JSON_V1: _pytket_counts,
     wire.RESULT_QSYS_RESULT_JSON_V1: _qsys_counts,
@@ -308,4 +349,5 @@ _COUNTS_BY_FORMAT: dict[int, Callable[[ProviderResult], dict[str, int]]] = {
     wire.RESULT_QISKIT_RESULT_JSON_V1: _qiskit_counts,
     wire.RESULT_CIRQ_RESULT_JSON_V1: _cirq_counts,
     wire.RESULT_CUDAQ_SAMPLE_RESULT_JSON_V1: _cudaq_counts,
+    wire.RESULT_BRAKET_GATE_MODEL_TASK_RESULT_JSON_V1: _braket_counts,
 }

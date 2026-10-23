@@ -137,3 +137,7 @@ arrow-buffer = { git = "https://github.com/aqora-io/arrow-rs", branch = "dataset
 arrow-data = { git = "https://github.com/aqora-io/arrow-rs", branch = "dataset" }
 arrow-schema = { git = "https://github.com/aqora-io/arrow-rs", branch = "dataset" }
 arrow-ipc = { git = "https://github.com/aqora-io/arrow-rs", branch = "dataset" }
+
+# TEMPORARY: build against the local qio-rs checkout until BraketGateModelTaskResultJsonV1 is pushed.
+[patch."https://github.com/aqora-io/qio-rs"]
+qio = { path = "/home/benjamin/Development/aqora/qio-rs" }

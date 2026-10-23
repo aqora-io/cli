@@ -26,8 +26,8 @@ def _as_programs(programs: Any) -> list[Any]:
 class QPU:
     """Submits programs from any supported framework to a provider platform.
 
-    The framework backends in `aqora.qiskit`, `aqora.pytket` and `aqora.guppy`
-    each speak one fixed serialization format. This one instead reads the
+    The framework backends in `aqora.qiskit`, `aqora.pytket`, `aqora.guppy` and
+    `aqora.braket` each speak one fixed serialization format. This one instead reads the
     formats the platform accepts (`meta.inputFormats`, most preferred first) and
     encodes into the first of them the submitted programs can produce, so a
     qiskit circuit can reach a HUGR-preferring platform and a guppy program a
@@ -100,8 +100,8 @@ class QPU:
         `shots` is required: every program in the job runs that many times.
 
         `programs` is a single program, or a list or tuple of them. Accepted
-        programs are qiskit `QuantumCircuit`s, pytket `Circuit`s,
-        `@guppy`-decorated functions, hugr `Package`s, raw HUGR envelope or QIR
+        programs are qiskit `QuantumCircuit`s, pytket `Circuit`s, Braket
+        `Circuit`s, `@guppy`-decorated functions, hugr `Package`s, raw HUGR envelope or QIR
         bitcode bytes, and QASM source.
 
         Every program in a job shares one serialization format: the first the
