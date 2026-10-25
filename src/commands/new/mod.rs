@@ -13,6 +13,7 @@ use use_case::{use_case, UseCase};
 
 #[derive(Subcommand, Debug, Serialize)]
 pub enum New {
+    /// Create a new use case project for a competition
     UseCase(UseCase),
     #[clap(hide = true)]
     DatasetMarimo(DatasetMarimo),

@@ -61,7 +61,9 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug, Serialize)]
 pub enum Commands {
+    /// Install the project's dependencies and, for a use case, its latest data
     Install(Install),
+    /// Create a new project from a template
     New {
         #[command(subcommand)]
         args: New,
@@ -81,26 +83,39 @@ pub enum Commands {
         #[command(subcommand)]
         args: Job,
     },
+    /// Pair an AI coding agent with a workspace or dataset notebook
     Pair(Pair),
+    /// Log in to aqora.io
     Login(Login),
+    /// Manage aqora access tokens
     Auth {
         #[command(subcommand)]
         args: Auth,
     },
+    /// Run Python inside the project's virtual environment
     Python(Python),
+    /// Open a shell with the project's virtual environment activated
     Shell(Shell),
+    /// Access your private aqora S3 storage
     Store {
         #[command(subcommand)]
         args: Store,
     },
+    /// Run the project's tests locally
     Test(Test),
+    /// Upload the project to aqora.io
     Upload(Upload),
+    /// Download a competition's starter template
     Template(Template),
+    /// Remove caches and build artifacts from the project
     Clean(Clean),
+    /// Add dependencies to the project
     Add(Add),
+    /// Remove dependencies from the project
     Remove(Remove),
     #[command(hide = true)]
     Info(Info),
+    /// Open the project in VS Code, or in Jupyter with --jupyter-notebook
     Lab(Lab),
 }
 
@@ -177,5 +192,58 @@ impl Cli {
         } else {
             true
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cli;
+    use clap::CommandFactory;
+
+    fn has_text(text: Option<&clap::builder::StyledStr>) -> bool {
+        text.is_some_and(|text| !text.to_string().trim().is_empty())
+    }
+
+    fn collect_undocumented(cmd: &clap::Command, path: &str, missing: &mut Vec<String>) {
+        for arg in cmd.get_arguments() {
+            if arg.is_hide_set() {
+                continue;
+            }
+            if !has_text(arg.get_help()) && !has_text(arg.get_long_help()) {
+                missing.push(format!("{path}: argument `{}`", arg.get_id()));
+            }
+        }
+        for sub in cmd.get_subcommands() {
+            if sub.is_hide_set() {
+                continue;
+            }
+            let sub_path = format!("{path} {}", sub.get_name());
+            if !has_text(sub.get_about()) && !has_text(sub.get_long_about()) {
+                missing.push(format!("{sub_path}: command description"));
+            }
+            collect_undocumented(sub, &sub_path, missing);
+        }
+    }
+
+    /// `aqora help` should describe every visible command and option.
+    #[test]
+    fn every_visible_command_and_argument_has_help() {
+        // `Cli`'s version string reports the embedded interpreter's version.
+        pyo3::Python::initialize();
+        let mut cmd = Cli::command();
+        cmd.build();
+        let mut missing = Vec::new();
+        collect_undocumented(&cmd, "aqora", &mut missing);
+        assert!(
+            missing.is_empty(),
+            "missing help text:\n{}",
+            missing.join("\n")
+        );
+    }
+
+    #[test]
+    fn cli_definition_is_valid() {
+        pyo3::Python::initialize();
+        Cli::command().debug_assert();
     }
 }

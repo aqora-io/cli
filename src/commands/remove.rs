@@ -13,8 +13,9 @@ use tokio::fs;
 use toml_edit::DocumentMut;
 
 #[derive(Args, Debug, Serialize)]
-#[command(author, version, about)]
+#[command(author, version)]
 pub struct Remove {
+    /// Names of the dependencies to remove
     pub deps: Vec<String>,
 }
 
