@@ -4,8 +4,9 @@ use serde::Serialize;
 use std::ffi::OsString;
 
 #[derive(Args, Debug, Serialize)]
-#[command(author, version, about)]
+#[command(author, version)]
 pub struct Shell {
+    /// Arguments passed to the shell after `--`
     #[arg(last = true)]
     pub bash_args: Vec<OsString>,
 }

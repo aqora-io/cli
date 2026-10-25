@@ -34,8 +34,10 @@ Rules, Terms & Conditions
 By default all competitions must comply to the rules defined in [aqora's Terms of Use](https://aqora.io/terms)."#;
 
 #[derive(Args, Debug, Serialize)]
-#[command(author, version, about)]
+#[command(author, version)]
 pub struct Upload {
+    // Currently unused: the competition is read from pyproject.toml.
+    #[arg(hide = true)]
     pub competition: Option<String>,
 }
 

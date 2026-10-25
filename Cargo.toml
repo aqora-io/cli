@@ -10,6 +10,7 @@ license = "MIT"
 name = "aqora"
 version.workspace = true
 license.workspace = true
+description = "The aqora command line interface"
 edition = "2021"
 default-run = "aqora"
 publish = false

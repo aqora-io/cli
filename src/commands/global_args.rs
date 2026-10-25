@@ -45,6 +45,7 @@ pub struct GlobalArgs {
         hide = true
     )]
     pub allow_insecure_host: bool,
+    /// Directory for aqora's configuration and credentials
     #[arg(
         help_heading = HELP_HEADING,
         long,
@@ -52,6 +53,7 @@ pub struct GlobalArgs {
         global = true
     )]
     pub config_home: Option<PathBuf>,
+    /// Path to the project directory
     #[arg(
         help_heading = HELP_HEADING,
         short,
@@ -60,10 +62,13 @@ pub struct GlobalArgs {
         global = true
     )]
     pub project: PathBuf,
+    /// Path to the uv executable to use
     #[arg(help_heading = HELP_HEADING, long, global = true)]
     pub uv: Option<PathBuf>,
+    /// Python interpreter or version for the virtual environment
     #[arg(help_heading = HELP_HEADING, long, global = true)]
     pub python: Option<String>,
+    /// Do not hand off to a newer aqora installed in the project's virtual environment
     #[arg(
         help_heading = HELP_HEADING,
         long,
@@ -71,6 +76,7 @@ pub struct GlobalArgs {
         default_value = "false"
     )]
     pub ignore_venv_aqora: bool,
+    /// Maximum number of tasks to run in parallel
     #[arg(
         help_heading = HELP_HEADING,
         long,
@@ -78,6 +84,7 @@ pub struct GlobalArgs {
         global = true
     )]
     pub max_concurrency: usize,
+    /// When to use colored output
     #[arg(
         help_heading = HELP_HEADING,
         value_enum,
@@ -86,6 +93,7 @@ pub struct GlobalArgs {
         global = true
     )]
     pub color: ColorChoice,
+    /// How uv links packages into the virtual environment
     #[arg(
         help_heading = HELP_HEADING,
         value_enum,

@@ -21,7 +21,7 @@ use url::Url;
 const CLIENT_ID_PREFIX: &str = "localhost-";
 
 #[derive(Args, Default, Debug, Serialize)]
-#[command(author, version, about)]
+#[command(author, version)]
 pub struct Login {
     #[arg(long, short, help = "Force login without a browser")]
     interactive: bool,

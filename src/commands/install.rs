@@ -59,8 +59,11 @@ pub struct GetCompetitionUseCase;
 
 #[derive(Args, Debug, Default, Serialize)]
 pub struct Install {
+    /// Reinstall the use case and upgrade dependencies even if already up to date
     #[arg(long, short)]
     pub upgrade: bool,
+    // Currently unused: the competition is read from pyproject.toml.
+    #[arg(hide = true)]
     pub competition: Option<String>,
 }
 
