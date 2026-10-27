@@ -7,6 +7,7 @@ from typing import Any, Mapping, Sequence
 from aqora import Client
 from aqora._provider import jobs, wire
 from aqora._provider.client import _package_version
+from aqora._provider.models import ProviderModel
 
 from ._deps import (
     AutoRebase,
@@ -88,6 +89,7 @@ class QPU(Backend):
         self._max_qubits: int | None = None
         self._max_qubits_loaded = False
         self._backend_info: BackendInfo | None = None
+        self._input_formats: list[int] | None = None
         super().__init__()
 
     @property
@@ -160,20 +162,88 @@ class QPU(Backend):
         shots = self._normalize_shots(n_shots)
         if valid_check:
             self._check_all_circuits(circuits)
-        programs = [
-            (json.dumps(circuit.to_dict()), wire.PROGRAM_TKET_CIRCUIT_JSON_V1)
-            for circuit in circuits
-        ]
         job = jobs.submit_model(
             self._graphql,
-            wire.build_model_payload(programs, compress=self._compress),
+            wire.build_model_payload(
+                _tket_programs(circuits),
+                compress=self._compress,
+                wasm=kwargs.get("wasm_file_handler"),
+            ),
             shots=shots,
             platform=self._platform,
             as_entity=self._as_entity,
-            wasm=kwargs.get("wasm_file_handler"),
             options=_job_options(kwargs),
         )
         return [ResultHandle(job.job_id, index) for index in range(len(circuits))]
+
+    def upload_circuits(
+        self,
+        circuits: Sequence[Circuit],
+        valid_check: bool = True,
+        **kwargs: Any,
+    ) -> ProviderModel:
+        """Upload `circuits` as a model, to run as many jobs as needed with
+        `process_model`.
+
+        `valid_check` and `wasm_file_handler` are as for `process_circuits`.
+        The circuits are checked against this backend here, not when the model
+        runs. The WASM module is part of the model, so every job run from it
+        uses the module.
+
+        The model's `id` reloads it later, e.g. in another session, with
+        `model`.
+        """
+        circuits = list(circuits)
+        if not circuits:
+            raise ValueError("At least one circuit is required")
+        if valid_check:
+            self._check_all_circuits(circuits)
+        wasm = kwargs.get("wasm_file_handler")
+        return jobs.upload_programs(
+            self._graphql,
+            wire.build_model_payload(
+                _tket_programs(circuits),
+                compress=self._compress,
+                wasm=wasm,
+            ),
+            serialization_format=wire.PROGRAM_TKET_CIRCUIT_JSON_V1,
+            program_count=len(circuits),
+            has_wasm_module=wasm is not None,
+            as_entity=self._as_entity,
+        )
+
+    def model(self, model_id: str) -> ProviderModel:
+        """The model `model_id`, as uploaded earlier with `upload_circuits`."""
+        return ProviderModel(self._graphql, model_id)
+
+    def process_model(
+        self,
+        model: ProviderModel,
+        n_shots: int | Sequence[int] | None = None,
+        **kwargs: Any,
+    ) -> list[ResultHandle]:
+        """Submit a model from `upload_circuits` as one provider job, without
+        uploading its circuits again.
+
+        Returns one handle per circuit, as `process_circuits` does. Job options
+        are as for `process_circuits`; the model already holds its WASM module,
+        so `wasm_file_handler` can't be given. The model must be in a format
+        the platform accepts, and owned by the job's `as_entity`.
+        """
+        jobs.reject_wasm_for_model(kwargs.get("wasm_file_handler"), "wasm_file_handler")
+        shots = self._normalize_shots(n_shots)
+        if self._input_formats is None:
+            self._input_formats = jobs.load_input_formats(self._graphql, self._platform)
+        job = jobs.submit_job(
+            self._graphql,
+            model,
+            shots=shots,
+            platform=self._platform,
+            as_entity=self._as_entity,
+            options=_job_options(kwargs),
+            input_formats=self._input_formats,
+        )
+        return [ResultHandle(job.job_id, index) for index in range(model.program_count)]
 
     def circuit_status(self, handle: ResultHandle) -> CircuitStatus:
         self._graphql.ensure_authenticated()
@@ -277,6 +347,13 @@ class QPU(Backend):
         if not max_qubits:
             return None
         return max(max_qubits)
+
+
+def _tket_programs(circuits: Sequence[Circuit]) -> list[tuple[str, int]]:
+    return [
+        (json.dumps(circuit.to_dict()), wire.PROGRAM_TKET_CIRCUIT_JSON_V1)
+        for circuit in circuits
+    ]
 
 
 def _job_options(kwargs: Mapping[str, Any]) -> Mapping[str, Any] | None:

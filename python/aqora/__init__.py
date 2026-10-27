@@ -7,6 +7,7 @@ from aqora._aqora import *  # pyright: ignore[reportAssignmentType, reportWildca
 # Imported after the wildcard import: `_provider.jobs` needs `aqora.Client`,
 # which the native module binds above.
 from ._provider.jobs import ProviderJob
+from ._provider.models import ProviderModel as QPUModel
 from ._provider.results import ProviderResult
 from .auth import viewer_login
 from .store import Store, StoreCredentials

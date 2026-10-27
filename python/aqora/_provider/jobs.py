@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from aqora import Client
 
-from . import wire
+from . import formats, wire
 from .client import AqoraGraphQLClient
+from .models import ProviderModel
 from .results import ProviderResult
 
 
@@ -113,6 +114,114 @@ def upload_model(
     return str(model["id"])
 
 
+def load_input_formats(graphql: AqoraGraphQLClient, platform: str | None) -> list[int]:
+    """The formats `platform` accepts, most preferred first.
+
+    Empty when no platform is selected: the server then picks one we cannot
+    identify here, so there is nothing to read formats from, and we defer to
+    the server rather than guess from the union across all platforms. Empty
+    too if the platform advertises none — the server's provider RPC degrades
+    to an empty list the same way `maxQubits` degrades to null.
+    """
+    if platform is None:
+        return []
+    graphql.ensure_authenticated()
+    platforms = [
+        entry for entry in graphql.get_provider_platforms() if platform_matches(platform, entry)
+    ]
+    if not platforms:
+        raise LookupError(f"Provider platform {platform!r} was not found")
+    meta = platforms[0].get("meta") or {}
+    return formats.formats_from_graphql(meta.get("inputFormats") or [])
+
+
+def normalize_options(options: Any) -> Mapping[str, Any] | None:
+    if options is None:
+        return None
+    if not isinstance(options, Mapping):
+        raise TypeError(
+            "`options` must be a mapping of option names to values, got "
+            f"{type(options).__name__}"
+        )
+    # The round trip also snapshots nested values, so the job sends the
+    # options as they were when it was submitted.
+    try:
+        return json.loads(json.dumps(dict(options), allow_nan=False))
+    except (TypeError, ValueError) as err:
+        raise type(err)(f"`options` must be JSON-serializable: {err}") from err
+
+
+def reject_wasm_for_model(wasm: Any, argument: str = "wasm") -> None:
+    """Refuse a WASM module given for a job that runs an uploaded model."""
+    if wasm is not None:
+        raise TypeError(
+            f"`{argument}` cannot be given when running an uploaded model: its "
+            "WASM module is part of the model, so pass it when uploading"
+        )
+
+
+def upload_programs(
+    graphql: AqoraGraphQLClient,
+    payload: str,
+    *,
+    serialization_format: int | None,
+    program_count: int,
+    has_wasm_module: bool,
+    as_entity: str | None = None,
+) -> ProviderModel:
+    """Upload a model `payload` (see `wire.build_model_payload`) owned by
+    `as_entity`, returning it as a model to run jobs from.
+
+    The other arguments describe what `payload` holds, so the model needn't
+    download it back to find out; a `serialization_format` of None is read
+    back from the upload if it is ever needed."""
+    graphql.ensure_authenticated()
+    return ProviderModel(
+        graphql,
+        upload_model(graphql, payload, as_entity=as_entity),
+        serialization_format=serialization_format,
+        program_count=program_count,
+        has_wasm_module=has_wasm_module,
+    )
+
+
+def submit_job(
+    graphql: AqoraGraphQLClient,
+    model: ProviderModel,
+    *,
+    shots: int | None = None,
+    platform: str | None = None,
+    as_entity: str | None = None,
+    options: Mapping[str, Any] | None = None,
+    input_formats: Sequence[int] = (),
+) -> "ProviderJob":
+    """Submit a job running `model` on `platform`.
+
+    `as_entity` attributes the job to that entity (an organization the user
+    belongs to), which must own the model; the backend rejects the job
+    otherwise.
+
+    `options` are backend options for the job, e.g. emulator settings. The
+    platform decides which it accepts and rejects the job otherwise.
+
+    `input_formats` are the formats `platform` accepts (see
+    `load_input_formats`). A model in none of them is refused before the job
+    is submitted; when empty, the server is left to decide."""
+    # Checked first, so a bad argument fails before the model is inspected.
+    options = normalize_options(options)
+    if input_formats and model.serialization_format not in input_formats:
+        accepted = ", ".join(formats.format_name(accepted) for accepted in input_formats)
+        raise ValueError(
+            f"Provider model {model.id!r} holds "
+            f"{formats.format_name(model.serialization_format)} programs, which "
+            f"platform {platform!r} doesn't accept (it accepts {accepted})"
+        )
+    graphql.ensure_authenticated()
+    return _create_job(
+        graphql, model.id, shots=shots, platform=platform, as_entity=as_entity, options=options
+    )
+
+
 def submit_model(
     graphql: AqoraGraphQLClient,
     payload: str,
@@ -120,7 +229,6 @@ def submit_model(
     shots: int | None = None,
     platform: str | None = None,
     as_entity: str | None = None,
-    wasm: Any = None,
     options: Mapping[str, Any] | None = None,
 ) -> "ProviderJob":
     """Upload `payload` and submit it as a job.
@@ -129,40 +237,31 @@ def submit_model(
     organization the user belongs to); the backend rejects a job whose model
     is owned by a different entity.
 
-    `wasm` is a WASM module the programs call into (see
-    `wire.build_wasm_module_payload`). It is uploaded as a second provider
-    model, owned by the same entity, and attached to the job. Only Nexus
-    platforms accept one.
-
     `options` are backend options for the job, e.g. emulator settings. The
     platform decides which it accepts and rejects the job otherwise."""
     # Checked first, so a bad argument fails before anything is uploaded.
-    if options is not None:
-        if not isinstance(options, Mapping):
-            raise TypeError(
-                "`options` must be a mapping of option names to values, got "
-                f"{type(options).__name__}"
-            )
-        # The round trip also snapshots nested values, so the job sends the
-        # options as they were when it was submitted.
-        try:
-            options = json.loads(json.dumps(dict(options), allow_nan=False))
-        except (TypeError, ValueError) as err:
-            raise type(err)(f"`options` must be JSON-serializable: {err}") from err
-    wasm_payload = None if wasm is None else wire.build_wasm_module_payload(wasm)
+    options = normalize_options(options)
     graphql.ensure_authenticated()
     model_id = upload_model(graphql, payload, as_entity=as_entity)
-    wasm_module_id = (
-        None
-        if wasm_payload is None
-        else upload_model(graphql, wasm_payload, as_entity=as_entity)
+    return _create_job(
+        graphql, model_id, shots=shots, platform=platform, as_entity=as_entity, options=options
     )
+
+
+def _create_job(
+    graphql: AqoraGraphQLClient,
+    model_id: str,
+    *,
+    shots: int | None,
+    platform: str | None,
+    as_entity: str | None,
+    options: Mapping[str, Any] | None,
+) -> "ProviderJob":
     job = graphql.create_provider_job(
         provider_model_id=model_id,
         shots=shots,
         provider_platform=platform,
         as_entity=as_entity,
-        wasm_module_id=wasm_module_id,
         options=options,
     )
     return ProviderJob(graphql, str(job["id"]), payload=job)

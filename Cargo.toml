@@ -63,7 +63,7 @@ pyo3-async-runtimes = { version = "0.28", features = [
   "attributes",
   "tokio-runtime",
 ] }
-qio = { git = "https://github.com/aqora-io/qio-rs", rev = "fd430c270607b11db413e69392974790e1d4182a" }
+qio = { git = "https://github.com/aqora-io/qio-rs", rev = "04776830afba6f456e35ca967ef3c8d67b424d2e" }
 rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = [
   "stream",

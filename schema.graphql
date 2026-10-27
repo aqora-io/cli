@@ -2564,10 +2564,14 @@ type Mutation {
 	member must pass the organization as `asEntity`, which requires being
 	one of its Owners or Admins.
 	
-	`wasmModuleId` is a second provider model, uploaded the same way, that
-	holds a WASM module the programs call into (`{"wasm_module":
-	"<base64>"}`). It must be owned by the same entity. Only Nexus
-	platforms support WASM modules.
+	A WASM module the programs call into belongs in the provider model
+	itself, as the model payload's `wasm_module`, so every job run from
+	the model uses it. Only Nexus platforms support WASM modules.
+	
+	`wasmModuleId` is deprecated: it is a second provider model, uploaded
+	the same way, that holds the WASM module on its own (`{"wasm_module":
+	"<base64>"}`), for a provider model that doesn't embed one. It must be
+	owned by the same entity.
 	
 	`options` is an object of backend options for the job. Nexus
 	H-series devices and emulators accept a subset of their

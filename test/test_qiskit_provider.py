@@ -461,6 +461,75 @@ def test_qpu_run_uploads_qio_model(mod, monkeypatch: pytest.MonkeyPatch):
     ]
 
 
+def _create_provider_job_variables(qpu) -> list[dict[str, object]]:
+    return [variables for query, variables in qpu.client.calls if "createProviderJob" in query]
+
+
+def test_qpu_upload_once_and_run_the_model_twice(mod):
+    qpu = mod.QPU(platform="platform-b", as_entity="my-team")
+
+    model = qpu.upload([mod.QuantumCircuit(1), mod.QuantumCircuit(2)])
+    first = qpu.run(model, shots=10)
+    second = qpu.run(model, shots=20)
+
+    assert len(qpu.client.uploads) == 1
+    assert model.program_count == 2
+    assert not model.has_wasm_module
+    assert first.job_id() == second.job_id() == "ProviderJob:job-1"
+    assert _create_provider_job_variables(qpu) == [
+        {
+            "providerModelId": "model-1",
+            "shots": shots,
+            "providerPlatform": "platform-b",
+            "asEntity": "my-team",
+        }
+        for shots in (10, 20)
+    ]
+
+
+def test_qpu_run_checks_run_options_for_a_model(mod):
+    qpu = mod.QPU()
+    model = qpu.upload(mod.QuantumCircuit(1))
+
+    with pytest.raises(NotImplementedError, match="seed_simulator"):
+        qpu.run(model, seed_simulator=1234, shots=100)
+    with pytest.raises(ValueError, match="`shots` is required"):
+        qpu.run(model)
+    assert _create_provider_job_variables(qpu) == []
+
+
+def test_qpu_runs_a_model_reloaded_by_id(mod):
+    qpu = mod.QPU()
+
+    qpu.run(qpu.model("model-7"), shots=10)
+
+    assert qpu.client.uploads == []
+    (variables,) = _create_provider_job_variables(qpu)
+    assert variables["providerModelId"] == "model-7"
+
+
+def test_qpu_run_refuses_a_model_in_a_format_the_platform_does_not_accept(mod):
+    qpu = mod.QPU(platform="platform-b")
+    qpu.client.platforms[1]["meta"]["inputFormats"] = ["TKET_CIRCUIT_JSON_V1"]
+    qpu.client.payloads["https://example.invalid/model-download"] = json.dumps(
+        {"programs": [{"serialization_format": 3, "serialization": "OPENQASM 3.0;"}]}
+    )
+
+    with pytest.raises(ValueError, match="QASM_V3 programs"):
+        qpu.run(qpu.model("model-7"), shots=10)
+    assert _create_provider_job_variables(qpu) == []
+
+
+def test_payload_serialization_format(mod):
+    read = mod.backend._payload_serialization_format
+
+    assert read(json.dumps({"programs": [{"serialization_format": 3}] * 2})) == 3
+    # The payload's own word is all there is to go on; without it, the model
+    # reads the format back from the upload if it is ever needed.
+    assert read(json.dumps({"programs": [{"serialization": "qasm://1"}]})) is None
+    assert read(json.dumps({"programs": [{"serialization_format": 2}, {"serialization_format": 3}]})) is None
+
+
 def test_download_provider_model(mod):
     fake = FakeClient()
     fake.payloads["https://example.invalid/model-download"] = '{"programs": []}'

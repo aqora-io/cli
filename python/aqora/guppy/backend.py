@@ -6,6 +6,7 @@ from typing import Any, Mapping
 
 from aqora import Client
 from aqora._provider import jobs, wire
+from aqora._provider.models import ProviderModel
 
 from .job import QPUJob
 
@@ -84,6 +85,7 @@ class QPU:
         self._platform = platform
         self._as_entity = as_entity
         self._compress = compress
+        self._input_formats: list[int] | None = None
 
     @property
     def client(self) -> Client:
@@ -97,8 +99,34 @@ class QPU:
     def as_entity(self) -> str | None:
         return self._as_entity
 
+    def upload(self, program: Any) -> ProviderModel:
+        """Upload a guppy program as a model, to run as many jobs as needed.
+
+        The model's `id` reloads it later, e.g. in another session, with
+        `model`.
+        """
+        serialization, serialization_format = _encode_program(program)
+        return jobs.upload_programs(
+            self._graphql,
+            wire.build_model_payload(
+                [(serialization, serialization_format)],
+                compress=self._compress,
+            ),
+            serialization_format=serialization_format,
+            program_count=1,
+            has_wasm_module=False,
+            as_entity=self._as_entity,
+        )
+
+    def model(self, model_id: str) -> ProviderModel:
+        """The model `model_id`, as uploaded earlier with `upload`."""
+        return ProviderModel(self._graphql, model_id)
+
     def run(self, program: Any, **options: Any) -> QPUJob:
-        """Submit a guppy program as a provider job.
+        """Submit a guppy program, or a model from `upload`, as a provider job.
+
+        A model runs without being uploaded again; it must be in a format the
+        platform accepts, and owned by the job's `as_entity`.
 
         `shots` is required. `options=` takes backend options for the job,
         e.g. `{"n_qubits": 8}` on Nexus Selene (see `aqora.QPU.run`). Any other
@@ -111,6 +139,20 @@ class QPU:
                 "The aqora provider GraphQL API only supports `shots` and `options` "
                 f"as per-run parameters (unsupported options: {', '.join(sorted(unsupported))})"
             )
+
+        if isinstance(program, ProviderModel):
+            if self._input_formats is None:
+                self._input_formats = jobs.load_input_formats(self._graphql, self._platform)
+            job = jobs.submit_job(
+                self._graphql,
+                program,
+                shots=shots,
+                platform=self._platform,
+                as_entity=self._as_entity,
+                options=options.get("options"),
+                input_formats=self._input_formats,
+            )
+            return QPUJob(self, job.job_id, payload=job._payload)
 
         payload = wire.build_model_payload(
             [_encode_program(program)],

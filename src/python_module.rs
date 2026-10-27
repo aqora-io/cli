@@ -62,30 +62,49 @@ fn program_format(value: u16) -> PyResult<qio::QuantumProgramSerializationFormat
     })
 }
 
+fn compressed<T: Clone>(
+    serialization: qio::Serialization<T>,
+    compress: bool,
+) -> PyResult<qio::Serialization<T>> {
+    if compress {
+        serialization
+            .to_compression(qio::CompressionFormat::ZlibBase64V1)
+            .map_err(|error| PyValueError::new_err(error.to_string()))
+    } else {
+        Ok(serialization)
+    }
+}
+
 /// Build a qio `QuantumComputationModel` JSON payload from `(serialization,
 /// serialization_format)` pairs, optionally zlib+base64 compressing each
-/// program.
+/// program. `wasm_module` is the base64 bytecode of a WASM module the
+/// programs call into, embedded in the model and compressed alike.
 #[pyfunction]
-#[pyo3(signature = (programs, *, user_agent, backend_name, compress))]
+#[pyo3(signature = (programs, *, user_agent, backend_name, compress, wasm_module=None))]
 fn qio_build_model_payload(
     programs: Vec<(String, u16)>,
     user_agent: String,
     backend_name: String,
     compress: bool,
+    wasm_module: Option<String>,
 ) -> PyResult<String> {
     let programs = programs
         .into_iter()
         .map(|(serialization, format)| {
-            let program = qio::QuantumProgram::new(serialization, program_format(format)?);
-            if compress {
-                program
-                    .to_compression(qio::CompressionFormat::ZlibBase64V1)
-                    .map_err(|error| PyValueError::new_err(error.to_string()))
-            } else {
-                Ok(program)
-            }
+            compressed(
+                qio::QuantumProgram::new(serialization, program_format(format)?),
+                compress,
+            )
         })
         .collect::<PyResult<Vec<_>>>()?;
+    let wasm_module = wasm_module
+        .map(|bytecode| {
+            compressed(
+                qio::WasmModule::new(bytecode, qio::WasmModuleSerializationFormat::WasmV1),
+                compress,
+            )
+        })
+        .transpose()?;
     qio::QuantumComputationModel {
         programs,
         noise_model: None,
@@ -95,6 +114,7 @@ fn qio_build_model_payload(
             version: None,
             options: None,
         }),
+        wasm_module,
     }
     .to_json_str()
     .map_err(|error| PyValueError::new_err(error.to_string()))
