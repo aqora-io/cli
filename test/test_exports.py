@@ -11,3 +11,11 @@ def test_provider_job_exported_from_top_level():
     assert aqora.ProviderJob is ProviderJob
     assert aqora.ProviderResult is ProviderResult
     assert callable(aqora.ProviderJob.from_id)
+
+
+def test_qpu_model_exported_from_top_level():
+    import aqora
+    from aqora._provider.models import ProviderModel
+
+    assert aqora.QPUModel is ProviderModel
+    assert callable(aqora.QPUModel.from_id)

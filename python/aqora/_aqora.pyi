@@ -28,6 +28,7 @@ def qio_build_model_payload(
     user_agent: str,
     backend_name: str,
     compress: bool,
+    wasm_module: str | None = None,
 ) -> str: ...
 def qio_parse_result_payload(payload: str) -> tuple[int, str]: ...
 

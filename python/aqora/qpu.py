@@ -8,6 +8,7 @@ from aqora import Client
 
 from ._provider import formats, jobs, wire
 from ._provider.jobs import ProviderJob, _resolve_graphql, qualified_platform_name
+from ._provider.models import ProviderModel
 from ._provider.results import ProviderResult
 
 
@@ -84,8 +85,43 @@ class QPU:
         and the server remains the authority on what it will accept.
         """
         if self._input_formats is None:
-            self._input_formats = self._load_input_formats()
+            self._input_formats = jobs.load_input_formats(self._graphql, self._platform)
         return self._input_formats
+
+    def upload(self, programs: Any, *, wasm: Any = None) -> ProviderModel:
+        """Upload one or more programs as a model, to run as many jobs as needed.
+
+        `programs` is a single program, or a list or tuple of them. Accepted
+        programs are qiskit `QuantumCircuit`s, pytket `Circuit`s,
+        `@guppy`-decorated functions, hugr `Package`s, raw HUGR envelope or QIR
+        bitcode bytes, and QASM source.
+
+        Every program in a model shares one serialization format: the first the
+        platform accepts that all of them can produce. A job can run the model
+        on any platform that accepts that format.
+
+        `wasm` is a WASM module the programs call into: a pytket
+        `WasmFileHandler`/`WasmModuleHandler`, the module's bytecode, or a path
+        to a `.wasm` file. It is part of the model, so every job run from it
+        uses the module. Only Nexus platforms accept one.
+
+        The model's `id` reloads it later, e.g. in another session, with
+        `model`.
+        """
+        sources = [formats.detect(program) for program in _as_programs(programs)]
+        encoded, serialization_format = formats.encode(sources, self.input_formats)
+        return jobs.upload_programs(
+            self._graphql,
+            wire.build_model_payload(encoded, compress=self._compress, wasm=wasm),
+            serialization_format=serialization_format,
+            program_count=len(encoded),
+            has_wasm_module=wasm is not None,
+            as_entity=self._as_entity,
+        )
+
+    def model(self, model_id: str) -> ProviderModel:
+        """The model `model_id`, as uploaded earlier with `upload`."""
+        return ProviderModel(self._graphql, model_id)
 
     def run(
         self,
@@ -95,21 +131,17 @@ class QPU:
         wasm: Any = None,
         options: Mapping[str, Any] | None = None,
     ) -> "QPUJob":
-        """Submit one or more programs as a provider job.
+        """Submit a model, or one or more programs, as a provider job.
 
         `shots` is required: every program in the job runs that many times.
 
-        `programs` is a single program, or a list or tuple of them. Accepted
-        programs are qiskit `QuantumCircuit`s, pytket `Circuit`s,
-        `@guppy`-decorated functions, hugr `Package`s, raw HUGR envelope or QIR
-        bitcode bytes, and QASM source.
+        `programs` is a model from `upload` or `model`, which runs without
+        being uploaded again, or programs as `upload` takes them, which are
+        uploaded for this job alone. A model must be in a format the platform
+        accepts, and must be owned by the job's `as_entity`.
 
-        Every program in a job shares one serialization format: the first the
-        platform accepts that all of them can produce.
-
-        `wasm` attaches a WASM module the programs call into: a pytket
-        `WasmFileHandler`/`WasmModuleHandler`, the module's bytecode, or a path
-        to a `.wasm` file. Only Nexus platforms accept one.
+        `wasm` attaches a WASM module the programs call into, as for `upload`.
+        A model already holds its WASM module, so it can't be given one here.
 
         `options` are backend options for the job. Nexus H-series devices and
         emulators accept `noisy_simulation`, `simulator`, `error_params`,
@@ -122,40 +154,34 @@ class QPU:
         runs.
         """
         shots = jobs.normalize_shots(shots)
-        sources = [formats.detect(program) for program in _as_programs(programs)]
-        encoded, serialization_format = formats.encode(sources, self.input_formats)
-        job = jobs.submit_model(
+        if isinstance(programs, ProviderModel):
+            jobs.reject_wasm_for_model(wasm)
+            model = programs
+        else:
+            if isinstance(programs, (list, tuple)) and any(
+                isinstance(program, ProviderModel) for program in programs
+            ):
+                raise TypeError(
+                    "A job runs a single model: pass it on its own, not in a list"
+                )
+            # Checked first, so a bad argument fails before anything is uploaded.
+            jobs.normalize_options(options)
+            model = self.upload(programs, wasm=wasm)
+        job = jobs.submit_job(
             self._graphql,
-            wire.build_model_payload(encoded, compress=self._compress),
+            model,
             shots=shots,
             platform=self._platform,
             as_entity=self._as_entity,
-            wasm=wasm,
             options=options,
+            input_formats=self.input_formats,
         )
         return QPUJob(
             self,
             job.job_id,
             payload=job._payload,
-            serialization_format=serialization_format,
+            serialization_format=model.serialization_format,
         )
-
-    def _load_input_formats(self) -> list[int]:
-        # Without a selected platform the server picks one we cannot identify
-        # here, so there is nothing to read formats from; defer to the server
-        # rather than guess from the union across all platforms.
-        if self._platform is None:
-            return []
-        self._graphql.ensure_authenticated()
-        platforms = [
-            platform
-            for platform in self._graphql.get_provider_platforms()
-            if jobs.platform_matches(self._platform, platform)
-        ]
-        if not platforms:
-            raise LookupError(f"Provider platform {self._platform!r} was not found")
-        meta = platforms[0].get("meta") or {}
-        return formats.formats_from_graphql(meta.get("inputFormats") or [])
 
 
 class QPUJob(ProviderJob):

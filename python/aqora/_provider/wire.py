@@ -3,17 +3,14 @@
 Building and parsing are implemented in Rust by the `qio` crate
 (github.com/aqora-io/qio-rs) and exposed through `aqora._aqora`, so the wire
 contract (JSON shape, format discriminants, zlib+base64 compression) has a
-single source of truth shared with the platform.
-
-The WASM module payload (`build_wasm_module_payload`) is not part of qio: it
-is a plain JSON envelope the platform reads directly.
+single source of truth shared with the platform. That includes a WASM module
+the programs call into, which the model embeds.
 """
 
 from __future__ import annotations
 
 import base64
 import importlib.metadata
-import json
 import os
 from typing import Any
 
@@ -70,16 +67,20 @@ def build_model_payload(
     *,
     backend_name: str = "aqora-qpu",
     compress: bool = True,
+    wasm: Any = None,
 ) -> str:
     """Build a `QuantumComputationModel` JSON payload.
 
-    `programs` holds `(serialization, serialization_format)` pairs.
+    `programs` holds `(serialization, serialization_format)` pairs. `wasm` is
+    a WASM module the programs call into (see `encode_wasm_module`), embedded
+    in the model.
     """
     return qio_build_model_payload(
         programs,
         user_agent=f"aqora/{_package_version()}",
         backend_name=backend_name,
         compress=compress,
+        wasm_module=None if wasm is None else encode_wasm_module(wasm),
     )
 
 
@@ -91,8 +92,8 @@ def parse_result_payload(payload: str) -> tuple[int, str]:
 _WASM_MAGIC = b"\0asm"
 
 
-def build_wasm_module_payload(wasm: Any) -> str:
-    """Build the `{"wasm_module": "<base64>"}` payload for a WASM module.
+def encode_wasm_module(wasm: Any) -> str:
+    """The base64 bytecode of a WASM module.
 
     `wasm` is a pytket `WasmModuleHandler` or `WasmFileHandler` (anything with
     a `bytecode_base64` attribute), the module's raw bytecode, or a path to a
@@ -119,7 +120,7 @@ def build_wasm_module_payload(wasm: Any) -> str:
             "`wasm` must be a pytket WasmModuleHandler/WasmFileHandler, WASM "
             f"bytecode, or a path to a .wasm file, got {type(wasm).__name__}"
         )
-    return json.dumps({"wasm_module": encoded})
+    return encoded
 
 
 def _encode_wasm_bytecode(bytecode: bytes, what: str) -> str:

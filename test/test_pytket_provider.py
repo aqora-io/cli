@@ -263,6 +263,10 @@ def _result_payload(
     )
 
 
+def _model_download_url(model_id: str) -> str:
+    return f"https://example.invalid/models/{model_id}"
+
+
 class FakeClient:
     def __init__(self, *_args, **_kwargs) -> None:
         self.authenticated = False
@@ -343,7 +347,17 @@ class FakeClient:
             }
         if "createProviderModel" in query:
             self.created_models += 1
-            return {"createProviderModel": {"id": f"model-{self.created_models}"}}
+            model_id = f"model-{self.created_models}"
+            # Serve the uploaded payload back, as `ProviderModel.downloadUrl`.
+            self.payloads[_model_download_url(model_id)] = self.uploads[-1][1].decode("utf-8")
+            return {"createProviderModel": {"id": model_id}}
+        if "query ProviderModel" in query:
+            return {
+                "node": {
+                    "__typename": "ProviderModel",
+                    "downloadUrl": _model_download_url(variables["id"]),
+                }
+            }
         if "createProviderJob" in query:
             return {
                 "createProviderJob": {
@@ -455,20 +469,21 @@ def _create_provider_job_calls(client) -> list[tuple[str, dict[str, object]]]:
     return [(query, variables) for query, variables in client.calls if "createProviderJob" in query]
 
 
-def test_qpu_process_circuits_attaches_wasm_file_handler(mod):
+def test_qpu_process_circuits_embeds_wasm_file_handler(mod):
     from pytket.circuit import Circuit
 
     qpu = mod.QPU()
 
     qpu.process_circuits([Circuit(1)], n_shots=10, wasm_file_handler=FakeWasmFileHandler())
 
-    # The circuits, then the WASM module as a second provider model.
-    _, wasm_upload = qpu.client.uploads
-    assert json.loads(wasm_upload[1]) == {"wasm_module": "AGFzbQEAAAA="}
+    # A single upload: the WASM module is part of the model.
+    (upload,) = qpu.client.uploads
+    wasm_module = json.loads(upload[1])["wasm_module"]
+    assert wasm_module["serialization_format"] == 1000
+    assert _un_zlib_b64(wasm_module["serialization"]) == "AGFzbQEAAAA="
     ((query, variables),) = _create_provider_job_calls(qpu.client)
     assert variables["providerModelId"] == "model-1"
-    assert variables["wasmModuleId"] == "model-2"
-    assert "$wasmModuleId: ID" in query
+    assert "wasmModuleId" not in query
 
 
 def test_qpu_process_circuits_without_wasm_sends_the_plain_job_document(mod):
@@ -576,6 +591,73 @@ def test_qpu_rejects_non_uniform_shot_sequence(mod):
 
     with pytest.raises(NotImplementedError, match="per-circuit"):
         qpu.process_circuits([Circuit(1), Circuit(1)], n_shots=[64, 128])
+
+
+def test_qpu_upload_circuits_once_and_process_the_model_twice(mod):
+    from pytket.circuit import Circuit
+
+    qpu = mod.QPU(platform="Selene", as_entity="my-team")
+
+    model = qpu.upload_circuits(
+        [Circuit(1), Circuit(2)], wasm_file_handler=FakeWasmFileHandler()
+    )
+    first = qpu.process_model(model, n_shots=10)
+    second = qpu.process_model(model, n_shots=20, noisy_simulation=False)
+
+    (upload,) = qpu.client.uploads
+    payload = json.loads(upload[1])
+    assert len(payload["programs"]) == 2
+    assert _un_zlib_b64(payload["wasm_module"]["serialization"]) == "AGFzbQEAAAA="
+    assert model.program_count == 2
+    assert model.has_wasm_module
+    # One handle per circuit, as `process_circuits` returns.
+    assert [handle[1] for handle in first] == [0, 1]
+    assert [handle[1] for handle in second] == [0, 1]
+    jobs = _create_provider_job_calls(qpu.client)
+    assert [variables["providerModelId"] for _, variables in jobs] == ["model-1", "model-1"]
+    assert all(variables["asEntity"] == "my-team" for _, variables in jobs)
+    assert all("wasmModuleId" not in query for query, _ in jobs)
+    assert jobs[1][1]["options"] == {"noisy_simulation": False}
+
+
+def test_qpu_upload_circuits_checks_them_like_process_circuits(mod):
+    from pytket.circuit import Circuit
+
+    qpu = mod.QPU(platform="Selene")
+
+    with pytest.raises(ValueError, match="predicate"):
+        qpu.upload_circuits([Circuit(30)])
+    with pytest.raises(ValueError, match="At least one circuit"):
+        qpu.upload_circuits([])
+    assert qpu.client.uploads == []
+
+    model = qpu.upload_circuits([Circuit(30)], valid_check=False)
+    assert model.program_count == 1
+
+
+def test_qpu_process_model_reloaded_by_id_returns_a_handle_per_circuit(mod):
+    from pytket.circuit import Circuit
+
+    uploader = mod.QPU(platform="Selene")
+    uploaded = uploader.upload_circuits([Circuit(1), Circuit(1), Circuit(1)])
+    qpu = mod.QPU(platform="Selene")
+    qpu.client.payloads = uploader.client.payloads
+
+    handles = qpu.process_model(qpu.model(uploaded.id), n_shots=10)
+
+    assert [handle[1] for handle in handles] == [0, 1, 2]
+    assert qpu.client.uploads == []
+
+
+def test_qpu_process_model_refuses_a_wasm_file_handler(mod):
+    from pytket.circuit import Circuit
+
+    qpu = mod.QPU(platform="Selene")
+    model = qpu.upload_circuits([Circuit(1)])
+
+    with pytest.raises(TypeError, match="part of the model"):
+        qpu.process_model(model, n_shots=10, wasm_file_handler=FakeWasmFileHandler())
+    assert _create_provider_job_calls(qpu.client) == []
 
 
 def test_qpu_valid_check_enforces_max_qubits(mod):

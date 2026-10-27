@@ -5,6 +5,7 @@ import importlib.util
 import json
 import sys
 import types
+import zlib
 from collections import Counter, namedtuple
 from pathlib import Path
 
@@ -117,6 +118,10 @@ def _install_hugr_qir(convert=None) -> None:
 # --- fake GraphQL client ---------------------------------------------------
 
 
+def _model_download_url(model_id: str) -> str:
+    return f"https://example.invalid/models/{model_id}"
+
+
 class FakeClient:
     def __init__(self, *_args, **_kwargs) -> None:
         self.authenticated = False
@@ -164,7 +169,17 @@ class FakeClient:
             }
         if "createProviderModel" in query:
             self.created_models += 1
-            return {"createProviderModel": {"id": f"model-{self.created_models}"}}
+            model_id = f"model-{self.created_models}"
+            # Serve the uploaded payload back, as `ProviderModel.downloadUrl`.
+            self.payloads[_model_download_url(model_id)] = self.uploads[-1][1].decode("utf-8")
+            return {"createProviderModel": {"id": model_id}}
+        if "query ProviderModel" in query:
+            return {
+                "node": {
+                    "__typename": "ProviderModel",
+                    "downloadUrl": _model_download_url(variables["id"]),
+                }
+            }
         if "createProviderJob" in query:
             return {
                 "createProviderJob": {
@@ -523,6 +538,18 @@ def _uploaded_programs(qpu) -> list[dict[str, object]]:
     return json.loads(upload[1])["programs"]
 
 
+def _embedded_wasm_module(body: bytes) -> str | None:
+    """The base64 bytecode of the WASM module an uploaded model embeds."""
+    wasm_module = json.loads(body).get("wasm_module")
+    if wasm_module is None:
+        return None
+    assert wasm_module["serialization_format"] == 1000
+    serialization = wasm_module["serialization"]
+    if wasm_module["compression_format"] == 2:
+        serialization = zlib.decompress(base64.b64decode(serialization)).decode("ascii")
+    return serialization
+
+
 def test_run_submits_in_the_platform_preferred_format(qpu_mod, wire):
     qpu = qpu_mod.QPU(platform="nexus:Selene")
     qpu.run(FakeGuppyFunction(), shots=10)
@@ -579,7 +606,7 @@ def _create_provider_job_calls(qpu) -> list[tuple[str, dict[str, object]]]:
 
 
 @pytest.mark.parametrize("as_path", [False, True])
-def test_run_attaches_a_wasm_module(qpu_mod, tmp_path, as_path):
+def test_run_embeds_a_wasm_module(qpu_mod, tmp_path, as_path):
     wasm = WASM_BYTECODE
     if as_path:
         wasm = tmp_path / "decoder.wasm"
@@ -588,17 +615,16 @@ def test_run_attaches_a_wasm_module(qpu_mod, tmp_path, as_path):
 
     qpu.run(FakeGuppyFunction(), shots=10, wasm=wasm)
 
-    _, wasm_upload = qpu.client.uploads
-    assert json.loads(wasm_upload[1]) == {"wasm_module": WASM_BASE64}
+    # A single upload: the WASM module is part of the model.
+    (upload,) = qpu.client.uploads
+    assert _embedded_wasm_module(upload[1]) == WASM_BASE64
     upload_calls = [
         variables for query, variables in qpu.client.calls if "uploadProviderModelPayload" in query
     ]
-    # Both uploads belong to the entity the job is submitted as.
-    assert upload_calls == [{"asEntity": "my-team"}, {"asEntity": "my-team"}]
+    assert upload_calls == [{"asEntity": "my-team"}]
     ((query, variables),) = _create_provider_job_calls(qpu)
     assert variables["providerModelId"] == "model-1"
-    assert variables["wasmModuleId"] == "model-2"
-    assert "wasmModuleId: $wasmModuleId" in query
+    assert "wasmModuleId" not in query
 
 
 def test_run_without_wasm_sends_the_plain_job_document(qpu_mod):
@@ -609,6 +635,112 @@ def test_run_without_wasm_sends_the_plain_job_document(qpu_mod):
     ((query, variables),) = _create_provider_job_calls(qpu)
     assert "wasmModuleId" not in query
     assert set(variables) == {"providerModelId", "shots", "providerPlatform", "asEntity"}
+
+
+def _provider_model_queries(qpu) -> list[dict[str, object]]:
+    return [variables for query, variables in qpu.client.calls if "query ProviderModel" in query]
+
+
+def test_upload_once_and_run_the_model_twice(qpu_mod, wire):
+    qpu = qpu_mod.QPU(platform="nexus:Selene", as_entity="my-team")
+
+    model = qpu.upload([FakeGuppyFunction(), FakeGuppyFunction()], wasm=WASM_BYTECODE)
+    first = qpu.run(model, shots=10)
+    second = qpu.run(model, shots=20, options={"n_qubits": 8})
+
+    assert model.id == "model-1"
+    assert model.serialization_format == wire.PROGRAM_HUGR_V1
+    assert model.program_count == 2
+    assert model.has_wasm_module
+    (upload,) = qpu.client.uploads
+    assert _embedded_wasm_module(upload[1]) == WASM_BASE64
+    jobs = _create_provider_job_calls(qpu)
+    assert [variables["providerModelId"] for _, variables in jobs] == ["model-1", "model-1"]
+    assert [variables["shots"] for _, variables in jobs] == [10, 20]
+    assert all(variables["asEntity"] == "my-team" for _, variables in jobs)
+    assert all("wasmModuleId" not in query for query, _ in jobs)
+    assert first.serialization_format == second.serialization_format == wire.PROGRAM_HUGR_V1
+    # Everything about the model was known from the upload.
+    assert _provider_model_queries(qpu) == []
+
+
+def test_model_reloaded_by_id_reads_its_payload_once(qpu_mod, wire):
+    uploader = qpu_mod.QPU(platform="nexus:Selene")
+    uploaded = uploader.upload(FakeGuppyFunction(), wasm=WASM_BYTECODE)
+    # As in a later session: only the id is kept.
+    qpu = qpu_mod.QPU(platform="nexus:Selene")
+    qpu.client.payloads = uploader.client.payloads
+
+    model = qpu.model(uploaded.id)
+    assert _provider_model_queries(qpu) == []
+
+    qpu.run(model, shots=10)
+    assert model.serialization_format == wire.PROGRAM_HUGR_V1
+    assert model.program_count == 1
+    assert model.has_wasm_module
+    assert _provider_model_queries(qpu) == [{"id": uploaded.id}]
+    ((_, variables),) = _create_provider_job_calls(qpu)
+    assert variables["providerModelId"] == uploaded.id
+    assert qpu.client.uploads == []
+
+
+def test_model_reloaded_by_id_rejects_a_payload_without_programs(qpu_mod):
+    qpu = qpu_mod.QPU(platform="nexus:Selene")
+    # A WASM module uploaded on its own, for the deprecated `wasmModuleId`.
+    qpu.client.payloads[_model_download_url("model-wasm")] = json.dumps(
+        {"wasm_module": WASM_BASE64}
+    )
+
+    with pytest.raises(ValueError, match="holds no programs"):
+        qpu.run(qpu.model("model-wasm"), shots=10)
+    assert _create_provider_job_calls(qpu) == []
+
+
+def test_run_refuses_a_model_in_a_format_the_platform_does_not_accept(qpu_mod):
+    model = qpu_mod.QPU(platform="nexus:Selene").upload(FakeGuppyFunction())
+    qpu = qpu_mod.QPU(platform="nexus:Selene")
+    qpu.client.platforms[0]["meta"]["inputFormats"] = ["QASM_V2"]
+
+    with pytest.raises(ValueError, match="HUGR_V1 programs.*accepts QASM_V2"):
+        qpu.run(model, shots=10)
+    assert _create_provider_job_calls(qpu) == []
+
+
+def test_run_leaves_the_model_format_to_the_server_without_a_platform(qpu_mod):
+    model = qpu_mod.QPU(platform="nexus:Selene").upload(FakeGuppyFunction())
+    qpu = qpu_mod.QPU()
+
+    qpu.run(model, shots=10)
+
+    assert len(_create_provider_job_calls(qpu)) == 1
+    assert _provider_model_queries(qpu) == []
+
+
+def test_run_refuses_a_wasm_module_for_a_model(qpu_mod):
+    qpu = qpu_mod.QPU(platform="nexus:Selene")
+    model = qpu.upload(FakeGuppyFunction())
+
+    with pytest.raises(TypeError, match="part of the model"):
+        qpu.run(model, shots=10, wasm=WASM_BYTECODE)
+    assert _create_provider_job_calls(qpu) == []
+
+
+def test_run_refuses_a_model_in_a_list(qpu_mod):
+    qpu = qpu_mod.QPU(platform="nexus:Selene")
+    model = qpu.upload(FakeGuppyFunction())
+
+    with pytest.raises(TypeError, match="single model"):
+        qpu.run([model, FakeGuppyFunction()], shots=10)
+    assert len(qpu.client.uploads) == 1
+    assert _create_provider_job_calls(qpu) == []
+
+
+def test_run_checks_options_before_uploading(qpu_mod):
+    qpu = qpu_mod.QPU(platform="nexus:Selene")
+
+    with pytest.raises(TypeError, match="`options` must be a mapping"):
+        qpu.run(FakeGuppyFunction(), shots=10, options=["n_qubits"])
+    assert qpu.client.uploads == []
 
 
 @pytest.mark.parametrize(
@@ -627,7 +759,7 @@ def test_run_rejects_an_unusable_wasm_module_before_uploading(qpu_mod, wasm, err
     assert _create_provider_job_calls(qpu) == []
 
 
-def test_build_wasm_module_payload_accepts_handlers(wire):
+def test_encode_wasm_module_accepts_handlers(wire):
     class Handler:
         bytecode_base64 = WASM_BASE64.encode("ascii")
 
@@ -635,12 +767,10 @@ def test_build_wasm_module_payload_accepts_handlers(wire):
         bytecode_base64 = WASM_BASE64
 
     for handler in (Handler(), TextHandler()):
-        assert json.loads(wire.build_wasm_module_payload(handler)) == {
-            "wasm_module": WASM_BASE64
-        }
+        assert wire.encode_wasm_module(handler) == WASM_BASE64
 
 
-def test_build_wasm_module_payload_checks_handlers(wire):
+def test_encode_wasm_module_checks_handlers(wire):
     # pytket's handlers built with `check=False`/`check_file=False` hold
     # whatever they were given.
     class NotWasmHandler:
@@ -650,9 +780,9 @@ def test_build_wasm_module_payload_checks_handlers(wire):
         bytecode_base64 = "not base64!"
 
     with pytest.raises(ValueError, match=r"\\0asm"):
-        wire.build_wasm_module_payload(NotWasmHandler())
+        wire.encode_wasm_module(NotWasmHandler())
     with pytest.raises(ValueError, match="invalid base64"):
-        wire.build_wasm_module_payload(InvalidBase64Handler())
+        wire.encode_wasm_module(InvalidBase64Handler())
 
 
 def test_run_sends_options(qpu_mod):

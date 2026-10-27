@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence
 
 from aqora import Client
 
 from aqora._provider import jobs
+from aqora._provider.models import ProviderModel
 
 from . import client as client_ops
 from ._deps import (
@@ -65,6 +67,7 @@ class QPU(BackendV2):
         self._platform = platform
         self._as_entity = as_entity
         self._target: Target | None = None
+        self._input_formats: list[int] | None = None
         super().__init__(provider=None, name="aqora-qpu")
 
     @classmethod
@@ -103,12 +106,40 @@ class QPU(BackendV2):
     def max_circuits(self) -> int | None:
         return None
 
-    def run(
+    def upload(
         self,
         run_input: QuantumCircuit | Iterable[QuantumCircuit],
+    ) -> ProviderModel:
+        """Upload circuits as a model, to run as many jobs as needed with `run`.
+
+        The model's `id` reloads it later, e.g. in another session, with
+        `model`.
+        """
+        circuits = self._normalize_run_input(run_input)
+        self._graphql.ensure_authenticated()
+        model_payload = self._build_model_payload(circuits)
+        return jobs.upload_programs(
+            self._graphql,
+            model_payload,
+            serialization_format=_payload_serialization_format(model_payload),
+            program_count=len(circuits),
+            has_wasm_module=False,
+            as_entity=self._as_entity,
+        )
+
+    def model(self, model_id: str) -> ProviderModel:
+        """The model `model_id`, as uploaded earlier with `upload`."""
+        return ProviderModel(self._graphql, model_id)
+
+    def run(
+        self,
+        run_input: QuantumCircuit | Iterable[QuantumCircuit] | ProviderModel,
         **options: Any,
     ) -> "QPUJob":
-        """Submit circuits as a provider job.
+        """Submit circuits, or a model from `upload`, as a provider job.
+
+        A model runs without being uploaded again; it must be in a format the
+        platform accepts, and owned by the job's `as_entity`.
 
         Only `shots` is forwarded to the provider API. `memory` is accepted for
         compatibility with `BackendSamplerV2` (which always requests it); whether
@@ -117,7 +148,10 @@ class QPU(BackendV2):
         """
         from .job import QPUJob
 
-        circuits = self._normalize_run_input(run_input)
+        if isinstance(run_input, ProviderModel):
+            model, circuits = run_input, []
+        else:
+            model, circuits = None, self._normalize_run_input(run_input)
 
         shots = self._effective_shots(options)
         unsupported = self._unsupported_run_options(options)
@@ -127,6 +161,19 @@ class QPU(BackendV2):
                 f"parameter (unsupported options: {', '.join(sorted(unsupported))})"
             )
         self._graphql.ensure_authenticated()
+
+        if model is not None:
+            if self._input_formats is None:
+                self._input_formats = jobs.load_input_formats(self._graphql, self._platform)
+            provider_job = jobs.submit_job(
+                self._graphql,
+                model,
+                shots=shots,
+                platform=self._platform,
+                as_entity=self._as_entity,
+                input_formats=self._input_formats,
+            )
+            return QPUJob(self, provider_job.job_id, payload=provider_job._payload)
 
         model_payload = self._build_model_payload(circuits)
         model_id = jobs.upload_model(self._graphql, model_payload, as_entity=self._as_entity)
@@ -237,3 +284,14 @@ class QPU(BackendV2):
         ]
         items.sort(key=lambda item: item.index)
         return items
+
+
+def _payload_serialization_format(model_payload: str) -> int | None:
+    """The serialization format the `qio` package gave a model's programs, or
+    None when the payload doesn't say."""
+    programs = json.loads(model_payload).get("programs") or []
+    formats = {program.get("serialization_format") for program in programs}
+    if len(formats) != 1:
+        return None
+    serialization_format = formats.pop()
+    return serialization_format if isinstance(serialization_format, int) else None

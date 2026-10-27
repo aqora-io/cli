@@ -265,7 +265,6 @@ class AqoraGraphQLClient:
         shots: int | None,
         provider_platform: str | None = None,
         as_entity: str | None = None,
-        wasm_module_id: str | None = None,
         options: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         optional: list[tuple[str, str]] = []
@@ -275,9 +274,6 @@ class AqoraGraphQLClient:
             "providerPlatform": provider_platform,
             "asEntity": as_entity,
         }
-        if wasm_module_id is not None:
-            optional.append(("wasmModuleId", "ID"))
-            variables["wasmModuleId"] = wasm_module_id
         if options:
             optional.append(("options", "JSON"))
             variables["options"] = dict(options)

@@ -112,6 +112,9 @@ QIR_LABELED_FIXTURE = "\n".join(
 )
 
 
+MODEL_DOWNLOAD_URL = "https://example.invalid/models/model-1"
+
+
 class FakeClient:
     def __init__(self, *_args, **_kwargs) -> None:
         self.authenticated = False
@@ -174,7 +177,11 @@ class FakeClient:
                 }
             }
         if "createProviderModel" in query:
+            # Serve the uploaded payload back, as `ProviderModel.downloadUrl`.
+            self.payloads[MODEL_DOWNLOAD_URL] = self.uploads[-1][1].decode("utf-8")
             return {"createProviderModel": {"id": "model-1"}}
+        if "query ProviderModel" in query:
+            return {"node": {"__typename": "ProviderModel", "downloadUrl": MODEL_DOWNLOAD_URL}}
         if "createProviderJob" in query:
             return {
                 "createProviderJob": {
@@ -419,6 +426,52 @@ def test_qpu_run_passes_as_entity_to_upload_and_job(mod):
     ]
     assert upload_calls == [{"asEntity": "my-team"}]
     assert create_provider_job_calls[-1]["asEntity"] == "my-team"
+
+
+def _create_provider_job_variables(qpu) -> list[dict[str, object]]:
+    return [variables for query, variables in qpu.client.calls if "createProviderJob" in query]
+
+
+def test_qpu_upload_once_and_run_the_model_twice(mod):
+    qpu = mod.QPU(platform="Selene", as_entity="my-team")
+
+    model = qpu.upload(FakeGuppyFunction())
+    qpu.run(model, shots=10)
+    job = qpu.run(model, shots=20, options={"n_qubits": 8})
+
+    assert len(qpu.client.uploads) == 1
+    assert model.program_count == 1
+    assert not model.has_wasm_module
+    jobs = _create_provider_job_variables(qpu)
+    assert [variables["providerModelId"] for variables in jobs] == ["model-1", "model-1"]
+    assert [variables["shots"] for variables in jobs] == [10, 20]
+    assert all(variables["asEntity"] == "my-team" for variables in jobs)
+    assert jobs[1]["options"] == {"n_qubits": 8}
+    assert job.job_id == "ProviderJob:job-1"
+
+
+def test_qpu_runs_a_model_reloaded_by_id(mod):
+    uploader = mod.QPU(platform="Selene")
+    uploaded = uploader.upload(FakeGuppyFunction())
+    qpu = mod.QPU(platform="Selene")
+    qpu.client.payloads = uploader.client.payloads
+    qpu.client.platforms[0]["meta"]["inputFormats"] = ["HUGR_V1", "QIR_V1"]
+
+    qpu.run(qpu.model(uploaded.id), shots=10)
+
+    assert qpu.client.uploads == []
+    (variables,) = _create_provider_job_variables(qpu)
+    assert variables["providerModelId"] == "model-1"
+
+
+def test_qpu_run_refuses_a_model_in_a_format_the_platform_does_not_accept(mod):
+    qpu = mod.QPU(platform="Selene")
+    qpu.client.platforms[0]["meta"]["inputFormats"] = ["TKET_CIRCUIT_JSON_V1"]
+    model = qpu.upload(FakeGuppyFunction())
+
+    with pytest.raises(ValueError, match="HUGR_V1 programs"):
+        qpu.run(model, shots=10)
+    assert _create_provider_job_variables(qpu) == []
 
 
 def test_qpu_run_accepts_hugr_package(mod):
