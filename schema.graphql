@@ -996,6 +996,10 @@ type CompetitionStage implements Node {
 	privateApprovals: Boolean!
 	createdAt: DateTime!
 	validUntil: DateTime
+	"""
+	Submissions to this stage are rejected from this time on.
+	"""
+	submissionDeadline: DateTime
 	id: ID!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	seq: Int!
@@ -1181,6 +1185,10 @@ input CreateCompetitionInput {
 	score.
 	"""
 	privateApprovals: Boolean! = true
+	"""
+	Submissions to this stage are rejected from this time on.
+	"""
+	submissionDeadline: DateTime = null
 	timeline: CreateTimelineInput
 	rewards: [RewardInput!]
 	about: String
@@ -1220,6 +1228,10 @@ input CreateCompetitionStageInput {
 	Message shown to participants before they submit a solution.
 	"""
 	submissionPreamble: String = null
+	"""
+	Submissions to this stage are rejected from this time on.
+	"""
+	submissionDeadline: DateTime = null
 }
 
 input CreateCompetitionTeamRequestInput {
@@ -1428,7 +1440,14 @@ type DataCatalogEdge {
 	cursor: String!
 }
 
+"""
+A versioned collection of data files. The full slug is `owner/localSlug`;
+use `latestVersion` or `version(...)` to reach files, schema and records.
+"""
 type Dataset implements Votable & ForumOwner & Node & Taggable {
+	"""
+	The slug within the owner's namespace; the full slug is `owner/localSlug`.
+	"""
 	localSlug: String!
 	name: String!
 	private: Boolean!
@@ -1443,8 +1462,17 @@ type Dataset implements Votable & ForumOwner & Node & Taggable {
 	forum: Forum!
 	members(after: String, before: String, first: Int, last: Int, search: String): DatasetMembershipConnection!
 	analytics: DatasetAnalytics!
+	"""
+	The version with the highest number.
+	"""
 	latestVersion: DatasetVersion
+	"""
+	One version by its number.
+	"""
 	version(major: Int!, minor: Int!, patch: Int!): DatasetVersion
+	"""
+	This dataset's versions, drafts included; filter with `published`.
+	"""
 	versions(after: String, before: String, first: Int, last: Int, filters: DatasetVersionQueryFilters): DatasetVersionConnection!
 	competitions(after: String, before: String, first: Int, last: Int, search: String): DatasetCompetitionConnection!
 	tags(after: String, before: String, first: Int, last: Int): TaggableConnection!
@@ -1581,6 +1609,10 @@ type DatasetSize {
 	high: Int!
 }
 
+"""
+One numbered release of a dataset. A draft has no `publishedAt` and can
+still receive files.
+"""
 type DatasetVersion implements Node {
 	version: Semver!
 	license: String
@@ -1594,15 +1626,33 @@ type DatasetVersion implements Node {
 	description: String!
 	doi: DOI
 	fileByPartitionNum(partitionNum: Int!): DatasetVersionFile
+	"""
+	The data files that make up this version, one per partition.
+	"""
 	files(after: String, before: String, first: Int, last: Int): DatasetVersionFileConnection!
 	analytics: DatasetAnalytics!
 	authors(after: String, before: String, first: Int, last: Int, search: String): DatasetVersionAuthorConnection!
+	"""
+	The column schema of the data as JSON, once files are uploaded.
+	"""
 	schema: JSON
 	rows: Int!
 	size: Int!
+	"""
+	Whether this draft can be published: not yet published and every file finalized.
+	"""
 	publishable: Boolean!
+	"""
+	A page of records as JSON objects. `limit` is at most 1000.
+	"""
 	records(offset: Int! = 0, limit: Int! = 100): [JSON!]!
+	"""
+	The companion notebook workspace of this version, if any.
+	"""
 	workspace: Workspace
+	"""
+	A short-lived download URL for the Croissant metadata file, when one exists.
+	"""
 	croissantUrl: Url
 }
 
@@ -2401,6 +2451,24 @@ type GlobalLeaderboardEdge {
 	cursor: String!
 }
 
+input ImportWorkspaceVersionFileInput {
+	"""
+	The `key` from `initWorkspaceVersionFileUpload`, once the file is
+	uploaded to its `uploadUrl`.
+	"""
+	key: String!
+	"""
+	Where to write the file, relative to the workspace root. An existing
+	file there is replaced.
+	"""
+	path: String!
+	"""
+	Convert the file into a marimo notebook instead of copying it as-is. The
+	file must be `.ipynb`, `.md`, `.qmd` or `.py`, and `path` end with `.py`.
+	"""
+	convert: Boolean! = false
+}
+
 type InitUploadFile {
 	key: String!
 	uploadUrl: Url!
@@ -2578,10 +2646,10 @@ type Mutation {
 	`QuantinuumConfig` (`noisy_simulation`, `simulator`, `error_params`,
 	`compiler_options`, `no_opt`, `allow_2q_gate_rebase`,
 	`target_2qb_gate`, `leakage_detection`, `simplify_initial`). Nexus
-	Selene accepts `n_qubits` (the qubits to simulate, by default the
-	device's width) and the `SeleneConfig` objects `simulator` and
-	`error_model`; Selene Plus also accepts `runtime`. Other platforms
-	accept none. A null option is the same as leaving it out.
+	Selene and Selene Plus accept `n_qubits` (the qubits to simulate, by
+	default the device's width) and the objects `simulator`, `runtime` and
+	`error_model` of their `SeleneConfig` or `SelenePlusConfig`. Other
+	platforms accept none. A null option is the same as leaving it out.
 	The job is rejected before anything is submitted when an option isn't
 	accepted.
 	"""
@@ -2622,6 +2690,9 @@ type Mutation {
 	updateCompetitionTeamRequest(competitionTeamRequestId: ID!, input: UpdateCompetitionTeamRequestInput!): CompetitionTeamRequest!
 	deleteCompetitionTeamRequest(competitionTeamRequestId: ID!): ID!
 	sendCompetitionTeamRequestMessage(competitionTeamRequestId: ID!, message: String!): CompetitionTeamRequest!
+	"""
+	Create a dataset with an empty first draft version.
+	"""
 	createDataset(input: CreateDatasetInput!, asEntity: UsernameOrID): Dataset!
 	updateDataset(datasetId: ID!, input: UpdateDatasetInput!): Dataset!
 	deleteDataset(datasetId: ID!): ID!
@@ -2644,6 +2715,9 @@ type Mutation {
 	startDatasetVersionUpload(datasetVersionId: ID!): DatasetVersion!
 	finishDatasetVersionUpload(datasetVersionId: ID!): DatasetVersion!
 	resetDraftDatasetVersion(datasetVersionId: ID!): DatasetVersion!
+	"""
+	Publish a draft version once it is `publishable`.
+	"""
 	publishDatasetVersion(datasetVersionId: ID!): DatasetVersion!
 	updateDatasetVersion(datasetVersionId: ID!, input: UpdateDatasetVersionInput!): DatasetVersion!
 	deleteDatasetVersion(datasetVersionId: ID!): ID!
@@ -2665,11 +2739,28 @@ type Mutation {
 	the last part was uploaded.
 	"""
 	completeDatasetVersionFile(datasetVersionFileId: ID!, eTags: [String!]!): DatasetVersionFile!
+	"""
+	Stop all runners of a workspace. Running kernels lose their state; files
+	on the workspace volume are kept.
+	"""
 	deleteWorkspaceRunners(workspaceId: ID!): ID!
+	"""
+	Create a workspace with a first draft version 0.0.0, seeded from the
+	template or from `input.fromVersionId`.
+	"""
 	createWorkspace(input: CreateWorkspaceInput!, asEntity: UsernameOrID): Workspace!
+	"""
+	Update a workspace's name, visibility, tags, description or license.
+	"""
 	updateWorkspace(id: ID!, input: UpdateWorkspaceInput!): Workspace!
+	"""
+	Permanently delete a workspace with all its versions and runners.
+	"""
 	deleteWorkspace(id: ID!): ID!
 	transferWorkspaceOwnership(id: ID!, newOwner: UsernameOrID!): Workspace!
+	"""
+	Create a new draft version of a workspace.
+	"""
 	createWorkspaceVersion(id: ID!, input: CreateWorkspaceVersionInput!): WorkspaceVersion!
 	"""
 	Clones a workspace version into another (possibly new) workspace by
@@ -2683,8 +2774,21 @@ type Mutation {
 	"""
 	cloneWorkspaceVersion(id: ID!, input: CloneWorkspaceVersionInput!, asEntity: UsernameOrID): WorkspaceVersion!
 	updateWorkspaceVersion(id: ID!, input: UpdateWorkspaceVersionInput!): WorkspaceVersion!
+	"""
+	Publish a draft version. It becomes read-only and viewable through its `renderer`.
+	"""
 	publishWorkspaceVersion(id: ID!): WorkspaceVersion!
 	deleteWorkspaceVersion(id: ID!): ID!
+	"""
+	Start uploading a file into a draft version: PUT the file to
+	`uploadUrl`, then import it with `importWorkspaceVersionFile`.
+	"""
+	initWorkspaceVersionFileUpload(id: ID!, input: InitUploadFileInput!): InitUploadFile!
+	"""
+	Import an uploaded file into a draft version's files. Follow it with
+	`workspaceImportStatus`.
+	"""
+	importWorkspaceVersionFile(id: ID!, input: ImportWorkspaceVersionFileInput!): WorkspaceImport!
 	createAnnouncement(input: CreateAnnouncementInput!): Announcement!
 	hideAnnouncement(announcementId: ID!): Announcement!
 	"""
@@ -3227,6 +3331,10 @@ type ProviderJob implements Node {
 	entity: Entity!
 	provider: String!
 	"""
+	The job's ID on the provider.
+	"""
+	providerId: String!
+	"""
 	The platform (backend) the job's session runs on.
 	"""
 	platform: ProviderPlatform
@@ -3327,13 +3435,23 @@ type ProviderModel implements Node {
 	downloadUrl: Url!
 }
 
+"""
+A quantum backend offered by a provider. The Python library addresses it
+as `provider:name`, e.g. `nexus:Selene`.
+"""
 type ProviderPlatform implements Node {
 	id: ID!
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
+	"""
+	The provider hosting this platform.
+	"""
 	provider: Provider!
 	name: String!
 	private: Boolean!
 	members(after: String, before: String, first: Int, last: Int): ProviderPlatformMembershipConnection!
+	"""
+	Provider-reported limits and the program formats it accepts.
+	"""
 	meta: ProviderPlatformMeta!
 }
 
@@ -3427,12 +3545,18 @@ enum QuantumProgramFormat {
 }
 
 type Query {
+	"""
+	Any object by its global `ID`, as returned in `id` fields.
+	"""
 	node(id: ID!): Node!
 	competitions(after: String, before: String, first: Int, last: Int, filters: CompetitionQueryFilters): CompetitionConnection!
 	competitionBySlug(slug: String!): Competition
 	entities(after: String, before: String, first: Int, last: Int, search: String, kinds: [EntityKind!]): EntityConnection!
 	entityByUsername(username: String!): Entity
 	leaderboard(after: String, before: String, first: Int, last: Int, search: String, kinds: [EntityKind!]): GlobalLeaderboardConnection!
+	"""
+	The user or organization this request is authenticated as.
+	"""
 	viewer: Entity!
 	events(after: String, before: String, first: Int, last: Int, filters: EventQueryFilters): EventConnection!
 	eventBySlug(slug: String!): Event
@@ -3457,7 +3581,13 @@ type Query {
 	(runner api keys, `oauth2.` tokens).
 	"""
 	viewerOauth2Grants: [Oauth2Grant!]!
+	"""
+	Browse datasets the viewer can read; `filters.search` is a full-text search.
+	"""
 	datasets(after: String, before: String, first: Int, last: Int, filters: DatasetQueryFilters): DatasetConnection!
+	"""
+	A dataset by owner username and local slug; null when absent or not readable.
+	"""
 	datasetBySlug(owner: String!, localSlug: String!): Dataset
 	dataCatalogBySlug(owner: String!, localSlug: String!): DataCatalog
 	"""
@@ -3465,8 +3595,17 @@ type Query {
 	owned by organizations they belong to; system admins see all jobs.
 	"""
 	providerJobs(after: String, before: String, first: Int, last: Int): ProviderJobConnection!
+	"""
+	Browse the quantum platforms available to the viewer.
+	"""
 	providerPlatforms(after: String, before: String, first: Int, last: Int): ProviderPlatformConnection!
+	"""
+	Browse workspaces the viewer can read; `filters.search` is a full-text search.
+	"""
 	workspaces(after: String, before: String, first: Int, last: Int, filters: WorkspaceConnectionFilters): WorkspaceConnection!
+	"""
+	A workspace by owner username and slug; null when absent or not readable.
+	"""
 	workspaceBySlug(owner: String!, slug: String!): Workspace
 	announcements(after: String, before: String, first: Int, last: Int, filters: AnnouncementQueryFilters): AnnouncementConnection!
 	announcementByTargetPath(targetPath: String!): Announcement
@@ -3812,6 +3951,10 @@ type Subscription {
 	"""
 	newProviderJobs(entityId: ID, workspaceVersionId: ID): ProviderJob!
 	workspaceRunnerStatus(id: ID!): WorkspaceRunner!
+	"""
+	The import's status, now and on every change until it ends.
+	"""
+	workspaceImportStatus(id: ID!): WorkspaceImport!
 }
 
 type Tag implements Node {
@@ -4065,6 +4208,10 @@ input UpdateCompetitionInput {
 	Message shown to participants before they submit a solution.
 	"""
 	submissionPreamble: String
+	"""
+	Submissions to this stage are rejected from this time on.
+	"""
+	submissionDeadline: DateTime
 	scoringCriteria: [UpdateCompetitionScoringCriterionInput!]
 	timeline: UpdateTimelineInput
 	rewards: [RewardInput!]
@@ -4121,6 +4268,10 @@ input UpdateCompetitionStageInput {
 	Message shown to participants before they submit a solution.
 	"""
 	submissionPreamble: String
+	"""
+	Submissions to this stage are rejected from this time on.
+	"""
+	submissionDeadline: DateTime
 	scoringCriteria: [UpdateCompetitionScoringCriterionInput!]
 }
 
@@ -4457,6 +4608,12 @@ type WebsiteMetadata {
 	description: String
 }
 
+"""
+A notebook project. Content lives in its versions: use `latestVersion` or
+`version(version)` to reach a draft's `editor` or a published version's
+`renderer`. Dataset workspaces (one per dataset version) and legacy
+workspaces expose `editor`, `viewer` and `renderer` directly.
+"""
 type Workspace implements Votable & ForumOwner & Node & Taggable {
 	storage: String
 	name: String
@@ -4470,8 +4627,20 @@ type Workspace implements Votable & ForumOwner & Node & Taggable {
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	owner: Entity!
 	datasetVersion: DatasetVersion
+	"""
+	The live edit runner of a dataset or legacy workspace. Always null for
+	versioned workspaces: edit through a draft `WorkspaceVersion.editor`.
+	"""
 	editor: WorkspaceRunner
+	"""
+	The read-only run runner of a dataset or legacy workspace; null for
+	versioned workspaces.
+	"""
 	viewer: WorkspaceRunner
+	"""
+	The static render runner of a dataset or legacy workspace; null for
+	versioned workspaces, which render through a published `WorkspaceVersion`.
+	"""
 	renderer: WorkspaceRunner
 	runners(first: Int, after: String): WorkspaceRunnerConnection!
 	"""
@@ -4494,10 +4663,26 @@ type Workspace implements Votable & ForumOwner & Node & Taggable {
 	of its most recently created track-linked version.
 	"""
 	fromCompetition: Competition
+	"""
+	The notebook opened by default, as a path in the workspace. Auto-detected
+	for dataset and legacy workspaces; versioned workspaces set it per version.
+	"""
 	overviewNotebook: String
+	"""
+	The notebook holding importable library code, falling back to `overviewNotebook`.
+	"""
 	libNotebook: String
+	"""
+	This workspace's versions, drafts included; filter with `published`.
+	"""
 	versions(after: String, before: String, first: Int, last: Int, filters: WorkspaceVersionQueryFilters): WorkspaceVersionConnection!
+	"""
+	One version by its number, e.g. `"0.1.0"`.
+	"""
 	version(version: Semver!): WorkspaceVersion
+	"""
+	The version with the highest number.
+	"""
 	latestVersion: WorkspaceVersion
 	"""
 	Submissions (across any competition/stage) that link a version of this
@@ -4584,13 +4769,37 @@ type WorkspaceFile implements WorkspaceEntry {
 	downloadUrl: Url
 }
 
+"""
+A file being imported into a draft workspace version.
+"""
+type WorkspaceImport {
+	id: ID!
+	status: WorkspaceImportStatus!
+	"""
+	Why the import failed. Nothing was written.
+	"""
+	message: String
+}
+
+enum WorkspaceImportStatus {
+	PENDING
+	COMPLETE
+	FAILED
+}
+
 enum WorkspacePythonRuntime {
 	UV
 	CONDA
 }
 
 type WorkspaceRunner implements Node {
+	"""
+	What this runner does: edit, run or render the workspace.
+	"""
 	command: RunnerCommand!
+	"""
+	Startup state; `url` is usable once `READY`.
+	"""
 	phase: WorkspaceRunnerPhase!
 	"""
 	Allotted CPU (k8s request/limit) for this runner's pod. Not live usage.
@@ -4604,17 +4813,18 @@ type WorkspaceRunner implements Node {
 	viewerCan(action: Action!, asEntity: UsernameOrID): Boolean!
 	workspace: Workspace!
 	"""
-	Disk usage for this runner's backing volume, read live from the kubimo
-	Workspace CR the runner mounts — the per-version CR for versioned
-	workspaces, otherwise the workspace CR. `used`/`capacity`/`available` are
-	null until the controller reports them; `requested` (the workspace's
-	allotment — its slot quota, `spec.storage.max`) is available as soon as
-	the CR exists, so callers can
-	show the requested allotment before usage is reported. The whole object is
-	null only when the backing CR is absent. Unlike `workspace.storageStatus`,
-	this is populated for versioned workspaces (whose parent has no live CR).
+	Disk usage of this runner's volume. `used`/`capacity`/`available` are
+	null until usage is reported; `requested` (the workspace's allotment) is
+	known immediately. The whole object is null only when the volume does
+	not exist. Unlike `workspace.storageStatus`, this is populated for
+	versioned workspaces.
 	"""
 	storage: StorageStatus
+	"""
+	The URL to open this runner. `notebook` is a path in the workspace and
+	defaults to the overview notebook. The URL embeds a bearer `access_token`
+	query parameter: treat it as a secret and never log or repeat it.
+	"""
 	url(notebook: String): Url!
 	"""
 	The workspace version this runner belongs to, if any. Null for
