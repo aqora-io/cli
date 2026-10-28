@@ -3995,7 +3995,7 @@ dependencies = [
 [[package]]
 name = "qio"
 version = "0.1.0"
-source = "git+https://github.com/aqora-io/qio-rs?rev=04776830afba6f456e35ca967ef3c8d67b424d2e#04776830afba6f456e35ca967ef3c8d67b424d2e"
+source = "git+https://github.com/aqora-io/qio-rs?rev=492b2c3c5e4565a319d29c6e184036540f753938#492b2c3c5e4565a319d29c6e184036540f753938"
 dependencies = [
  "base64 0.22.1",
  "flate2",
