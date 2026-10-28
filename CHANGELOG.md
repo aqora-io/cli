@@ -2,6 +2,20 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.37.0 - 2026-10-28
+#### Features
+- support model reuse and price estimation - (b3e092a) - Benjamin Lefebvre
+#### Bug Fixes
+- reject unknown program serialization formats - (a4ac1e4) - Benjamin Lefebvre
+#### Tests
+- add provider WASM/model-reuse end-to-end script - (56cb6ab) - Benjamin Lefebvre
+#### Build system
+- (**deps**) bump qio-rs to 492b2c3 - (a1b4a8d) - Benjamin Lefebvre
+#### Miscellaneous Chores
+- sync schema.graphql with platform - (9bc5e48) - Benjamin Lefebvre
+
+- - -
+
 ## v0.36.0 - 2026-10-08
 #### Features
 - (**qpu**) forward Selene emulator options from the guppy backend - (7f462a2) - Julian Popescu
