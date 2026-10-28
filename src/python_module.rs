@@ -55,11 +55,22 @@ fn client_error(error: crate::error::Error) -> PyErr {
 }
 
 fn program_format(value: u16) -> PyResult<qio::QuantumProgramSerializationFormat> {
-    serde_json::from_value(value.into()).map_err(|_| {
+    let unknown = || {
         PyValueError::new_err(format!(
             "unknown quantum program serialization format: {value}"
         ))
-    })
+    };
+    // qio marks `UnknownSerializationFormat` `#[serde(other)]`, so deserializing
+    // an unrecognized discriminant silently yields it instead of failing. Reject
+    // it here rather than encoding a program the backend can't interpret.
+    let format: qio::QuantumProgramSerializationFormat =
+        serde_json::from_value(value.into()).map_err(|_| unknown())?;
+    if value != qio::QuantumProgramSerializationFormat::UnknownSerializationFormat as u16
+        && format == qio::QuantumProgramSerializationFormat::UnknownSerializationFormat
+    {
+        return Err(unknown());
+    }
+    Ok(format)
 }
 
 fn compressed<T: Clone>(
