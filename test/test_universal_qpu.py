@@ -18,10 +18,11 @@ import aqora._aqora as _AQORA_NATIVE
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1] / "python" / "aqora"
 
-_FAKE_MODULE_PREFIXES = ("aqora.", "qiskit", "pytket", "hugr", "cirq")
+_FAKE_MODULE_PREFIXES = ("aqora.", "qiskit", "pytket", "pyqir", "hugr", "cirq")
 
 HUGR_ENVELOPE = b"HUGR\x00fake-envelope"
 QIR_BITCODE = b"BC\xc0\xdefake-bitcode"
+QIR_TEXT = "declare i1 @__quantum__qis__read_result__body(ptr)"
 QASM2_SOURCE = "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];"
 QASM3_SOURCE = "OPENQASM 3.0;\nqubit[1] q;"
 
@@ -100,6 +101,19 @@ def _install_pytket(*, qasm=True, qir=None) -> None:
         module.QIRProfile = QIRProfile
         module.pytket_to_qir = qir
         sys.modules["pytket.qir"] = module
+
+        pyqir = types.ModuleType("pyqir")
+        pyqir.irs = []
+
+        class Module:
+            @staticmethod
+            def from_ir(context, ir):
+                pyqir.irs.append(ir)
+                return types.SimpleNamespace(bitcode=QIR_BITCODE)
+
+        pyqir.Context = object
+        pyqir.Module = Module
+        sys.modules["pyqir"] = pyqir
 
 
 def _install_qiskit_to_tket(convert=None) -> None:
@@ -519,7 +533,7 @@ def test_mixed_sources_resolve_to_a_shared_format(formats, wire):
     # QASM, so the whole job has to land on QIR.
     _install_qiskit(qasm3=lambda c: QASM3_SOURCE)
     _install_qiskit_to_tket()
-    _install_pytket(qir=lambda circuit, **_: QIR_BITCODE)
+    _install_pytket(qir=lambda circuit, **_: QIR_TEXT)
     _install_hugr_qir()
 
     sources = [formats.detect(FakeQiskitCircuit()), formats.detect(FakeGuppyFunction())]
@@ -541,7 +555,7 @@ def test_pytket_qir_uses_the_adaptive_profile(formats, wire):
 
     def qir(circuit, **kwargs):
         calls.append(kwargs)
-        return QIR_BITCODE
+        return QIR_TEXT
 
     _install_pytket(qir=qir)
     formats.encode([formats.detect(FakePytketCircuit())], [wire.PROGRAM_QIR_V1])
@@ -549,12 +563,20 @@ def test_pytket_qir_uses_the_adaptive_profile(formats, wire):
     assert calls[0]["profile"] == sys.modules["pytket.qir"].QIRProfile.ADAPTIVE
 
 
+def test_pytket_qir_reads_results_through_the_runtime(formats, wire):
+    # Helios-1 rejects `__quantum__qis__read_result__body`.
+    _install_pytket(qir=lambda circuit, **_: QIR_TEXT)
+    formats.encode([formats.detect(FakePytketCircuit())], [wire.PROGRAM_QIR_V1])
+
+    assert sys.modules["pyqir"].irs == ["declare i1 @__quantum__rt__read_result(ptr)"]
+
+
 def test_pytket_qir_none_is_a_conversion_failure(formats, wire):
     # `pytket_to_qir` returns None for circuits it cannot lower.
     _install_pytket(qir=lambda circuit, **_: None)
     source = formats.detect(FakePytketCircuit())
 
-    with pytest.raises(ValueError, match="did not produce QIR bitcode"):
+    with pytest.raises(ValueError, match="did not produce QIR"):
         formats.encode([source], [wire.PROGRAM_QIR_V1])
 
 
