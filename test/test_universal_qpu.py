@@ -130,6 +130,7 @@ class FakeClient:
         self.created_models = 0
         self.job_status: str | None = "COMPLETED"
         self.job_error: str | None = None
+        self.hqc_cost: float | None = 15.82
         self.result_pages: list[list[dict[str, object]]] = [
             [{"index": 0, "error": None, "result": "https://example.invalid/result-0"}]
         ]
@@ -191,6 +192,19 @@ class FakeClient:
                     "createdAt": "2026-07-06T00:00:00Z",
                 }
             }
+        if "estimateProviderJob" in query:
+            return {
+                "estimateProviderJob": {
+                    "id": "ProviderJob:estimate-1",
+                    "provider": "nexus",
+                    "status": "WAITING",
+                    "error": None,
+                    "resultCount": None,
+                    "createdAt": "2026-07-06T00:00:00Z",
+                }
+            }
+        if "query ProviderJobHqcCost" in query:
+            return {"node": {"__typename": "ProviderJob", "hqcCost": self.hqc_cost}}
         if "query ProviderJobResults" in query:
             page = 0 if variables.get("after") is None else int(variables["after"])
             has_next = page + 1 < len(self.result_pages)
@@ -733,6 +747,87 @@ def test_run_refuses_a_model_in_a_list(qpu_mod):
         qpu.run([model, FakeGuppyFunction()], shots=10)
     assert len(qpu.client.uploads) == 1
     assert _create_provider_job_calls(qpu) == []
+
+
+def _estimate_provider_job_calls(qpu) -> list[dict[str, object]]:
+    return [
+        variables for query, variables in qpu.client.calls if "estimateProviderJob" in query
+    ]
+
+
+def test_estimate_returns_the_syntax_checker_cost(qpu_mod):
+    qpu = qpu_mod.QPU(platform="nexus:Selene", as_entity="my-team")
+
+    cost = qpu.estimate(FakeGuppyFunction(), shots=100, wait=0)
+
+    assert cost == 15.82
+    assert _estimate_provider_job_calls(qpu) == [
+        {
+            "providerModelId": "model-1",
+            "shots": 100,
+            "providerPlatform": "nexus:Selene",
+            "asEntity": "my-team",
+        }
+    ]
+    # Nothing is run: the estimate isn't a job of the platform.
+    assert _create_provider_job_calls(qpu) == []
+
+
+def test_estimate_then_run_a_model_uploads_it_once(qpu_mod):
+    qpu = qpu_mod.QPU(platform="nexus:Selene")
+    model = qpu.upload(FakeGuppyFunction(), wasm=WASM_BYTECODE)
+
+    qpu.estimate(model, shots=100, wait=0)
+    qpu.run(model, shots=100)
+
+    assert len(qpu.client.uploads) == 1
+    ((estimate),) = _estimate_provider_job_calls(qpu)
+    ((_, run),) = _create_provider_job_calls(qpu)
+    assert estimate["providerModelId"] == run["providerModelId"] == model.id
+
+
+def test_estimate_raises_when_no_cost_is_reported(qpu_mod):
+    qpu = qpu_mod.QPU(platform="nexus:Selene")
+    qpu.client.hqc_cost = None
+
+    with pytest.raises(RuntimeError, match="without reporting a cost"):
+        qpu.estimate(FakeGuppyFunction(), shots=100, wait=0)
+
+
+def test_estimate_raises_when_the_syntax_checker_fails(qpu_mod):
+    qpu = qpu_mod.QPU(platform="nexus:Selene")
+    qpu.client.job_status = None
+    qpu.client.job_error = "program does not compile"
+
+    with pytest.raises(RuntimeError, match="program does not compile"):
+        qpu.estimate(FakeGuppyFunction(), shots=100, wait=0)
+
+
+def test_estimate_requires_shots(qpu_mod):
+    qpu = qpu_mod.QPU(platform="nexus:Selene")
+
+    with pytest.raises(ValueError, match="`shots` is required"):
+        qpu.estimate(FakeGuppyFunction(), shots=None)
+    assert qpu.client.calls == []
+
+
+def test_estimate_refuses_a_model_in_a_format_the_platform_does_not_accept(qpu_mod):
+    model = qpu_mod.QPU(platform="nexus:Selene").upload(FakeGuppyFunction())
+    qpu = qpu_mod.QPU(platform="nexus:Selene")
+    qpu.client.platforms[0]["meta"]["inputFormats"] = ["QASM_V2"]
+
+    with pytest.raises(ValueError, match="HUGR_V1 programs.*accepts QASM_V2"):
+        qpu.estimate(model, shots=10)
+    assert _estimate_provider_job_calls(qpu) == []
+
+
+def test_estimate_refuses_a_wasm_module_for_a_model(qpu_mod):
+    qpu = qpu_mod.QPU(platform="nexus:Selene")
+    model = qpu.upload(FakeGuppyFunction())
+
+    with pytest.raises(TypeError, match="part of the model"):
+        qpu.estimate(model, shots=10, wasm=WASM_BYTECODE)
+    assert _estimate_provider_job_calls(qpu) == []
 
 
 def test_run_checks_options_before_uploading(qpu_mod):

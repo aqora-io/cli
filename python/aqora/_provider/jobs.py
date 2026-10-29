@@ -209,6 +209,43 @@ def submit_job(
     is submitted; when empty, the server is left to decide."""
     # Checked first, so a bad argument fails before the model is inspected.
     options = normalize_options(options)
+    _check_model_format(model, platform, input_formats)
+    graphql.ensure_authenticated()
+    return _create_job(
+        graphql, model.id, shots=shots, platform=platform, as_entity=as_entity, options=options
+    )
+
+
+def estimate_job(
+    graphql: AqoraGraphQLClient,
+    model: ProviderModel,
+    *,
+    shots: int,
+    platform: str | None = None,
+    as_entity: str | None = None,
+    input_formats: Sequence[int] = (),
+) -> "ProviderJob":
+    """Submit a job estimating what running `model` for `shots` shots on
+    `platform` would cost, in HQC: the server runs it on the platform's syntax
+    checker, and the job's `hqc_cost` is the estimate once it completes.
+
+    `as_entity` and `input_formats` are as for `submit_job`."""
+    _check_model_format(model, platform, input_formats)
+    graphql.ensure_authenticated()
+    job = graphql.estimate_provider_job(
+        provider_model_id=model.id,
+        shots=shots,
+        provider_platform=platform,
+        as_entity=as_entity,
+    )
+    return ProviderJob(graphql, str(job["id"]), payload=job)
+
+
+def _check_model_format(
+    model: ProviderModel, platform: str | None, input_formats: Sequence[int]
+) -> None:
+    """Refuse a model in none of `input_formats`; when empty, the server is
+    left to decide."""
     if input_formats and model.serialization_format not in input_formats:
         accepted = ", ".join(formats.format_name(accepted) for accepted in input_formats)
         raise ValueError(
@@ -216,10 +253,6 @@ def submit_job(
             f"{formats.format_name(model.serialization_format)} programs, which "
             f"platform {platform!r} doesn't accept (it accepts {accepted})"
         )
-    graphql.ensure_authenticated()
-    return _create_job(
-        graphql, model.id, shots=shots, platform=platform, as_entity=as_entity, options=options
-    )
 
 
 def submit_model(
@@ -310,6 +343,15 @@ class ProviderJob:
 
     def error(self) -> str | None:
         return self.refresh().get("error")
+
+    def hqc_cost(self) -> float | None:
+        """What the job costs in HQC (Quantinuum credits), as Nexus reports it.
+
+        For a job from `estimate`, the estimated cost. `None` until Nexus
+        reports it, usually once the job completes, and for other providers.
+        """
+        self._graphql.ensure_authenticated()
+        return self._graphql.get_provider_job_hqc_cost(self.job_id)
 
     def wait(self, timeout: float | None = None, poll_interval: float = 5.0) -> None:
         deadline = None if timeout is None else time.monotonic() + timeout

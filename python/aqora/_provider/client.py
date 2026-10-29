@@ -70,6 +70,42 @@ mutation CreateProviderJob(
 
 CREATE_PROVIDER_JOB_MUTATION = create_provider_job_mutation()
 
+ESTIMATE_PROVIDER_JOB_MUTATION = """
+mutation EstimateProviderJob(
+  $providerModelId: ID!,
+  $shots: Int!,
+  $providerPlatform: ProviderPlatformNameOrID,
+  $asEntity: UsernameOrID,
+) {
+  estimateProviderJob(
+    providerModelId: $providerModelId,
+    shots: $shots,
+    providerPlatform: $providerPlatform,
+    asEntity: $asEntity,
+  ) {
+    id
+    provider
+    status
+    error
+    resultCount
+    createdAt
+  }
+}
+"""
+
+# Kept out of `PROVIDER_JOB_QUERY`, so that jobs keep working against a server
+# that predates `hqcCost`.
+PROVIDER_JOB_HQC_COST_QUERY = """
+query ProviderJobHqcCost($id: ID!) {
+  node(id: $id) {
+    __typename
+    ... on ProviderJob {
+      hqcCost
+    }
+  }
+}
+"""
+
 PROVIDER_JOB_QUERY = """
 query ProviderJob($id: ID!) {
   node(id: $id) {
@@ -280,6 +316,34 @@ class AqoraGraphQLClient:
         query = create_provider_job_mutation(optional)
         response = _run_sync(lambda: self._client.send(query, **variables))
         return response["createProviderJob"]
+
+    def estimate_provider_job(
+        self,
+        *,
+        provider_model_id: str,
+        shots: int,
+        provider_platform: str | None = None,
+        as_entity: str | None = None,
+    ) -> Mapping[str, Any]:
+        response = _run_sync(
+            lambda: self._client.send(
+                ESTIMATE_PROVIDER_JOB_MUTATION,
+                providerModelId=provider_model_id,
+                shots=shots,
+                providerPlatform=provider_platform,
+                asEntity=as_entity,
+            )
+        )
+        return response["estimateProviderJob"]
+
+    def get_provider_job_hqc_cost(self, job_id: str) -> float | None:
+        node = _run_sync(lambda: self._client.send(PROVIDER_JOB_HQC_COST_QUERY, id=job_id))[
+            "node"
+        ]
+        if not node or node.get("__typename") != "ProviderJob":
+            raise LookupError(f"Node {job_id!r} is not a provider job")
+        cost = node.get("hqcCost")
+        return None if cost is None else float(cost)
 
     def get_provider_job(self, job_id: str) -> Mapping[str, Any]:
         # `node(id:)` is non-null in the schema, so an unknown id surfaces as a
