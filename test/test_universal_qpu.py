@@ -92,7 +92,12 @@ def _install_pytket(*, qasm=True, qir=None) -> None:
             BINARY = 0
             STRING = 1
 
+        class QIRProfile:
+            ADAPTIVE = 2
+            PYTKET = 5
+
         module.QIRFormat = QIRFormat
+        module.QIRProfile = QIRProfile
         module.pytket_to_qir = qir
         sys.modules["pytket.qir"] = module
 
@@ -528,6 +533,20 @@ def test_mixed_sources_resolve_to_a_shared_format(formats, wire):
         QIR_BITCODE,
         QIR_BITCODE,
     ]
+
+
+def test_pytket_qir_uses_the_adaptive_profile(formats, wire):
+    # The default `PYTKET` profile emits classical-register helpers Helios-1 rejects.
+    calls = []
+
+    def qir(circuit, **kwargs):
+        calls.append(kwargs)
+        return QIR_BITCODE
+
+    _install_pytket(qir=qir)
+    formats.encode([formats.detect(FakePytketCircuit())], [wire.PROGRAM_QIR_V1])
+
+    assert calls[0]["profile"] == sys.modules["pytket.qir"].QIRProfile.ADAPTIVE
 
 
 def test_pytket_qir_none_is_a_conversion_failure(formats, wire):
