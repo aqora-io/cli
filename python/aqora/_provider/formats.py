@@ -224,7 +224,13 @@ def _pytket_qasm2(circuit: Any) -> str:
 
 def _pytket_qir(circuit: Any) -> str:
     module = _require("pytket.qir", "pytket-qir")
-    bitcode = module.pytket_to_qir(circuit, qir_format=module.QIRFormat.BINARY)
+    # The default `PYTKET` profile emits classical-register helpers
+    # (`create_creg`, `set_creg_bit`, ...) that Helios-1 rejects.
+    bitcode = module.pytket_to_qir(
+        circuit,
+        qir_format=module.QIRFormat.BINARY,
+        profile=module.QIRProfile.ADAPTIVE,
+    )
     if not isinstance(bitcode, bytes):
         # `pytket_to_qir` returns None for circuits it cannot lower.
         raise ValueError("pytket-qir did not produce QIR bitcode for this circuit")
