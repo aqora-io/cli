@@ -154,19 +154,10 @@ class QPU:
         runs.
         """
         shots = jobs.normalize_shots(shots)
-        if isinstance(programs, ProviderModel):
-            jobs.reject_wasm_for_model(wasm)
-            model = programs
-        else:
-            if isinstance(programs, (list, tuple)) and any(
-                isinstance(program, ProviderModel) for program in programs
-            ):
-                raise TypeError(
-                    "A job runs a single model: pass it on its own, not in a list"
-                )
+        if not isinstance(programs, ProviderModel):
             # Checked first, so a bad argument fails before anything is uploaded.
             jobs.normalize_options(options)
-            model = self.upload(programs, wasm=wasm)
+        model = self._model_for(programs, wasm)
         job = jobs.submit_job(
             self._graphql,
             model,
@@ -182,6 +173,56 @@ class QPU:
             payload=job._payload,
             serialization_format=model.serialization_format,
         )
+
+    def estimate(
+        self,
+        programs: Any,
+        *,
+        shots: int,
+        wasm: Any = None,
+        timeout: float | None = None,
+        wait: float = 5.0,
+    ) -> float:
+        """Estimate what `run` would cost, in HQC (Quantinuum credits).
+
+        `programs`, `shots` and `wasm` are as for `run`: estimate a model
+        from `upload`, then run it, to upload it only once.
+
+        Only Nexus H-series and Helios systems and their emulators can be
+        estimated; an emulator costs what its system does. The programs go to
+        the platform's syntax checker (`H2-1SC` for `H2-1` and `H2-1E`, ...),
+        which compiles them without running them and charges nothing. This
+        waits for it, up to `timeout` seconds, checking every `wait` seconds.
+        """
+        shots = jobs.normalize_shots(shots)
+        model = self._model_for(programs, wasm)
+        job = jobs.estimate_job(
+            self._graphql,
+            model,
+            shots=shots,
+            platform=self._platform,
+            as_entity=self._as_entity,
+            input_formats=self.input_formats,
+        )
+        job.wait(timeout=timeout, poll_interval=wait)
+        cost = job.hqc_cost()
+        if cost is None:
+            raise RuntimeError(
+                f"aqora provider job {job.job_id!r} completed without reporting a cost"
+            )
+        return cost
+
+    def _model_for(self, programs: Any, wasm: Any) -> ProviderModel:
+        """The model a job runs: `programs` if it is one, else `programs`
+        uploaded with `wasm` for this job alone."""
+        if isinstance(programs, ProviderModel):
+            jobs.reject_wasm_for_model(wasm)
+            return programs
+        if isinstance(programs, (list, tuple)) and any(
+            isinstance(program, ProviderModel) for program in programs
+        ):
+            raise TypeError("A job runs a single model: pass it on its own, not in a list")
+        return self.upload(programs, wasm=wasm)
 
 
 class QPUJob(ProviderJob):
