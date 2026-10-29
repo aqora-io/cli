@@ -2,6 +2,18 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.38.0 - 2026-10-29
+#### Features
+- estimate job cost in HQC with QPU.estimate - (9818e3f) - Benjamin Lefebvre
+#### Bug Fixes
+- (**provider**) emit adaptive-profile QIR for pytket circuits - (ab4f62e) - Benjamin Lefebvre
+#### Tests
+- add provider HQC estimation end-to-end script - (9d11906) - Benjamin Lefebvre
+#### Miscellaneous Chores
+- sync schema.graphql with platform - (fff9cd9) - Benjamin Lefebvre
+
+- - -
+
 ## v0.37.0 - 2026-10-28
 #### Features
 - support model reuse and price estimation - (b3e092a) - Benjamin Lefebvre
