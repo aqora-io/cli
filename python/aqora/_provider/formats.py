@@ -226,14 +226,19 @@ def _pytket_qir(circuit: Any) -> str:
     module = _require("pytket.qir", "pytket-qir")
     # The default `PYTKET` profile emits classical-register helpers
     # (`create_creg`, `set_creg_bit`, ...) that Helios-1 rejects.
-    bitcode = module.pytket_to_qir(
+    ir = module.pytket_to_qir(
         circuit,
-        qir_format=module.QIRFormat.BINARY,
+        qir_format=module.QIRFormat.STRING,
         profile=module.QIRProfile.ADAPTIVE,
     )
-    if not isinstance(bitcode, bytes):
+    if not isinstance(ir, str):
         # `pytket_to_qir` returns None for circuits it cannot lower.
-        raise ValueError("pytket-qir did not produce QIR bitcode for this circuit")
+        raise ValueError("pytket-qir did not produce QIR for this circuit")
+    # Every profile reads results through `__quantum__qis__read_result__body`,
+    # which Helios-1 rejects; it expects the runtime function hugr-qir emits.
+    ir = ir.replace("@__quantum__qis__read_result__body(", "@__quantum__rt__read_result(")
+    pyqir = _require("pyqir", "pytket-qir")
+    bitcode = pyqir.Module.from_ir(pyqir.Context(), ir).bitcode
     return base64.b64encode(bitcode).decode("ascii")
 
 
