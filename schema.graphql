@@ -2654,6 +2654,24 @@ type Mutation {
 	accepted.
 	"""
 	createProviderJob(providerModelId: ID!, shots: Int, providerPlatform: ProviderPlatformNameOrID, asEntity: UsernameOrID, wasmModuleId: ID, options: JSON): ProviderJob!
+	"""
+	Estimates what running `providerModelId` for `shots` shots on
+	`providerPlatform` (the configured default when omitted) would cost,
+	in HQC (Quantinuum credits). Only Nexus H-series and Helios systems
+	and their emulators can be estimated; an emulator costs what its
+	system does.
+	
+	The model is submitted to the platform's syntax checker (`H2-1SC` for
+	`H2-1` and `H2-1E`, ...), which compiles it without running it and
+	charges nothing. The returned job is that syntax checker's: wait for
+	it to complete, then read its `hqcCost`. Its results are placeholders.
+	
+	`asEntity` and access are as for `createProviderJob`, checked against
+	`providerPlatform` itself: membership of the syntax checker isn't
+	needed. A WASM module embedded in the model is used; options are not,
+	as they don't change the cost.
+	"""
+	estimateProviderJob(providerModelId: ID!, shots: Int!, providerPlatform: ProviderPlatformNameOrID, asEntity: UsernameOrID): ProviderJob!
 	addProviderPlatformMember(providerPlatformId: ID!, entityId: ID!): ProviderPlatformMembershipConnectionEdge!
 	removeProviderPlatformMember(providerPlatformId: ID!, entityId: ID!): ID!
 	fetchWebsiteMetadata(url: Url!): WebsiteMetadata!
@@ -3344,6 +3362,13 @@ type ProviderJob implements Node {
 	resultCount: Int
 	createdAt: DateTime!
 	resultUploadAttempts: Int!
+	"""
+	What the job costs in HQC (Quantinuum credits), as Nexus reports it.
+	For a job from `estimateProviderJob`, the estimated cost of running
+	its model on the platform it estimates for. Null until Nexus reports
+	it (usually once the job completes), and for other providers.
+	"""
+	hqcCost: Float
 	"""
 	The workspace version the job was submitted from, if it was submitted
 	by a workspace runner.
