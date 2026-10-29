@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.38.1 - 2026-10-29
+#### Bug Fixes
+- (**provider**) read pytket QIR results through the runtime - (0e2c043) - Benjamin Lefebvre
+
+- - -
+
 ## v0.38.0 - 2026-10-29
 #### Features
 - estimate job cost in HQC with QPU.estimate - (9818e3f) - Benjamin Lefebvre
