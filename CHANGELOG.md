@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.39.0 - 2026-11-03
+#### Features
+- (**provider**) cancel provider jobs - (e90e30b) - Benjamin Lefebvre
+#### Miscellaneous Chores
+- sync schema.graphql with platform - (36c5262) - Benjamin Lefebvre
+
+- - -
+
 ## v0.38.1 - 2026-10-29
 #### Bug Fixes
 - (**provider**) read pytket QIR results through the runtime - (0e2c043) - Benjamin Lefebvre
