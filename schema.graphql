@@ -6,6 +6,8 @@ enum Action {
 	ADD_EVENT_MEMBER
 	ADD_PROVIDER_PLATFORM_MEMBER
 	AWARD_BADGE
+	BOOKMARK_PAPER
+	CANCEL_PROVIDER_JOB
 	CREATE_ANNOUNCEMENT
 	CREATE_BLOG_ARTICLE
 	CREATE_COMMENT
@@ -84,6 +86,7 @@ enum Action {
 	READ_EVENT_RULE_AGREEMENT
 	READ_OAUTH_2_CONFIG
 	READ_OAUTH_2_CONFIG_SECRET
+	READ_PAPER_AUTHOR_EMAILS
 	READ_PROJECT_VERSION
 	READ_PROJECT_VERSION_APPROVAL
 	READ_PROJECT_VERSION_APPROVAL_SCORE
@@ -109,6 +112,7 @@ enum Action {
 	REMOVE_EVENT_MEMBER
 	REMOVE_ORGANIZATION_MEMBER
 	REMOVE_PROVIDER_PLATFORM_MEMBER
+	REQUEST_PAPER_ASSESSMENT
 	SEND_COMPETITION_TEAM_REQUEST_MESSAGE
 	SET_COMPETITION_ORDERING_PRIORITY
 	SET_EVENT_ORDERING_PRIORITY
@@ -143,6 +147,7 @@ enum Action {
 	UPDATE_WORKSPACE_VERSION
 	UPLOAD_FILES
 	UPLOAD_PROVIDER_MODEL
+	VIEW_PAPER
 	WRITE_STORAGE
 }
 
@@ -2515,6 +2520,15 @@ type Mutation {
 	createPasswordReset(input: CreatePasswordResetInput!): PasswordReset!
 	resetPassword(input: ResetPasswordInput!): Boolean!
 	updateUser(id: ID!, input: UpdateUserInput!): UserEdge!
+	"""
+	Mails a code that verifies the user's email, which is unverified after
+	a change.
+	"""
+	sendEmailVerification(id: ID!): User!
+	"""
+	Verifies the user's email with the code it was sent.
+	"""
+	verifyEmail(id: ID!, token: String!): User!
 	deleteUser(id: ID!): ID!
 	setUserIsBanned(entityId: ID!, isBanned: Boolean!): User!
 	createCompetition(eventId: ID!, input: CreateCompetitionInput!): CompetitionEdge!
@@ -2672,6 +2686,15 @@ type Mutation {
 	as they don't change the cost.
 	"""
 	estimateProviderJob(providerModelId: ID!, shots: Int!, providerPlatform: ProviderPlatformNameOrID, asEntity: UsernameOrID): ProviderJob!
+	"""
+	Asks the job's provider to cancel `id`, returning the job as the
+	provider reports it right after. Cancellation is best-effort: the job
+	moves to `CANCELLING` then `CANCELLED`, or still completes if the
+	provider was too far along. Its `hqcCost` is whatever the provider
+	charges for the work done, once the job settles. Only Nexus jobs can
+	be cancelled.
+	"""
+	cancelProviderJob(id: ID!): ProviderJob!
 	addProviderPlatformMember(providerPlatformId: ID!, entityId: ID!): ProviderPlatformMembershipConnectionEdge!
 	removeProviderPlatformMember(providerPlatformId: ID!, entityId: ID!): ID!
 	fetchWebsiteMetadata(url: Url!): WebsiteMetadata!
@@ -2685,6 +2708,17 @@ type Mutation {
 	resendEmailSignupVerification(id: ID!): EmailSignupRequest!
 	checkEmailSignupVerification(input: EmailSignupVerficationInput!): EmailSignupRequest!
 	createOauth2AuthRequest(provider: Oauth2Provider!): Url!
+	"""
+	Starts linking the viewer's account to a provider in
+	`oauth2LinkProviders`. The provider sends the viewer back to the same
+	callback as a login, where `checkOauth2Auth` finishes the link.
+	"""
+	createOauth2LinkRequest(provider: Oauth2Provider!): Url!
+	"""
+	Unlinks the viewer's account from a provider in `oauth2LinkProviders`.
+	Unlinking ORCID also unlinks the viewer's papers.
+	"""
+	unlinkOauth2(provider: Oauth2Provider!): User!
 	checkOauth2Auth(code: String!, state: String!): Oauth2AuthResponse!
 	createOauth2Config(input: CreateOauth2ConfigInput!, asEntity: UsernameOrID): Oauth2ConfigEdge!
 	updateOauth2Config(oauth2ConfigId: ID!, input: UpdateOauth2ConfigInput!): Oauth2ConfigEdge!
@@ -2815,6 +2849,24 @@ type Mutation {
 	working as soon as that is revoked.
 	"""
 	createStoreCredentials(input: CreateStoreCredentialsInput): StoreCredentials!
+	"""
+	Records that the viewer opened the paper. Papers with more distinct
+	viewers rank higher in the trending order, and the viewer's For You
+	order recommends papers like the ones they opened.
+	"""
+	viewPaper(id: ID!): Paper!
+	bookmarkPaper(id: ID!): Paper!
+	unbookmarkPaper(id: ID!): Paper!
+	"""
+	Starts an LLM assessment of a paper that has none, or only a failed
+	one. It runs in the background: poll `Paper.assessment`.
+	"""
+	requestPaperAssessment(id: ID!): Paper!
+	"""
+	Links the papers of the viewer's ORCID iD again, to pick up works
+	added to their ORCID record or to OpenAlex. It runs in the background.
+	"""
+	refreshOrcidPapers: User!
 }
 
 """
@@ -2848,6 +2900,7 @@ enum NotificationKind {
 enum Oauth2Action {
 	LOGGED_IN
 	SIGNUP_REQUIRED
+	LINKED
 }
 
 interface Oauth2AuthResponse {
@@ -2931,6 +2984,14 @@ type Oauth2Grant {
 	workspace: Workspace
 }
 
+"""
+The signed-in user linked their account to the provider.
+"""
+type Oauth2Linked implements Oauth2AuthResponse {
+	user: User!
+	action: Oauth2Action!
+}
+
 type Oauth2LoggedIn implements Oauth2AuthResponse {
 	user: User!
 	action: Oauth2Action!
@@ -2956,6 +3017,7 @@ type Oauth2PreGrant {
 enum Oauth2Provider {
 	GITHUB
 	GOOGLE
+	ORCID
 }
 
 input Oauth2RedirectInput {
@@ -3004,7 +3066,11 @@ type Oauth2TokenOutput {
 }
 
 type Oauth2UserInfo {
-	email: String!
+	"""
+	Missing for providers that don't share one, which can only link an
+	account.
+	"""
+	email: String
 	name: String
 	username: String
 	avatarUrl: Url
@@ -3146,6 +3212,305 @@ type PageInfo {
 	When paginating forwards, the cursor to continue.
 	"""
 	endCursor: String
+}
+
+"""
+A quantum computing paper: from arXiv's quant-ph listing (cross-lists
+included), from OpenAlex, or both.
+"""
+type Paper implements Node {
+	"""
+	The versionless arXiv identifier, e.g. `2610.08786` or `quant-ph/9508027`.
+	"""
+	arxivId: String
+	"""
+	The OpenAlex work identifier, e.g. `W4417216520`.
+	"""
+	openalexId: String
+	"""
+	The latest version on arXiv, for papers in arXiv's quant-ph listing.
+	"""
+	version: Int
+	title: String!
+	"""
+	The abstract, with LaTeX math between `$` signs. Empty when the source
+	has none.
+	"""
+	abstract: String!
+	authors: [String!]!
+	"""
+	The arXiv category, for papers in arXiv's quant-ph listing.
+	"""
+	primaryCategory: String
+	categories: [String!]!
+	"""
+	When the first version was submitted to arXiv, or else the publication
+	date.
+	"""
+	publishedAt: DateTime!
+	"""
+	The day arXiv's listing announced the first version, or else the
+	publication date. The listing orders go by this.
+	"""
+	announcedOn: NaiveDate!
+	"""
+	When the latest version was submitted to arXiv.
+	"""
+	updatedAt: DateTime
+	doi: String
+	journalRef: String
+	comment: String
+	"""
+	The journal, conference or book the paper appeared in.
+	"""
+	venue: String
+	citedByCount: Int
+	"""
+	How many users bookmarked the paper.
+	"""
+	bookmarkCount: Int!
+	id: ID!
+	"""
+	The arXiv abstract page.
+	"""
+	absUrl: String
+	"""
+	arXiv's PDF, or else Aqora's copy when its license allows serving it.
+	"""
+	pdfUrl: String
+	"""
+	The license Aqora serves its copy of the PDF under, e.g. `CC BY`.
+	"""
+	pdfLicense: String
+	"""
+	The HTML rendering of the paper, which arXiv does not produce for every
+	submission.
+	"""
+	htmlUrl: String
+	"""
+	The versions of the paper on arXiv, oldest first. Empty for papers
+	that are not on arXiv.
+	"""
+	versions: [PaperVersion!]!
+	"""
+	An LLM's reading of the paper, once one was asked for or the paper was
+	swept.
+	"""
+	assessment: PaperAssessment
+	"""
+	Whether `requestPaperAssessment` would start an assessment: the paper
+	has none, or only a failed one, and today's budget has room.
+	"""
+	assessmentRequestable: Boolean!
+	"""
+	Whether the viewer bookmarked the paper; null when signed out.
+	"""
+	viewerBookmarked: Boolean
+	"""
+	The publisher's page for the paper through its DOI, or else its OpenAlex
+	page.
+	"""
+	landingUrl: String
+	"""
+	The Aqora users who wrote the paper: OpenAlex lists their verified
+	ORCID iD on it, a publisher or registry put it on their ORCID record,
+	or the paper lists their verified email.
+	"""
+	linkedAuthors: [User!]!
+	"""
+	The authors' email addresses read from the paper's arXiv versions, or
+	from its PDF outside arXiv. Admins only.
+	"""
+	authorEmails: [String!]!
+	"""
+	Papers whose title and abstract read most like this one, best first,
+	with stronger papers nudged up. Empty until the paper is indexed.
+	"""
+	relatedPapers(limit: Int! = 6): [Paper!]!
+}
+
+"""
+An LLM's reading of a paper's full text, or of its abstract when arXiv has
+no source. Automated, so it can be wrong.
+"""
+type PaperAssessment {
+	status: PaperAssessmentStatus!
+	"""
+	A neutral summary in Markdown, with LaTeX math between `$` signs.
+	"""
+	summary: String
+	"""
+	How likely the text is largely written by an LLM, from 0 (no sign) to
+	4 (almost certainly).
+	"""
+	aiLikelihood: Int
+	"""
+	Whether the authors state that generative AI wrote or edited the text,
+	or produced results.
+	"""
+	aiUseDisclosed: Boolean
+	"""
+	The authors' statement on AI use, quoted.
+	"""
+	aiDisclosureQuote: String
+	flags: [PaperFlag!]!
+	"""
+	Whether the full text was read, rather than only the abstract.
+	"""
+	fullText: Boolean
+	model: String
+	"""
+	The arXiv version the assessment read.
+	"""
+	arxivVersion: Int
+	completedAt: DateTime
+}
+
+enum PaperAssessmentStatus {
+	"""
+	Waiting to start, e.g. for tomorrow's budget.
+	"""
+	QUEUED
+	"""
+	An LLM is reading the paper.
+	"""
+	RUNNING
+	DONE
+	FAILED
+}
+
+type PaperConnection {
+	"""
+	Information to aid in pagination.
+	"""
+	pageInfo: PageInfo!
+	"""
+	A list of edges.
+	"""
+	edges: [PaperEdge!]!
+	"""
+	A list of nodes.
+	"""
+	nodes: [Paper!]!
+	totalCount: Int!
+}
+
+enum PaperConnectionOrder {
+	"""
+	Recent papers like the ones the viewer wrote (linked through their
+	ORCID iD or a verified email), bookmarked or opened, which count in
+	that order, leaving those out: the newest listing first, with closer
+	matches lifted. Trending when signed out, without any such papers,
+	with `bookmarked`, or when the vector index fails.
+	"""
+	FOR_YOU
+	"""
+	The newest listing first, each ranked by the SciRate-trained prior and
+	the LLM's interest score, with papers lifted by bookmarks and distinct
+	viewers.
+	"""
+	TRENDING
+	"""
+	The newest listing first, each by arXiv submission time. Papers outside
+	arXiv's listing go by publication date.
+	"""
+	NEWEST
+}
+
+"""
+An edge in a connection.
+"""
+type PaperEdge {
+	"""
+	The item at the end of the edge
+	"""
+	node: Paper!
+	"""
+	A cursor for use in pagination
+	"""
+	cursor: String!
+}
+
+type PaperFlag {
+	kind: PaperFlagKind!
+	"""
+	The issues the claim check confirmed, for claim flags.
+	"""
+	detail: String
+}
+
+"""
+What a flag is about: one of paper-judge's red flags, or an error the
+claim check confirmed on a second, sceptical pass.
+"""
+enum PaperFlagKind {
+	OVERCLAIMS
+	INCREMENTAL
+	SMALL_NUMERICS_ONLY
+	UNCLEAR_NOVELTY
+	MISSING_COMPARISON
+	STRONG_ASSUMPTIONS
+	UNCLEAR_WRITING
+	POSSIBLE_ERROR
+	"""
+	The central claim fails or is substantially weaker than stated.
+	"""
+	CLAIM_FAILS
+	"""
+	A real error that leaves the central claim standing.
+	"""
+	LOCAL_ERROR
+}
+
+input PaperQueryFilters {
+	"""
+	Matches titles, arXiv and OpenAlex identifiers, and abstracts
+	semantically.
+	"""
+	search: String
+	"""
+	Only papers the viewer bookmarked; ignored when signed out.
+	"""
+	bookmarked: Boolean! = false
+	"""
+	Ignored when searching: searches are ordered by relevance.
+	"""
+	order: PaperConnectionOrder! = FOR_YOU
+}
+
+"""
+One version of an arXiv paper, as it was submitted.
+"""
+type PaperVersion {
+	"""
+	1 for the first submission.
+	"""
+	number: Int!
+	title: String!
+	"""
+	The abstract, with LaTeX math between `$` signs.
+	"""
+	abstract: String!
+	authors: [String!]!
+	comment: String
+	submittedAt: DateTime!
+	"""
+	The arXiv abstract page of this version.
+	"""
+	absUrl: String!
+	"""
+	arXiv's PDF of this version.
+	"""
+	pdfUrl: String!
+	"""
+	The HTML rendering of this version, which arXiv does not produce for
+	every submission.
+	"""
+	htmlUrl: String!
+	"""
+	The authors' email addresses read from this version. Admins only.
+	"""
+	authorEmails: [String!]!
 }
 
 type PasswordReset {
@@ -3592,7 +3957,15 @@ type Query {
 	forumBySlug(slug: String!): Forum
 	blogArticles(after: String, before: String, first: Int, last: Int): BlogArticleConnection!
 	blogArticleBySlug(slug: String!): BlogArticle
+	"""
+	The providers users can log in or sign up with.
+	"""
 	oauth2Providers: [Oauth2Provider!]!
+	"""
+	The providers signed-in users can link their account to, to prove an
+	identity such as an ORCID iD.
+	"""
+	oauth2LinkProviders: [Oauth2Provider!]!
 	oauth2Configs(after: String, before: String, first: Int, last: Int): Oauth2ConfigConnection!
 	oauth2Authorize(input: Oauth2AuthorizeInput!): Oauth2PreGrant
 	"""
@@ -3634,6 +4007,16 @@ type Query {
 	workspaceBySlug(owner: String!, slug: String!): Workspace
 	announcements(after: String, before: String, first: Int, last: Int, filters: AnnouncementQueryFilters): AnnouncementConnection!
 	announcementByTargetPath(targetPath: String!): Announcement
+	"""
+	Quantum computing papers from arXiv and OpenAlex, in the chosen order
+	(for you by default), or by relevance when searching.
+	"""
+	papers(after: String, before: String, first: Int, last: Int, filters: PaperQueryFilters): PaperConnection!
+	"""
+	A paper by its arXiv identifier (e.g. `2610.08786`, with or without a
+	version) or its OpenAlex work id (e.g. `W4417216520`).
+	"""
+	paperByExternalId(id: String!): Paper
 }
 
 input ResetPasswordInput {
@@ -4489,6 +4872,11 @@ type User implements Entity & Node {
 	id: ID!
 	kind: EntityKind!
 	email: String!
+	"""
+	Whether the user proved they own their email. Papers link to users by
+	verified emails only.
+	"""
+	emailVerified: Boolean!
 	jobTitle: String
 	organization: String
 	image: Url
@@ -4519,6 +4907,20 @@ type User implements Entity & Node {
 	dataCatalogs(after: String, before: String, first: Int, last: Int): DataCatalogConnection!
 	workspaces(after: String, before: String, first: Int, last: Int, filters: WorkspaceConnectionFilters): WorkspaceConnection!
 	providerJobs(after: String, before: String, first: Int, last: Int): ProviderJobConnection!
+	"""
+	The ORCID iD the user verified by signing in with ORCID.
+	"""
+	orcid: String
+	"""
+	The papers linked to the user through their ORCID iD or a verified
+	email, newest first.
+	"""
+	papers(after: String, before: String, first: Int, last: Int): PaperConnection!
+	"""
+	How many papers the user bookmarked. Bookmarks are private, so this
+	is null for anyone but the user.
+	"""
+	bookmarkedPaperCount: Int
 	storageUsage: StorageUsage
 	activeRunners(first: Int, after: String): WorkspaceRunnerConnection
 }
