@@ -353,6 +353,22 @@ class ProviderJob:
         self._graphql.ensure_authenticated()
         return self._graphql.get_provider_job_hqc_cost(self.job_id)
 
+    def cancel(self) -> bool:
+        """Ask the job's provider to cancel the job.
+
+        Cancellation is best-effort: the job moves to `CANCELLING` then
+        `CANCELLED`, or still completes if the provider was too far along. The
+        HQC cost is whatever the provider charges for the work done. Returns
+        `False` when there is nothing to cancel: the job already finished, or
+        its provider can't cancel jobs (only Nexus can).
+        """
+        self._graphql.ensure_authenticated()
+        payload = self._graphql.cancel_provider_job(self.job_id)
+        if payload is None:
+            return False
+        self._payload.update(payload)
+        return True
+
     def wait(self, timeout: float | None = None, poll_interval: float = 5.0) -> None:
         deadline = None if timeout is None else time.monotonic() + timeout
         while True:

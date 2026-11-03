@@ -141,6 +141,15 @@ def _model_download_url(model_id: str) -> str:
     return f"https://example.invalid/models/{model_id}"
 
 
+class FakeClientError(Exception):
+    """Stands in for `aqora.ClientError`, which the native module defines."""
+
+    def __init__(self, message: str, graphql_errors=None) -> None:
+        super().__init__(message)
+        self.message = message
+        self.graphql_errors = graphql_errors
+
+
 class FakeClient:
     def __init__(self, *_args, **_kwargs) -> None:
         self.authenticated = False
@@ -149,6 +158,7 @@ class FakeClient:
         self.created_models = 0
         self.job_status: str | None = "COMPLETED"
         self.job_error: str | None = None
+        self.cancel_error_code: str | None = None
         self.hqc_cost: float | None = 15.82
         self.result_pages: list[list[dict[str, object]]] = [
             [{"index": 0, "error": None, "result": "https://example.invalid/result-0"}]
@@ -198,6 +208,23 @@ class FakeClient:
                 "node": {
                     "__typename": "ProviderModel",
                     "downloadUrl": _model_download_url(variables["id"]),
+                }
+            }
+        if "cancelProviderJob" in query:
+            if self.cancel_error_code is not None:
+                raise FakeClientError(
+                    "GraphQL had errors",
+                    [{"message": "refused", "extensions": {"code": self.cancel_error_code}}],
+                )
+            self.job_status = "CANCELLING"
+            return {
+                "cancelProviderJob": {
+                    "id": variables["id"],
+                    "provider": "nexus",
+                    "status": "CANCELLING",
+                    "error": None,
+                    "resultCount": None,
+                    "createdAt": "2026-07-06T00:00:00Z",
                 }
             }
         if "createProviderJob" in query:
@@ -278,6 +305,7 @@ def load_aqora() -> types.ModuleType:
     aqora = types.ModuleType("aqora")
     aqora.__path__ = [str(PACKAGE_ROOT)]
     aqora.Client = FakeClient
+    aqora.ClientError = FakeClientError
     aqora._aqora = _AQORA_NATIVE
     sys.modules["aqora"] = aqora
     sys.modules["aqora._aqora"] = _AQORA_NATIVE
@@ -1285,3 +1313,19 @@ def test_counts_rejects_a_format_without_a_counts_view(results):
     result = _result(results, 0, "")
     with pytest.raises(ValueError, match="no counts representation"):
         result.counts()
+
+
+def test_job_cancel_requests_cancellation(qpu_mod):
+    qpu = qpu_mod.QPU(platform="nexus:Selene")
+    job = qpu.run(FakeGuppyFunction(), shots=100)
+
+    assert job.cancel() is True
+    assert job.status() == "CANCELLING"
+
+
+def test_job_cancel_returns_false_when_unsupported(qpu_mod):
+    qpu = qpu_mod.QPU(platform="nexus:Selene")
+    job = qpu.run(FakeGuppyFunction(), shots=100)
+    qpu.client.cancel_error_code = "PROVIDER_JOB_CANCELLATION_UNSUPPORTED"
+
+    assert job.cancel() is False

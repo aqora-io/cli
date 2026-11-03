@@ -301,7 +301,13 @@ class QPU(Backend):
         return super().get_result(handle)
 
     def cancel(self, handle: ResultHandle) -> None:
-        raise NotImplementedError("The aqora provider GraphQL API does not support cancellation")
+        """Ask the provider to cancel the job behind `handle`.
+
+        Every handle from the same `process_circuits` call shares one provider
+        job, so this cancels all of them. Best-effort: a job that already
+        finished, or whose provider can't cancel jobs, is left as is.
+        """
+        jobs.ProviderJob(self._graphql, str(handle[0])).cancel()
 
     def _normalize_shots(self, n_shots: int | Sequence[int] | None) -> int:
         # `int` also covers `bool`, which `jobs.normalize_shots` rejects.

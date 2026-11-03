@@ -101,7 +101,16 @@ class QPUJob(JobV1):
         return None
 
     def cancel(self) -> bool:
-        return False
+        """Ask the provider to cancel the job; best-effort.
+
+        Returns `False` when there is nothing to cancel: the job already
+        finished, or its provider can't cancel jobs (only Nexus can).
+        """
+        payload = self._backend._cancel_job(self.job_id())
+        if payload is None:
+            return False
+        self._payload.update(payload)
+        return True
 
     def status(self) -> JobStatus:
         payload = self._backend._fetch_job(self.job_id())

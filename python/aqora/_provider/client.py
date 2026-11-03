@@ -93,6 +93,25 @@ mutation EstimateProviderJob(
 }
 """
 
+CANCEL_PROVIDER_JOB_MUTATION = """
+mutation CancelProviderJob($id: ID!) {
+  cancelProviderJob(id: $id) {
+    id
+    provider
+    status
+    error
+    resultCount
+    createdAt
+  }
+}
+"""
+
+# The codes `cancelProviderJob` refuses with when there is nothing to cancel:
+# the job already finished, or its provider can't cancel jobs.
+CANCEL_REFUSED_CODES = frozenset(
+    {"PROVIDER_JOB_NOT_CANCELLABLE", "PROVIDER_JOB_CANCELLATION_UNSUPPORTED"}
+)
+
 # Kept out of `PROVIDER_JOB_QUERY`, so that jobs keep working against a server
 # that predates `hqcCost`.
 PROVIDER_JOB_HQC_COST_QUERY = """
@@ -335,6 +354,30 @@ class AqoraGraphQLClient:
             )
         )
         return response["estimateProviderJob"]
+
+    def cancel_provider_job(self, job_id: str) -> Mapping[str, Any] | None:
+        """Ask the job's provider to cancel it.
+
+        Returns the job as the provider reports it right after, or `None` when
+        the server refuses because there is nothing to cancel (see
+        `CANCEL_REFUSED_CODES`).
+        """
+        # `aqora/__init__` imports this module before it defines ClientError.
+        from aqora import ClientError
+
+        try:
+            response = _run_sync(
+                lambda: self._client.send(CANCEL_PROVIDER_JOB_MUTATION, id=job_id)
+            )
+        except ClientError as error:
+            codes = {
+                (graphql_error.get("extensions") or {}).get("code")
+                for graphql_error in error.graphql_errors or []
+            }
+            if codes & CANCEL_REFUSED_CODES:
+                return None
+            raise
+        return response["cancelProviderJob"]
 
     def get_provider_job_hqc_cost(self, job_id: str) -> float | None:
         node = _run_sync(lambda: self._client.send(PROVIDER_JOB_HQC_COST_QUERY, id=job_id))[

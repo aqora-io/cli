@@ -26,6 +26,7 @@ def load_qiskit_module(fake_client_cls: type):
     aqora = types.ModuleType("aqora")
     aqora.__path__ = [str(MODULE_PATH.parents[1])]
     aqora.Client = fake_client_cls
+    aqora.ClientError = FakeClientError
     sys.modules["aqora"] = aqora
 
     qiskit = types.ModuleType("qiskit")
@@ -251,6 +252,15 @@ def load_qiskit_module(fake_client_cls: type):
     return module
 
 
+class FakeClientError(Exception):
+    """Stands in for `aqora.ClientError`, which the native module defines."""
+
+    def __init__(self, message: str, graphql_errors=None) -> None:
+        super().__init__(message)
+        self.message = message
+        self.graphql_errors = graphql_errors
+
+
 class FakeClient:
     def __init__(self, *_args, **_kwargs) -> None:
         self.authenticated = False
@@ -258,6 +268,7 @@ class FakeClient:
         self.uploads: list[tuple[str, bytes]] = []
         self.job_status: str | None = "COMPLETED"
         self.job_error: str | None = None
+        self.cancel_error_code: str | None = None
         # `result_count` of None means "match the number of result nodes".
         self.result_count: int | None = None
         self.result_pages: list[list[dict[str, object]]] = [
@@ -335,6 +346,23 @@ class FakeClient:
             }
         if "createProviderModel" in query:
             return {"createProviderModel": {"id": "model-1"}}
+        if "cancelProviderJob" in query:
+            if self.cancel_error_code is not None:
+                raise FakeClientError(
+                    "GraphQL had errors",
+                    [{"message": "refused", "extensions": {"code": self.cancel_error_code}}],
+                )
+            self.job_status = "CANCELLING"
+            return {
+                "cancelProviderJob": {
+                    "id": variables["id"],
+                    "provider": "nexus",
+                    "status": "CANCELLING",
+                    "error": None,
+                    "resultCount": None,
+                    "createdAt": "2026-07-06T00:00:00Z",
+                }
+            }
         if "createProviderJob" in query:
             return {
                 "createProviderJob": {
@@ -895,3 +923,34 @@ def test_download_text_rejects_non_http_url(mod):
 
     with pytest.raises(ValueError, match="http or https"):
         graphql.download_text("file:///etc/passwd")
+
+
+def test_job_cancel_returns_true_and_updates_status(mod):
+    qpu = mod.QPU()
+    job = mod.QPUJob(qpu, "ProviderJob:job-1")
+
+    assert job.cancel() is True
+    assert job._payload["status"] == "CANCELLING"
+    assert [v for q, v in qpu.client.calls if "cancelProviderJob" in q] == [
+        {"id": "ProviderJob:job-1"}
+    ]
+
+
+@pytest.mark.parametrize(
+    "code", ["PROVIDER_JOB_NOT_CANCELLABLE", "PROVIDER_JOB_CANCELLATION_UNSUPPORTED"]
+)
+def test_job_cancel_returns_false_when_refused(mod, code):
+    qpu = mod.QPU()
+    qpu.client.cancel_error_code = code
+    job = mod.QPUJob(qpu, "ProviderJob:job-1")
+
+    assert job.cancel() is False
+
+
+def test_job_cancel_raises_other_errors(mod):
+    qpu = mod.QPU()
+    qpu.client.cancel_error_code = "NOT_AUTHORIZED"
+    job = mod.QPUJob(qpu, "ProviderJob:job-1")
+
+    with pytest.raises(FakeClientError):
+        job.cancel()

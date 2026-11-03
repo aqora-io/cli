@@ -34,6 +34,7 @@ def load_guppy_module(fake_client_cls: type):
     aqora = types.ModuleType("aqora")
     aqora.__path__ = [str(MODULE_PATH.parents[1])]
     aqora.Client = fake_client_cls
+    aqora.ClientError = FakeClientError
     aqora._aqora = _AQORA_NATIVE
     sys.modules["aqora"] = aqora
     sys.modules["aqora._aqora"] = _AQORA_NATIVE
@@ -115,6 +116,15 @@ QIR_LABELED_FIXTURE = "\n".join(
 MODEL_DOWNLOAD_URL = "https://example.invalid/models/model-1"
 
 
+class FakeClientError(Exception):
+    """Stands in for `aqora.ClientError`, which the native module defines."""
+
+    def __init__(self, message: str, graphql_errors=None) -> None:
+        super().__init__(message)
+        self.message = message
+        self.graphql_errors = graphql_errors
+
+
 class FakeClient:
     def __init__(self, *_args, **_kwargs) -> None:
         self.authenticated = False
@@ -122,6 +132,7 @@ class FakeClient:
         self.uploads: list[tuple[str, bytes, str | None]] = []
         self.job_status: str | None = "COMPLETED"
         self.job_error: str | None = None
+        self.cancel_error_code: str | None = None
         # `result_count` of None means "match the number of result nodes".
         self.result_count: int | None = None
         self.result_pages: list[list[dict[str, object]]] = [
@@ -182,6 +193,23 @@ class FakeClient:
             return {"createProviderModel": {"id": "model-1"}}
         if "query ProviderModel" in query:
             return {"node": {"__typename": "ProviderModel", "downloadUrl": MODEL_DOWNLOAD_URL}}
+        if "cancelProviderJob" in query:
+            if self.cancel_error_code is not None:
+                raise FakeClientError(
+                    "GraphQL had errors",
+                    [{"message": "refused", "extensions": {"code": self.cancel_error_code}}],
+                )
+            self.job_status = "CANCELLING"
+            return {
+                "cancelProviderJob": {
+                    "id": variables["id"],
+                    "provider": "nexus",
+                    "status": "CANCELLING",
+                    "error": None,
+                    "resultCount": None,
+                    "createdAt": "2026-07-06T00:00:00Z",
+                }
+            }
         if "createProviderJob" in query:
             return {
                 "createProviderJob": {
@@ -818,3 +846,20 @@ def test_parse_qir_labeled_fixture(mod):
 
     assert labeled.text == QIR_LABELED_FIXTURE
     assert len(labeled.shots) == 2
+
+
+def test_job_cancel_requests_cancellation(mod):
+    qpu = mod.QPU()
+    job = qpu.run(HUGR_ENVELOPE, shots=100)
+
+    assert job.cancel() is True
+    assert job.status() == "CANCELLING"
+    assert [v for q, v in qpu.client.calls if "cancelProviderJob" in q] == [{"id": job.job_id}]
+
+
+def test_job_cancel_returns_false_when_already_finished(mod):
+    qpu = mod.QPU()
+    job = qpu.run(HUGR_ENVELOPE, shots=100)
+    qpu.client.cancel_error_code = "PROVIDER_JOB_NOT_CANCELLABLE"
+
+    assert job.cancel() is False

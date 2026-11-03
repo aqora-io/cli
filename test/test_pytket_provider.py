@@ -32,6 +32,7 @@ def load_pytket_module(fake_client_cls: type):
     aqora = types.ModuleType("aqora")
     aqora.__path__ = [str(MODULE_PATH.parents[1])]
     aqora.Client = fake_client_cls
+    aqora.ClientError = FakeClientError
     aqora._aqora = _AQORA_NATIVE
     sys.modules["aqora"] = aqora
     sys.modules["aqora._aqora"] = _AQORA_NATIVE
@@ -267,6 +268,15 @@ def _model_download_url(model_id: str) -> str:
     return f"https://example.invalid/models/{model_id}"
 
 
+class FakeClientError(Exception):
+    """Stands in for `aqora.ClientError`, which the native module defines."""
+
+    def __init__(self, message: str, graphql_errors=None) -> None:
+        super().__init__(message)
+        self.message = message
+        self.graphql_errors = graphql_errors
+
+
 class FakeClient:
     def __init__(self, *_args, **_kwargs) -> None:
         self.authenticated = False
@@ -275,6 +285,7 @@ class FakeClient:
         self.created_models = 0
         self.job_status: str | None = "COMPLETED"
         self.job_error: str | None = None
+        self.cancel_error_code: str | None = None
         # `result_count` of None means "match the number of result nodes".
         self.result_count: int | None = None
         self.result_pages: list[list[dict[str, object]]] = [
@@ -356,6 +367,23 @@ class FakeClient:
                 "node": {
                     "__typename": "ProviderModel",
                     "downloadUrl": _model_download_url(variables["id"]),
+                }
+            }
+        if "cancelProviderJob" in query:
+            if self.cancel_error_code is not None:
+                raise FakeClientError(
+                    "GraphQL had errors",
+                    [{"message": "refused", "extensions": {"code": self.cancel_error_code}}],
+                )
+            self.job_status = "CANCELLING"
+            return {
+                "cancelProviderJob": {
+                    "id": variables["id"],
+                    "provider": "nexus",
+                    "status": "CANCELLING",
+                    "error": None,
+                    "resultCount": None,
+                    "createdAt": "2026-07-06T00:00:00Z",
                 }
             }
         if "createProviderJob" in query:
@@ -920,12 +948,39 @@ def test_qpu_result_id_type(mod):
     assert qpu._result_id_type == (str, int)
 
 
-def test_qpu_cancel_not_implemented(mod):
+def _cancel_calls(client) -> list[dict[str, object]]:
+    return [variables for query, variables in client.calls if "cancelProviderJob" in query]
+
+
+def test_qpu_cancel_cancels_the_handle_job(mod):
     from pytket.backends import ResultHandle
 
     qpu = mod.QPU()
 
-    with pytest.raises(NotImplementedError):
+    qpu.cancel(ResultHandle("ProviderJob:job-1", 1))
+
+    assert _cancel_calls(qpu.client) == [{"id": "ProviderJob:job-1"}]
+
+
+@pytest.mark.parametrize(
+    "code", ["PROVIDER_JOB_NOT_CANCELLABLE", "PROVIDER_JOB_CANCELLATION_UNSUPPORTED"]
+)
+def test_qpu_cancel_ignores_refusals(mod, code):
+    from pytket.backends import ResultHandle
+
+    qpu = mod.QPU()
+    qpu.client.cancel_error_code = code
+
+    qpu.cancel(ResultHandle("ProviderJob:job-1", 0))
+
+
+def test_qpu_cancel_raises_other_errors(mod):
+    from pytket.backends import ResultHandle
+
+    qpu = mod.QPU()
+    qpu.client.cancel_error_code = "NOT_AUTHORIZED"
+
+    with pytest.raises(FakeClientError):
         qpu.cancel(ResultHandle("ProviderJob:job-1", 0))
 
 

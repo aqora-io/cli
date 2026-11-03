@@ -266,6 +266,10 @@ class QPU(BackendV2):
         self._graphql.ensure_authenticated()
         return self._graphql.get_provider_job(job_id)
 
+    def _cancel_job(self, job_id: str) -> Mapping[str, Any] | None:
+        self._graphql.ensure_authenticated()
+        return self._graphql.cancel_provider_job(job_id)
+
     def _fetch_job_results(
         self,
         job_id: str,
