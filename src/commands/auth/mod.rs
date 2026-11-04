@@ -10,6 +10,7 @@ use token::{token, Token};
 
 #[derive(Subcommand, Debug, Serialize)]
 pub enum Auth {
+    /// Print a valid aqora access token on stdout, refreshing if needed
     Token(Token),
 }
 

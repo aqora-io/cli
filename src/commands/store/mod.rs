@@ -12,7 +12,9 @@ use credentials::{credentials, Credentials};
 
 #[derive(Subcommand, Debug, Serialize)]
 pub enum Store {
+    /// Mint short-lived S3 credentials for your aqora storage and print them on stdout
     Credentials(Credentials),
+    /// Add a profile to your AWS config that fetches aqora storage credentials on demand
     ConfigureAws(ConfigureAws),
 }
 

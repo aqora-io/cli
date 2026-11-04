@@ -32,6 +32,7 @@ pub struct Credentials {
         help = "Lifetime in seconds, at least 60. The server clamps the maximum and picks its default when omitted."
     )]
     duration: Option<i64>,
+    /// How to print the credentials
     #[arg(value_enum, long, default_value_t = CredentialsFormat::Json)]
     format: CredentialsFormat,
 }

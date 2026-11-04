@@ -18,10 +18,12 @@ use tokio::fs;
 use toml_edit::DocumentMut;
 
 #[derive(Args, Debug, Serialize)]
-#[command(author, version, about)]
+#[command(author, version)]
 pub struct Add {
+    /// Allow upgrading packages that are already installed
     #[arg(long, short)]
     pub upgrade: bool,
+    /// Requirements to add, e.g. `numpy` or `pandas>=2`
     pub deps: Vec<String>,
 }
 

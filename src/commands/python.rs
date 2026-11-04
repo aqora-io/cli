@@ -4,10 +4,11 @@ use serde::Serialize;
 use std::ffi::OsString;
 
 #[derive(Args, Debug, Serialize)]
-#[command(author, version, about)]
+#[command(author, version)]
 pub struct Python {
     #[arg(short = 'm', help = "run library module as a script")]
     pub module: Option<OsString>,
+    /// Arguments passed to Python after `--`
     #[arg(last = true)]
     pub python_args: Vec<OsString>,
 }

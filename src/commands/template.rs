@@ -25,11 +25,14 @@ use url::Url;
 pub struct GetCompetitionTemplate;
 
 #[derive(Args, Debug, Serialize)]
-#[command(author, version, about)]
+#[command(author, version)]
 pub struct Template {
+    /// Do not install the template's dependencies after downloading it
     #[arg(long)]
     pub no_install: bool,
+    /// Slug of the competition whose template to download
     pub competition: String,
+    /// Directory to create (defaults to the competition slug)
     pub destination: Option<PathBuf>,
 }
 

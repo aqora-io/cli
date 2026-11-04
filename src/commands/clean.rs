@@ -8,7 +8,7 @@ use serde::Serialize;
 use std::path::Path;
 
 #[derive(Args, Debug, Serialize)]
-#[command(author, version, about)]
+#[command(author, version)]
 pub struct Clean;
 
 async fn clean_dir(path: impl AsRef<Path>) -> Result<()> {

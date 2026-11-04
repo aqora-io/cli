@@ -13,7 +13,9 @@ use super::GlobalArgs;
 
 #[derive(Args, Debug, Serialize)]
 pub struct UseCase {
+    /// Slug of the competition to create the use case for
     competition: String,
+    /// Directory to create (defaults to the competition slug)
     dest: Option<PathBuf>,
 }
 

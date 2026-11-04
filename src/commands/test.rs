@@ -31,8 +31,9 @@ use std::{
 };
 
 #[derive(Args, Debug, Clone, Serialize)]
-#[command(author, version, about)]
+#[command(author, version)]
 pub struct Test {
+    /// Only run the given test, or one case of it as `<name>::<index>`; repeatable
     #[arg(short, long)]
     pub test: Vec<String>,
 }

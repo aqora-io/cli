@@ -30,7 +30,7 @@ pub async fn get_viewer_info(global: &GlobalArgs) -> Result<viewer_info::ViewerI
 }
 
 #[derive(Args, Debug, Serialize)]
-#[command(author, version, about)]
+#[command(author, version)]
 pub struct Info;
 
 pub async fn info(_: Info, global: GlobalArgs) -> Result<()> {
