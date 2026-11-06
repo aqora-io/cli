@@ -16,10 +16,10 @@ use crate::utils::is_url_secure;
 pub(crate) fn get_data<Q: GraphQLQuery>(
     response: graphql_client::Response<Q::ResponseData>,
 ) -> Result<Q::ResponseData> {
-    if let Some(data) = response.data {
-        Ok(data)
-    } else if let Some(errors) = response.errors {
+    if let Some(errors) = response.errors.filter(|errors| !errors.is_empty()) {
         Err(Error::Response(errors))
+    } else if let Some(data) = response.data {
+        Ok(data)
     } else {
         Err(Error::NoData)
     }
@@ -145,5 +145,33 @@ impl Client {
 
     pub async fn send_raw(&self, body: impl Into<Body>) -> Result<Bytes> {
         self.graphql_send(body).await?.bytes().await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestQuery;
+
+    impl GraphQLQuery for TestQuery {
+        type Variables = ();
+        type ResponseData = serde_json::Value;
+        fn build_query(_: ()) -> graphql_client::QueryBody<()> {
+            unimplemented!()
+        }
+    }
+
+    #[test]
+    fn get_data_returns_errors_alongside_partial_data() {
+        let response = serde_json::from_value(serde_json::json!({
+            "data": { "files": [{ "uploadUrl": null }] },
+            "errors": [{ "message": "Not Authorized" }],
+        }))
+        .unwrap();
+        match get_data::<TestQuery>(response) {
+            Err(Error::Response(errors)) => assert_eq!(errors[0].message, "Not Authorized"),
+            other => panic!("expected Error::Response, got {other:?}"),
+        }
     }
 }
