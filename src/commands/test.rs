@@ -8,7 +8,7 @@ use crate::{
     error::{self, Result},
     evaluate::evaluate,
     ipynb::{convert_submission_notebooks, convert_use_case_notebooks},
-    print::wrap_python_output,
+    print::{suspend, wrap_python_output},
     python::LastRunResult,
 };
 use aqora_config::{AqoraUseCaseConfig, PyProject};
@@ -93,7 +93,7 @@ async fn do_run_pipeline(
     let pipeline = match Pipeline::import(&env, &config.use_case, config.pipeline_config) {
         Ok(pipeline) => pipeline,
         Err(err) => {
-            pb.suspend(|| {
+            suspend(&pb, || {
                 Python::attach(|py| err.print_and_set_sys_last_vars(py));
             });
             pb.finish_with_message(format!("Failed to import pipeline{label}"));
@@ -124,7 +124,7 @@ async fn do_run_pipeline(
                 )
             }
             Err(error) => {
-                pb.suspend(|| {
+                suspend(&pb, || {
                     Python::attach(|py| error.print_and_set_sys_last_vars(py));
                 });
                 pb.finish_with_message(format!("Failed to run pipeline{label}"));
@@ -197,7 +197,7 @@ fn run_pipeline(
         }) {
             Ok(res) => res?,
             Err(err) => {
-                pb.suspend(|| {
+                suspend(pb, || {
                     Python::attach(|py| err.print_and_set_sys_last_vars(py));
                 });
                 pb.finish_with_message(format!("Failed to run pipeline{label}"));
@@ -363,7 +363,7 @@ pub async fn run_submission_tests(
             ))
         }
         Err(EvaluationError::Python(e)) => {
-            pipeline_pb.suspend(|| {
+            suspend(&pipeline_pb, || {
                 Python::attach(|py| e.print_and_set_sys_last_vars(py));
             });
             pipeline_pb.finish_with_message("Failed to run pipeline");
@@ -488,7 +488,7 @@ async fn test_use_case_test(
             ));
         }
         Err(EvaluationError::Python(e)) => {
-            pb.suspend(|| {
+            suspend(pb, || {
                 Python::attach(|py| e.print_and_set_sys_last_vars(py));
             });
             pb.finish_with_message(format!("Failed to run pipeline for {name}"));
@@ -529,7 +529,7 @@ async fn test_use_case_test(
                     .extract::<String>()
             })
             .map_err(|e| {
-                pb.suspend(|| {
+                suspend(pb, || {
                     Python::attach(|py| e.print_and_set_sys_last_vars(py));
                 });
                 pb.finish_with_message(format!("Failed to evaluate {name} score"));
